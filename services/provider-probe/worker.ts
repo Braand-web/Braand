@@ -1,6 +1,7 @@
+import {DurableObject} from 'cloudflare:workers';
 import {createBrowserbaseDriver} from '../../lib/browserbase';
 const fixture='<!doctype html><html><head><title>Braand provider fixture</title></head><body><h1>Browser fixture</h1><form><label>Nom fictif<input name="demo"></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password"></label><button type="button" onclick="document.getElementById(\'state\').textContent=\'Clicked successfully\'">Vérifier</button></form><p id="state">Ready</p></body></html>';
-const providerProbe={async fetch(request:Request,env:Cloudflare.Env){
+async function executeProbe(request:Request,env:Cloudflare.Env){
  const url=new URL(request.url);if(url.pathname==='/fixture')return new Response(fixture,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store'}});
  const token=(env as Cloudflare.Env&{PROBE_TOKEN?:string}).PROBE_TOKEN;
  if(request.method!=='POST'||url.pathname!=='/run'||!token||request.headers.get('authorization')!=='Bearer '+token)return new Response(null,{status:403});
@@ -26,6 +27,9 @@ const providerProbe={async fetch(request:Request,env:Cloudflare.Env){
   return Response.json({ok:true,checks,milliseconds:receipt.milliseconds,paidModelCalls:0,recordings:false});
  }catch(error){const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^browser_[a-z_]+$/.test(error.code)?error.code:'provider_probe_failed';const cause=error instanceof Error?error.cause:undefined;const reason=cause instanceof Error?cause.message.replace(/(?:https?|wss?):\/\/[^\s]+/g,'[url]').replace(/[A-Za-z0-9_+/.=-]{28,}/g,'[private]').slice(0,500):undefined;return Response.json({ok:false,checks,code,reason},{status:502});}
  finally{if(id)await driver.close(id).catch(()=>{});}
-}};
+}
 
+type ProbeEnv=Cloudflare.Env&{PROBE_TOKEN?:string;PROBE_OWNER:DurableObjectNamespace};
+export class ProviderProbe extends DurableObject<ProbeEnv>{async fetch(request:Request){return executeProbe(request,this.env);}}
+const providerProbe={async fetch(request:Request,env:ProbeEnv){if(new URL(request.url).pathname==='/fixture')return executeProbe(request,env);if(!env.PROBE_TOKEN||request.headers.get('authorization')!=='Bearer '+env.PROBE_TOKEN)return new Response(null,{status:403});return env.PROBE_OWNER.get(env.PROBE_OWNER.idFromName('proof')).fetch(request);}};
 export default providerProbe;

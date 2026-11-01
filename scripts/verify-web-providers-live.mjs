@@ -17,7 +17,7 @@ console.log('PASS Firecrawl real search and markdown scrape using the free quota
 const name='braand-provider-probe-'+randomBytes(5).toString('hex'),probeToken=randomBytes(32).toString('base64url'),root=process.cwd(),directory=path.join(root,'.tmp/provider-probe');
 await mkdir(directory,{recursive:true});
 const staging=await api('/workers/scripts/aira-staging/settings'),database=staging.bindings.find(x=>x.name==='DB'&&x.type==='d1');assert.ok(database);
-const manifest={name,account_id:account,main:path.join(root,'services/provider-probe/worker.ts'),compatibility_date:'2026-04-30',compatibility_flags:['nodejs_compat'],workers_dev:true,preview_urls:false,observability:{enabled:false},d1_databases:[{binding:'DB',database_id:database.id,database_name:'aira-staging'}]};
+const manifest={name,account_id:account,main:path.join(root,'services/provider-probe/worker.ts'),compatibility_date:'2026-04-30',compatibility_flags:['nodejs_compat'],workers_dev:true,preview_urls:false,observability:{enabled:false},durable_objects:{bindings:[{name:'PROBE_OWNER',class_name:'ProviderProbe'}]},migrations:[{tag:'provider-proof-v1',new_sqlite_classes:['ProviderProbe']}],d1_databases:[{binding:'DB',database_id:database.id,database_name:'aira-staging'}]};
 const manifestPath=path.join(directory,'wrangler.json');await writeFile(manifestPath,JSON.stringify(manifest));
 let deployed=false;
 try{
@@ -27,7 +27,7 @@ try{
  const settings={version:1,browserbase:{apiKey:bb,enabled:true,verified:true,verifiedAt:new Date().toISOString(),mode:'free_only',maxSessionSeconds:60,maxBrowserMinutes:60}};
  for(const [key,value]of Object.entries({WEB_PROVIDERS_JSON:JSON.stringify(settings),PROBE_TOKEN:probeToken})){secrets.push(value);await api('/workers/scripts/'+name+'/secrets','PUT',{name:key,text:value,type:'secret_text'});}
  const subdomain=await api('/workers/subdomain'),url='https://'+name+'.'+subdomain.subdomain+'.workers.dev/run';let result;
- for(let attempt=0;attempt<5;attempt++){const r=await fetch(url,{method:'POST',headers:{authorization:'Bearer '+probeToken},signal:AbortSignal.timeout(90000)});if(r.status===403){await new Promise(resolve=>setTimeout(resolve,1000));continue;}result=await r.json();break;}
+ for(let attempt=0;attempt<5;attempt++){const r=await fetch(url,{method:'POST',headers:{authorization:'Bearer '+probeToken},signal:AbortSignal.timeout(90000)});if(r.status===403){await new Promise(resolve=>setTimeout(resolve,1000));continue;}const raw=await r.text();if(!r.headers.get('content-type')?.includes('application/json'))throw Error('Provider probe HTTP '+r.status+' '+raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').slice(0,500));result=JSON.parse(raw);break;}
  assert.equal(result?.ok,true,JSON.stringify(result));assert.equal(result.checks.length,7);
  console.log(JSON.stringify({browserbase:result,firecrawl:{search:true,pageRead:true},at:new Date().toISOString()}));
  await writeFile(path.join(root,'.tmp/web-provider-proof.json'),JSON.stringify({ok:true,browserbase:result,firecrawl:{search:true,pageRead:true},commit:process.env.GITHUB_SHA,at:new Date().toISOString()}));
