@@ -198,7 +198,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK, lifecyc
       await page.route('**/*', route);
       await page.routeWebSocket('**/*', socket => socket.close());
       const cdp = await context.newCDPSession(page);
-      try { await cdp.send('Network.setBypassServiceWorker', {bypass: true}); await cdp.send('ServiceWorker.stopAllWorkers'); }
+      try { await cdp.send('Network.setBypassServiceWorker', {bypass: true}); await cdp.send('ServiceWorker.enable'); await cdp.send('ServiceWorker.stopAllWorkers'); }
       finally { await cdp.detach(); }
       if (page.url() !== 'about:blank') validateBrowserURL(page.url(), domains);
     };
