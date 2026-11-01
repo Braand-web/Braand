@@ -29,7 +29,7 @@ export async function firecrawlSearch(budget:RunBudget,query:string,domains:stri
  return {sources:value.web.map(row=>({url:row.url,title:row.title,content:row.description})),provider:'firecrawl'};
 }
 export async function firecrawlRead(budget:RunBudget,url:string){
- const body=await request(budget,'extract',{url,formats:['markdown'],onlyMainContent:true,parsers:[],proxy:'basic',timeout:20000,maxAge:0,storeInCache:false});
+ const body=await request(budget,'extract',{url,formats:['markdown'],onlyMainContent:true,parsers:[],proxy:'auto',timeout:20000,maxAge:0,storeInCache:false});
  const item=z.object({markdown:z.string().max(1000000),metadata:z.object({sourceURL:z.string().optional(),url:z.string().optional(),title:z.string().optional(),statusCode:z.number().optional()}).passthrough()}).parse(body.data);
  if(item.metadata.statusCode&&item.metadata.statusCode>=400)throw new AppError('La page demandée ne fournit pas de contenu exploitable.',502,'research_source_unavailable');
  return {url:item.metadata.url||item.metadata.sourceURL||url,title:item.metadata.title||new URL(url).hostname,content:item.markdown};
