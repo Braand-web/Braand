@@ -75,10 +75,36 @@ jobs:
           path: dist/
           include-hidden-files: true
           retention-days: 1
+  provider_proof:
+    name: Real provider checks on a disposable fixture
+    if: github.event_name == 'workflow_dispatch' && inputs.release_providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
+      BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --include=dev --include=optional
+      - name: Verify real public provider operations
+        run: node scripts/verify-web-providers-live.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-provider-proof
+          path: .tmp/web-provider-proof.json
+          include-hidden-files: true
+          retention-days: 1
   deploy:
     name: Publish verified main source
-    needs: verify
-    if: (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || (github.ref == 'refs/heads/feat/browserbase-firecrawl' && github.event_name == 'workflow_dispatch' && inputs.release_providers)
+    needs: [verify, provider_proof]
+    if: always() && needs.verify.result == 'success' && (needs.provider_proof.result == 'success' || needs.provider_proof.result == 'skipped') && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || (github.ref == 'refs/heads/feat/browserbase-firecrawl' && github.event_name == 'workflow_dispatch' && inputs.release_providers))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -103,9 +129,11 @@ jobs:
         with:
           name: verified-production-build
           path: dist
-      - name: Verify providers against a bounded public fixture
+      - uses: actions/download-artifact@v4
         if: inputs.release_providers
-        run: node scripts/verify-web-providers-live.mjs
+        with:
+          name: web-provider-proof
+          path: .tmp
       - name: Preserve live changes and publish the tested build
         run: |
           test -n "$CLOUDFLARE_API_TOKEN"

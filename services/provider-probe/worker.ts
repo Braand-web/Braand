@@ -24,7 +24,7 @@ const providerProbe={async fetch(request:Request,env:Cloudflare.Env){
   for(let attempt=0;attempt<4&&receipt.status!=='complete';attempt++){await new Promise(resolve=>setTimeout(resolve,500));receipt=await driver.receipt(id);}
   if(receipt.status!=='complete')throw Error('provider receipt');checks.push('Actual provider termination and timestamp receipt');
   return Response.json({ok:true,checks,milliseconds:receipt.milliseconds,paidModelCalls:0,recordings:false});
- }catch(error){const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^browser_[a-z_]+$/.test(error.code)?error.code:'provider_probe_failed';return Response.json({ok:false,checks,code},{status:502});}
+ }catch(error){const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^browser_[a-z_]+$/.test(error.code)?error.code:'provider_probe_failed';const cause=error instanceof Error?error.cause:undefined;const reason=cause instanceof Error?cause.message.replace(/(?:https?|wss?):\/\/[^\s]+/g,'[url]').replace(/[A-Za-z0-9_+/.=-]{28,}/g,'[private]').slice(0,500):undefined;return Response.json({ok:false,checks,code,reason},{status:502});}
  finally{if(id)await driver.close(id).catch(()=>{});}
 }};
 

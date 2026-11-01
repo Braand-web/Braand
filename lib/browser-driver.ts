@@ -22,8 +22,8 @@ const owners = new WeakMap<Fetcher, Map<string, OwnedSession>>();
 const activePages=new WeakMap<BrowserContext,Page>();
 
 export class BrowserDriverError extends Error {
-  constructor(public readonly code: string, public readonly status = 409) {
-    super(code === 'browser_human_required' ? 'Ce champ nécessite le contrôle manuel.' : code === 'browser_stale_observation' ? 'La page a changé. Actualisez son observation.' : 'Le navigateur ne peut pas confirmer cette opération.');
+  constructor(public readonly code: string, public readonly status = 409, cause?: unknown) {
+    super(code === 'browser_human_required' ? 'Ce champ nécessite le contrôle manuel.' : code === 'browser_stale_observation' ? 'La page a changé. Actualisez son observation.' : 'Le navigateur ne peut pas confirmer cette opération.', {cause});
     this.name = 'BrowserDriverError';
   }
 }
@@ -332,12 +332,16 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK, lifecyc
       await lifecycle?.beforeOpen?.(input);
       const provider = await sdk();
       const browser = await provider.launch(endpoint, {guardrails: {allowedDomains: domains}, keep_alive: 60_000});
+      let openingPhase='identity';
       try {
         const providerId = browser.sessionId();
         if (!providerId || !/^[\w-]{1,200}$/.test(providerId)) throw new BrowserDriverError('browser_invalid_session');
+        openingPhase='context';
         const context = await browser.newContext({serviceWorkers: 'block', acceptDownloads: true, viewport:{width:1280,height:720}, ...(state ? {storageState: state} : {})});
         const network={postsUntil:0,downloadsUntil:0};
+        openingPhase='guard';
         const guard = await protect(context, domains,network);
+        openingPhase='page';
         if (!context.pages().length) { const page = await context.newPage(); await guard(page); }
         const result = JSON.stringify({version: 1, providerId, domains,...(lifecycle?{provider:lifecycle.provider}:{})} satisfies Handle);
         owned.set(result, {browser, context, handle: {version: 1, providerId, domains},network});
@@ -346,7 +350,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK, lifecyc
         try { const cdp = await browser.newBrowserCDPSession(); await cdp.send('Browser.close'); } catch { /* Unknown acknowledgement. */ }
         await browser.close().catch(() => {});
         if (error instanceof BrowserDriverError) throw error;
-        throw new BrowserDriverError('browser_transport_unknown');
+        throw new BrowserDriverError('browser_open_'+openingPhase+'_failed',409,error);
       }
     },
     async observe(sessionId, pageId) { return connected(sessionId, async (_browser, context, handle) => (await observe(context, handle.domains, pageId)).observation); },
