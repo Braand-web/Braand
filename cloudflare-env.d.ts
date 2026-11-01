@@ -4,6 +4,8 @@ declare namespace Cloudflare {
     APP_ORIGIN?: string;
     AUTH_ENABLED?: string;
     AUTH_HASH_SECRET?: string;
+    AUTH_GOOGLE_CLIENT_ID?: string;
+    AUTH_GOOGLE_CLIENT_SECRET?: string;
     DB?: D1Database;
     WORK_QUEUE?: Queue<{workId:string}>;
     WORK_SCHEDULER_VERIFIED?: string;

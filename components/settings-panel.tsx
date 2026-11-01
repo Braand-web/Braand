@@ -132,7 +132,7 @@ export function SettingsPanel({tab, onTabChange, user, workspace, capabilities, 
    <nav ref={navigation} className="settings-navigation" aria-label="Catégories des paramètres">
     {sections.map(({id, label, icon: Icon}) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => onTabChange(id)}><Icon size={18} aria-hidden="true"/><span>{label}</span></button>)}
    </nav>
-   {!pendingSession && !sessionError && <a onClick={event=>{if(!signedIn&&onSignIn){event.preventDefault();onSignIn();}}} className="settings-signout" href={signedIn ? "/auth/sign-out?return_to=/" : "/auth/sign-in?return_to=/"} target="_top"><LogOut size={18} aria-hidden="true"/><span>{signedIn ? "Se déconnecter" : "Se connecter"}</span></a>}
+   {!pendingSession && !sessionError && (signedIn?<form method="post" action="/auth/sign-out" target="_top" style={{display:'contents'}}><input type="hidden" name="confirm" value="yes"/><button type="submit" className="settings-signout"><LogOut size={18} aria-hidden="true"/><span>Se déconnecter</span></button></form>:<a onClick={event=>{if(onSignIn){event.preventDefault();onSignIn();}}} className="settings-signout" href="/auth/sign-in?return_to=/" target="_top"><LogOut size={18} aria-hidden="true"/><span>Se connecter</span></a>)}
   </aside>
   <section className="settings-main" aria-labelledby="settings-section-title">
    <header className="settings-header"><h3 id="settings-section-title">{heading}</h3><button className="settings-close" type="button" onClick={onClose} aria-label="Fermer les paramètres" title="Fermer les paramètres"><X size={18} aria-hidden="true"/></button></header>

@@ -165,6 +165,7 @@ html[data-design-system="muse"] .auth-intents { display: grid; grid-template-col
 html[data-design-system="muse"] .auth-intents > button { min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--ds-radius-pill); color: var(--ds-muted); background: transparent; font-size: 13px; }
 html[data-design-system="muse"] .auth-intents > button.selected { color: var(--ds-text); background: var(--ds-fill); font-weight: 600; }
 html[data-design-system="muse"] .auth-form { display: grid; width: min(100%,360px); gap: 10px; text-align: left; }
+html[data-design-system="muse"] .auth-google { width: min(100%,360px); min-height: 46px; margin: 0 0 14px; }
 html[data-design-system="muse"] .auth-form > label { color: var(--ds-text); font-size: 13px; font-weight: 500; }
 html[data-design-system="muse"] .auth-form > input { width: 100%; min-height: 46px; padding: 0 13px; border: 1px solid var(--ds-line); border-radius: var(--ds-radius-sm); background: var(--ds-bg); color: var(--ds-text); font: inherit; }
 html[data-design-system="muse"] .auth-form > input::placeholder { color: var(--ds-muted); opacity: 1; }

@@ -98,5 +98,29 @@ try {
   const user=sql.prepare('SELECT id FROM auth_users WHERE email=?').get('retry@braand.test');
   assert.equal(sql.prepare('SELECT balance FROM credit_lots WHERE source_id=?').get(user.id).balance,1500);
  });
+ await check('existing email accounts can set a password only after verification and sign in without sending another email',async()=>{
+  const email='owner@braand.test',password='fixture-long-password-123',at=now+20*86400000;env.RESEND_TEST_RECIPIENT=email;
+  const original=sql.prepare('SELECT id FROM auth_users WHERE email=?').get(email),beforeGrant=sql.prepare('SELECT * FROM credit_lots WHERE source_id=?').get(original.id);
+  const start=await auth.handleAuth(req('/auth/form?return_to=%2F%3Fview%3Dprojects'),env,at),cookie=start.headers.get('set-cookie').split(';')[0],nonce=cookie.split('=')[1];
+  const created=await auth.handleAuth(req('/auth/request',{email,browser:nonce,new_password:password,return_to:'/?view=projects'},cookie,{accept:'application/json'}),env,at);assert.equal(created.status,200);
+  const pending=sql.prepare('SELECT * FROM auth_pending_passwords').get();assert.ok(pending);assert.ok(!JSON.stringify(pending).includes(password));assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_passwords WHERE user_id=?').get(original.id).n,0);
+  const verification=new URL(mails.at(-1).text.match(/https:\/\/[^\s]+/)[0]);const scan=await auth.handleAuth(req(verification.pathname+verification.search),env,at);assert.equal(scan.status,400);
+  const preview=await auth.handleAuth(req(verification.pathname+verification.search,null,cookie),env,at);assert.equal(preview.status,200);assert.match(preview.headers.get('content-security-policy'),/script-src 'nonce-/);assert.match(await preview.text(),/requestSubmit/);
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_passwords WHERE user_id=?').get(original.id).n,0);
+  const verified=await auth.handleAuth(req('/auth/verify',Object.fromEntries(verification.searchParams),cookie),env,at);assert.equal(verified.status,303);assert.equal(verified.headers.get('location'),'/?view=projects');
+  const saved=sql.prepare('SELECT * FROM auth_passwords WHERE user_id=?').get(original.id);assert.equal(saved.iterations,32768);assert.notEqual(saved.digest,password);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_pending_passwords').get().n,0);
+  assert.deepEqual({...sql.prepare('SELECT * FROM credit_lots WHERE source_id=?').get(original.id)},{...beforeGrant});
+  const second=await auth.handleAuth(req('/auth/form'),env,at+1000),secondCookie=second.headers.get('set-cookie').split(';')[0],secondNonce=secondCookie.split('=')[1],mailCount=mails.length;
+  const wrong=await auth.handleAuth(req('/auth/password',{email,password:'wrong-password',browser:secondNonce},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(wrong.status,401);
+  const unknown=await auth.handleAuth(req('/auth/password',{email:'unknown@braand.test',password:'wrong-password',browser:secondNonce},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(unknown.status,401);assert.deepEqual(await wrong.json(),await unknown.json());
+  const login=await auth.handleAuth(req('/auth/password',{email,password,browser:secondNonce,return_to:'/?view=library'},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(login.status,200);assert.equal((await login.json()).message,'/?view=library');assert.equal(mails.length,mailCount);
+  const session=login.headers.getSetCookie().find(value=>value.startsWith('__Host-braand_session=')).split(';')[0];assert.equal((await auth.sessionIdentity(new Headers({cookie:session}),env,at+1000)).userId,original.id);
+ });
+ await check('password registration validates length and refuses cross-origin or incorrect browser proof',async()=>{
+  const at=now+21*86400000,form=await auth.handleAuth(req('/auth/form'),env,at),cookie=form.headers.get('set-cookie').split(';')[0],nonce=cookie.split('=')[1],count=mails.length;
+  assert.equal((await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',new_password:'short',browser:nonce},cookie),env,at)).status,400);
+  assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:'wrong'},cookie),env,at)).status,400);
+  assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:nonce},cookie,{origin:'https://evil.test'}),env,at)).status,400);assert.equal(mails.length,count);
+ });
 } finally {globalThis.fetch=originalFetch;sql.close();}
 console.log(`${checks} independent authentication checks passed; zero real emails or payments.`);
