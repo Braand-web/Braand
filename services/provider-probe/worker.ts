@@ -1,6 +1,6 @@
 import {createBrowserbaseDriver} from '../../lib/browserbase';
 const fixture='<!doctype html><html><head><title>Braand provider fixture</title></head><body><h1>Browser fixture</h1><form><label>Nom fictif<input name="demo"></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password"></label><button type="button" onclick="document.getElementById(\'state\').textContent=\'Clicked successfully\'">Vérifier</button></form><p id="state">Ready</p></body></html>';
-export default {async fetch(request:Request,env:Cloudflare.Env){
+const providerProbe={async fetch(request:Request,env:Cloudflare.Env){
  const url=new URL(request.url);if(url.pathname==='/fixture')return new Response(fixture,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store'}});
  const token=(env as Cloudflare.Env&{PROBE_TOKEN?:string}).PROBE_TOKEN;
  if(request.method!=='POST'||url.pathname!=='/run'||!token||request.headers.get('authorization')!=='Bearer '+token)return new Response(null,{status:403});
@@ -27,3 +27,5 @@ export default {async fetch(request:Request,env:Cloudflare.Env){
  }catch(error){const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^browser_[a-z_]+$/.test(error.code)?error.code:'provider_probe_failed';return Response.json({ok:false,checks,code},{status:502});}
  finally{if(id)await driver.close(id).catch(()=>{});}
 }};
+
+export default providerProbe;
