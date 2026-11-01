@@ -4,7 +4,7 @@ import {normalizeBrowserDomains} from './browser-policy.mjs';
 import {webProviderSettings} from './web-providers';
 const endpoint='https://api.browserbase.com/v1';
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const hosts=new Set(['connect.browserbase.com','connect.us-west-2.browserbase.com','connect.us-east-1.browserbase.com','connect.eu-central-1.browserbase.com','connect.ap-southeast-1.browserbase.com']);
+const hosts=new Set(['connect.usw2.browserbase.com','connect.browserbase.com','connect.us-west-2.browserbase.com','connect.us-east-1.browserbase.com','connect.eu-central-1.browserbase.com','connect.ap-southeast-1.browserbase.com']);
 type Settings={WEB_PROVIDERS_JSON?:string;DB?:D1Database};
 export function browserbaseConfigured(env:Settings){try{const p=webProviderSettings(env).browserbase;return !!p?.enabled&&p.verified;}catch{return false;}}
 export function browserbasePrice(env:Settings){
@@ -41,15 +41,14 @@ export function createBrowserbaseTransport(env:Settings,scopeId:()=>Promise<stri
    if(req.method==='POST'&&url.pathname==='/v1/devtools/browser'){
     const payload=await req.json() as {guardrails?:{allowedDomains?:unknown}},domains=normalizeBrowserDomains(payload.guardrails?.allowedDomains);await allowance();
     const session=await request('/sessions',{timeout:seconds,keepAlive:false,proxies:false,browserSettings:{viewport:{width:1280,height:720},allowedDomains:domains,recordSession:false,logSession:false,solveCaptchas:false}});
-    const id=String(session.id),connect=new URL(String(session.connectUrl));
-    if(!uuid.test(id)||connect.protocol!=='wss:'||!hosts.has(connect.hostname)||connect.port||connect.username||connect.password||connect.hash||connect.searchParams.get('sessionId')!==id)throw new Error();
+    const id=String(session.id);let connect:URL;
+    try{connect=new URL(String(session.connectUrl));const signed=connect.searchParams.get('signingKey'),sessionId=connect.searchParams.get('sessionId'),key=connect.searchParams.get('apiKey');if(!uuid.test(id)||connect.protocol!=='wss:'||!hosts.has(connect.hostname)||connect.port||connect.username||connect.password||connect.hash||connect.pathname!=='/'||sessionId!==null&&sessionId!==id||key!==null&&key!==p!.apiKey||sessionId===null&&(!signed||signed.length<16||signed.length>8192))throw new Error();}catch{if(uuid.test(id))await release(id).catch(()=>{});throw new BrowserDriverError('browser_cdp_url_invalid');}
     targets.set(id,connect.toString());return Response.json({sessionId:id});
    }
    const match=url.pathname.match(/^\/v1\/devtools\/browser\/([a-f0-9-]{36})$/i),id=match?.[1];
    if(req.method!=='GET'||req.headers.get('upgrade')?.toLowerCase()!=='websocket'||!id||!targets.has(id))throw new Error();
    const connect=new URL(targets.get(id)!);connect.protocol='https:';
-   const response=await transport(connect,{headers:{Upgrade:'websocket'},signal:AbortSignal.timeout(15000)});
-   if(!response.webSocket||response.status!==101)throw new Error();return response;
+   try{const response=await transport(connect,{headers:{Upgrade:'websocket'},signal:AbortSignal.timeout(15000)});if(!response.webSocket||response.status!==101)throw new Error();return response;}catch{await release(id).catch(()=>{});throw new BrowserDriverError('browser_cdp_connection_failed');}
   }catch(error){return Response.json({code:error instanceof BrowserDriverError?error.code:'browser_provider_unavailable'},{status:409});}
  }} as Fetcher;
  return {binding,lifecycle:{provider:'browserbase' as const,beforeOpen:async(input:{timeoutSeconds?:number})=>{seconds=Math.max(60,Math.min(p.maxSessionSeconds,input.timeoutSeconds||p.maxSessionSeconds));},receipt,terminate:release}};

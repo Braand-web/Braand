@@ -4,14 +4,14 @@ import {build} from 'esbuild';
 const bundled=await build({entryPoints:['lib/browserbase.ts'],bundle:true,platform:'node',format:'esm',write:false,external:['@cloudflare/playwright']});
 const {createBrowserbaseTransport,createBrowserbaseDriver,browserbasePrice}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
 const id='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222';
-function fixture({minutes=0,reserved=0,failed=false,ended=true}={}){
+function fixture({minutes=0,reserved=0,failed=false,ended=true,signed=false}={}){
  const calls=[],env={WEB_PROVIDERS_JSON:JSON.stringify({version:1,browserbase:{apiKey:'fixture-browserbase-key',enabled:true,verified:true,verifiedAt:new Date().toISOString(),mode:'free_only',maxSessionSeconds:120,maxBrowserMinutes:60}}),DB:{prepare(){return{bind(){return{async first(){return{n:reserved};}};}};}}};
  const transport=async(url,init={})=>{calls.push({url:String(url),init});const route=new URL(url).pathname;
  if(route==='/v1/projects')return Response.json([{id:project}]);
  if(route.endsWith('/usage'))return Response.json({browserMinutes:minutes,proxyBytes:0});
- if(route==='/v1/sessions'){if(failed)throw Error('Connection lost after dispatch');return Response.json({id,connectUrl:'wss://connect.browserbase.com?sessionId='+id+'&apiKey=fixture-browserbase-key'});}
+ if(route==='/v1/sessions'){if(failed)throw Error('Connection lost after dispatch');return Response.json({id,connectUrl:signed?'wss://connect.usw2.browserbase.com?signingKey=opaque-signed-session-token-only':'wss://connect.browserbase.com?sessionId='+id+'&apiKey=fixture-browserbase-key'});}
  if(route==='/v1/sessions/'+id){if(init.method==='POST')return Response.json({id,status:'COMPLETED'});return Response.json({id,status:ended?'COMPLETED':'RUNNING',startedAt:new Date(Date.now()-5000).toISOString(),endedAt:ended?new Date().toISOString():null});}
- if(new URL(url).hostname==='connect.browserbase.com')return{status:101,webSocket:{fixture:true}};
+ if(['connect.browserbase.com','connect.usw2.browserbase.com'].includes(new URL(url).hostname))return{status:101,webSocket:{fixture:true}};
  throw Error('Unexpected external request');};
  return {env,calls,adapter:createBrowserbaseTransport(env,async()=>undefined,transport)};
 }
@@ -37,3 +37,5 @@ test('only completed provider timestamps can settle a receipt; termination is ex
 test('provider switches cannot reuse old handles or invent a paid rate',async()=>{
  const f=fixture(),driver=createBrowserbaseDriver(f.env);await assert.rejects(()=>driver.receipt(JSON.stringify({version:1,providerId:id,domains:['example.com']})),e=>e.code==='browser_provider_changed');const rate=browserbasePrice(f.env);assert.equal(rate.usdPerBrowserHour,0);assert.equal(rate.usdXaf,0);assert.equal(rate.freeOnly,true);
 });
+
+test('current signed Browserbase endpoints are used verbatim without exposing a platform API key',async()=>{const f=fixture({signed:true});const response=await f.adapter.binding.fetch('http://fake.host/v1/devtools/browser',{method:'POST',body:JSON.stringify({guardrails:{allowedDomains:['example.com']}})});assert.equal(response.status,200);const upgrade=await f.adapter.binding.fetch('http://fake.host/v1/devtools/browser/'+id,{headers:{Upgrade:'websocket'}});assert.equal(upgrade.status,101);const target=new URL(f.calls.at(-1).url);assert.equal(target.hostname,'connect.usw2.browserbase.com');assert.equal(target.searchParams.has('apiKey'),false);assert.equal(target.searchParams.has('sessionId'),false);assert.ok(target.searchParams.get('signingKey'));});
