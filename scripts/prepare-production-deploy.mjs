@@ -31,6 +31,13 @@ const config={name:script,account_id:account,main:path.join(root,'dist/server/in
  r2_buckets:[{binding:'BUCKET',bucket_name:files.bucket_name},{binding:'BACKUP_BUCKET',bucket_name:backups.bucket_name}],
  durable_objects:{bindings:[{name:'BROWSER_SESSIONS',class_name:browserSessions.class_name||'BrowserSession'}]},
  migrations:built.migrations,browser:built.browser,triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false}};
+// The isolated vault is optional. Preserve its private binding once configured;
+// never bind its database or master encryption key to the main application.
+const vault=bindings.find(item=>item.name==='CREDENTIAL_VAULT');
+if(vault){
+ if(vault.type!=='service'||vault.service!=='braand-vault-production')throw Error('Unexpected production vault service binding.');
+ config.services=[{binding:'CREDENTIAL_VAULT',service:vault.service,...(vault.environment?{environment:vault.environment}:{}),...(vault.entrypoint?{entrypoint:vault.entrypoint}:{})}];
+}
 const workQueue=bindings.find(item=>item.name==='WORK_QUEUE'&&item.type==='queue')?.queue_name||process.env.BRAAND_PRODUCTION_WORK_QUEUE;
 if(workQueue){
  if(!/^[a-z0-9][a-z0-9-]{2,62}$/.test(workQueue))throw new Error('Invalid production work queue.');
