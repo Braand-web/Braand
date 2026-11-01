@@ -22,6 +22,8 @@ export function browserDriverForSession(id:string):BrowserDriver{
   return response;
  }
  return {
+  async configureNetwork(sessionId,policy){await call('configureNetwork',[sessionId,policy]);},
+  async humanInput(sessionId,input,pageId){await call('humanInput',[sessionId,input,pageId]);},
   async receipt(sessionId){return await (await call('receipt',[sessionId])).json();},
   async open(input){return await (await call('open',[input])).json();},
   async observe(sessionId,pageId){return await (await call('observe',[sessionId,pageId])).json();},

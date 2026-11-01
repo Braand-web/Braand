@@ -72,7 +72,7 @@ test('pinned SDK lifecycle assumptions are verified against its installed provid
 test('launch latches exact native hostname guardrails and a retained native SW-blocked context', async () => {
   const f = await opened();
   assert.deepEqual(f.trace.launches, [{guardrails: {allowedDomains: ['example.com']}, keep_alive: 60_000}]);
-  assert.deepEqual(f.trace.contextOptions, [{serviceWorkers: 'block', acceptDownloads: true}]);
+  assert.deepEqual(f.trace.contextOptions, [{serviceWorkers: 'block', acceptDownloads: true,viewport:{width:1280,height:720}}]);
   assert.equal(f.trace.closes, 0);
   assert.ok(f.context.routes.length && f.page.routes.length && f.context.sockets.length && f.page.sockets.length);
   assert.equal(f.context.inits[0].name, 'installPageRestrictions');
@@ -84,13 +84,13 @@ test('context and page guards reject HTTP, active schemes, local/private hosts, 
   for (const handler of [f.context.routes[0], f.page.routes[0]]) {
     for (const url of ['http://example.com/', 'https://evil.com/redirect', 'https://127.0.0.1/', 'https://localhost/', 'data:text/html,x', 'javascript:alert(1)', 'file:///etc/passwd', 'https://example.com:444/']) {
       const calls = [];
-      await handler({request: () => ({url: () => url, headers: () => ({})}), abort: async reason => calls.push(reason), continue: async () => calls.push('continue')});
+      await handler({request: () => ({url: () => url, headers: () => ({}),method:()=>'GET'}), abort: async reason => calls.push(reason), continue: async () => calls.push('continue')});
       assert.deepEqual(calls, ['blockedbyclient'], url);
     }
     const calls = [];
-    await handler({request: () => ({url: () => 'https://example.com/script.js', headers: () => ({'service-worker': 'script'})}), abort: async reason => calls.push(reason), continue: async () => calls.push('continue')});
+    await handler({request: () => ({url: () => 'https://example.com/script.js', headers: () => ({'service-worker': 'script'}),method:()=>'GET'}), abort: async reason => calls.push(reason), continue: async () => calls.push('continue')});
     assert.deepEqual(calls, ['blockedbyclient']);
-    await handler({request: () => ({url: () => 'https://example.com/image.png', headers: () => ({})}), abort: async () => assert.fail(), continue: async () => calls.push('continue')});
+    await handler({request: () => ({url: () => 'https://example.com/image.png', headers: () => ({}),method:()=>'GET'}), abort: async () => assert.fail(), continue: async () => calls.push('continue')});
     assert.equal(calls.at(-1), 'continue');
   }
   let closed = 0;
@@ -252,7 +252,7 @@ test('capture is binary only, masks form inputs, and does not evaluate DOM or le
   assert.equal(f.trace.evaluations, 0);
   const screenshot = f.trace.actions.find(([kind]) => kind === 'screenshot');
   assert.equal(screenshot[1].type, 'png');
-  assert.equal(screenshot[1].mask.length, 1);
+  assert.equal(screenshot[1].mask.length, 2);
 });
 
 test('close really terminates launched provider browser; complete receipts use provider timestamps only', async () => {

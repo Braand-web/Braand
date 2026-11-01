@@ -2,8 +2,11 @@ import {identity,failure} from '@/lib/server';
 import {AppError} from '@/lib/core.mjs';
 import {browserService,requireBrowserOrigin} from '@/lib/browser';
 import {ensureModelPricing} from '@/lib/model-pricing';
+import {getBrowserPermissions,setBrowserPermissions} from '@/lib/browser-permissions';
+import {vaultRequest,vaultSensitiveRequest} from '@/lib/browser-vault';
+import {privateJSON} from '@/lib/private-json';
 
-async function body(request:Request){if(Number(request.headers.get('content-length')||0)>20000)throw new AppError('Requête trop volumineuse.',413);const text=await request.text();if(new TextEncoder().encode(text).length>20000)throw new AppError('Requête trop volumineuse.',413);return text?JSON.parse(text) as unknown:{};}
+const body=privateJSON;
 async function handle(request:Request){try{
  requireBrowserOrigin(request);
  if(request.headers.get('sec-fetch-site')==='cross-site')throw new AppError('Origine du navigateur non autorisée.',403,'browser_origin_required');
@@ -11,12 +14,21 @@ async function handle(request:Request){try{
  try{await ensureModelPricing(Date.now(),false);}catch{/* Readiness may report unavailable, but session control never waits on a pricing source. */}
  let result:unknown;
  if(method==='GET'&&!path.length)result=await browserService.list(who);
+ else if(path[0]==='permissions'&&path.length===1&&method==='GET')result=await getBrowserPermissions(who);
+ else if(path[0]==='permissions'&&path.length===1&&method==='POST')result=await setBrowserPermissions(who,await body(request));
+ else if(path[0]==='vault'&&method==='GET'&&path.length===1){try{result=await vaultRequest(who,'/list');}catch(error){if(error instanceof AppError&&error.code==='vault_unavailable')result={ready:false,credentials:[],history:[]};else throw error;}}
+ else if(path[0]==='vault'&&method==='POST'&&['capture-ticket','save','fill','delete','permission','otp'].includes(path[1])){
+  const operation=path.slice(1).join('/');if(!['capture-ticket','save','fill','delete','permission','otp/prepare','otp/fill'].includes(operation))throw new AppError('Route du coffre introuvable.',404);
+  result=operation==='save'||operation==='otp/fill'?await vaultSensitiveRequest(who,'/'+operation as '/save'|'/otp/fill',request):await vaultRequest(who,'/'+operation,await body(request));
+ }
  else if(path[0]==='profiles'&&path.length===1&&method==='GET')result=await browserService.profiles(who);
  else if(path[0]==='profiles'&&path.length===2&&method==='DELETE')result=await browserService.deleteProfile(who,path[1]);
  else if(path[0]==='sessions'&&path.length===1&&method==='POST')result=await browserService.create(who,await body(request));
  else if(path[0]==='sessions'&&path[1]){
   const id=path[1];
   if(path.length===2&&method==='GET')result=await browserService.get(who,id);
+  else if(path.length===3&&path[2]==='live'&&method==='GET')result=await browserService.connectLive(who,id,request);
+  else if(path.length===3&&path[2]==='input'&&method==='POST')result=await browserService.humanInput(who,id,await body(request));
   else if(path.length===2&&method==='DELETE'){const session=await browserService.get(who,id);result=await browserService.control(who,id,{action:'close',version:session.version});}
   else if(path.length===3&&path[2]==='activate'&&method==='POST')result=await browserService.activate(who,id,await body(request));
   else if(path.length===3&&path[2]==='reconcile'&&method==='POST')result=await browserService.reconcile(who,id,await body(request));
