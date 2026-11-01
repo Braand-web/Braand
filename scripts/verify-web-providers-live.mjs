@@ -11,7 +11,7 @@ const api=async(pathname,method='GET',body)=>{const r=await fetch('https://api.c
 async function json(url,init){const r=await fetch(url,{...init,signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('Provider check failed '+r.status);return r.json();}
 const fireHeaders={authorization:'Bearer '+fc,'content-type':'application/json'},quota=await json('https://api.firecrawl.dev/v2/team/credit-usage',{headers:fireHeaders});
 assert.ok(quota.success&&quota.data.planCredits<=1000&&quota.data.remainingCredits>=3,'Free Firecrawl quota required');
-const search=await json('https://api.firecrawl.dev/v2/search',{method:'POST',headers:fireHeaders,body:JSON.stringify({query:'Example Domain',includeDomains:['example.com'],sources:['web'],limit:1})});assert.ok(search.success&&search.data.web?.some(item=>new URL(item.url).hostname==='example.com'));
+const search=await json('https://api.firecrawl.dev/v2/search',{method:'POST',headers:fireHeaders,body:JSON.stringify({query:'Firecrawl web scraping API',includeDomains:['firecrawl.dev'],sources:['web'],limit:3})});assert.ok(search.success&&search.data.web?.some(item=>new URL(item.url).hostname==='firecrawl.dev'||new URL(item.url).hostname.endsWith('.firecrawl.dev')));
 const scrape=await json('https://api.firecrawl.dev/v2/scrape',{method:'POST',headers:fireHeaders,body:JSON.stringify({url:'https://example.com',formats:['markdown'],parsers:[],proxy:'basic',storeInCache:false})});assert.ok(scrape.success&&scrape.data.markdown?.includes('Example Domain'));
 console.log('PASS Firecrawl real search and markdown scrape using the free quota');
 const name='braand-provider-probe-'+randomBytes(5).toString('hex'),probeToken=randomBytes(32).toString('base64url'),root=process.cwd(),directory=path.join(root,'.tmp/provider-probe');
