@@ -108,11 +108,13 @@ export async function summary(org:string){
  const meters=await s("SELECT COALESCE(SUM(CASE WHEN kind='storage' THEN quantity ELSE 0 END),0) storage,COALESCE(SUM(CASE WHEN kind='transfer' AND created_at>=? THEN quantity ELSE 0 END),0) transfer FROM billing_meter WHERE organization_id=?",now-30*DAY,org).first<{storage:number;transfer:number}>();
  return {wallet:{available:wallet!.available/100,reserved:wallet!.reserved/100,granted:wallet!.granted/100},creditAllowance:terms?.credits||0,lots:lots.results,subscription,nextAllocation:allocation&&allocation.end<subscription!.end_at?allocation.end:null,meters,orders:orders.results,notifications:notifications.results,invoices:invoices.results,creditNotes:creditNotes.results,readiness:releaseReadiness(),asOf:now};
 }
-export async function reserve(who:BillingIdentity,reference:string,units:number){
+export async function reserve(who:BillingIdentity,reference:string,units:number,options:{upToAvailable?:boolean}={}){
  if(!Number.isSafeInteger(units)||units<=0)throw new AppError('Plafond de crédits invalide.');
  await allocateDue(who.organization);
  const prior=await s('SELECT * FROM credit_holds WHERE reference=?',reference).first<CreditHoldRow>();if(prior){if(prior.organization_id!==who.organization)throw new AppError('Réservation invalide.',403);return prior;}
  const now=Date.now(),id=uid(),lots=await s('SELECT id,balance-reserved available FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved ORDER BY expires_at IS NULL,expires_at,created_at,id',who.organization,now,now).all<{id:string;available:number}>();
+ if(options.upToAvailable)units=Math.min(units,lots.results.reduce((sum,lot)=>sum+lot.available,0));
+ if(units<=0)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
  let left=units;const statements=[s('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)',id,who.organization,who.tenant,who.user.userId,reference,units,now)];
  for(const lot of lots.results){const n=Math.min(left,lot.available);if(n>0)statements.push(s('INSERT INTO credit_allocations(id,hold_id,lot_id,units,created_at) VALUES (?,?,?,?,?)',uid(),id,lot.id,n,now));left-=n;if(!left)break;}
  if(left>0)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');

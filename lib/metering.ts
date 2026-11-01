@@ -52,7 +52,7 @@ export function modelReadiness(){
 export async function startRunBudget(who:BillingIdentity,runId:string,credits:number):Promise<RunBudget>{
  await ensureModelPricing();
  await reconcileOpenRouterUsage(who.organization,5);
- const rate=modelRate();const hold=await reserve(who,'chat:'+runId,Math.round(credits*100));return {who,holdId:hold.id,limit:hold.units,runId,rate};
+ const rate=modelRate();const hold=await reserve(who,'chat:'+runId,Math.round(credits*100),{upToAvailable:true});return {who,holdId:hold.id,limit:hold.units,runId,rate};
 }
 export async function finishRunBudget(b:RunSettlementBudget){
  const auxiliary=await toolUsage(b.holdId);
@@ -77,11 +77,20 @@ export async function reconcileOpenRouterUsage(organization?:string,limit=10){
  await (await import('./openrouter-research')).reconcileResearchUsage(organization,Math.min(limit,5));
  const rows=await db().prepare("SELECT p.* FROM provider_usage p WHERE p.provider='openrouter' AND (p.status IN ('estimated','unknown') OR (p.status='pending' AND EXISTS(SELECT 1 FROM runs r WHERE r.id=p.run_id AND r.status IN ('failed','partial','cancelled','completed')))) AND p.request_id IS NOT NULL"+(organization?' AND p.organization_id=?':'')+' ORDER BY p.created_at LIMIT ?').bind(...(organization?[organization,limit]:[limit])).all<ReconciliationUsage>();
  for(const row of rows.results){try{
-  const rate=modelRateSchema.parse(JSON.parse(row.rate)),actual=await generationCost(row.request_id,rate,{requireFinal:row.status==='pending'}),usage={...modelRecordSchema.parse(JSON.parse(row.usage||'{}')),openrouter_cost_usd:actual.usd,routed_provider:actual.provider,cost_source:'generation'};
+  const previousUsage=modelRecordSchema.parse(JSON.parse(row.usage||'{}'));
+  const rate=modelRateSchema.parse(JSON.parse(row.rate)),actual=await generationCost(row.request_id,rate,{requireFinal:row.status==='pending'||previousUsage.stream_complete!==true}),usage={...previousUsage,openrouter_cost_usd:actual.usd,routed_provider:actual.provider,cost_source:'generation'};
   await db().prepare("UPDATE provider_usage SET cost_xaf=?,usage=?,status='complete' WHERE id=? AND (status IN ('estimated','unknown') OR (status='pending' AND EXISTS(SELECT 1 FROM runs r WHERE r.id=provider_usage.run_id AND r.status IN ('failed','partial','cancelled','completed'))))").bind(actual.xaf,JSON.stringify(usage),row.id).run();
   const run=await db().prepare('SELECT status FROM runs WHERE id=?').bind(row.run_id).first<{status:string}>();
   if(run&&run.status!=='streaming')await finishRunBudget({runId:row.run_id,holdId:row.hold_id,rate});
  }catch{/* The real cost stays unresolved; never resubmit a generation. */}}
+ // A worker can stop after recording the receipt, or after marking a run
+ // cancelled, before its finally block settles the hold. Retry terminal holds
+ // independently of whether a provider receipt still needs reconciliation.
+ const stranded=await db().prepare("SELECT h.id,h.reference FROM credit_holds h LEFT JOIN runs r ON h.reference='chat:'||r.id WHERE h.reference LIKE 'chat:%' AND h.status IN ('reserved','needs_reconciliation') AND ((r.status IN ('failed','partial','cancelled','completed') AND r.updated_at<?) OR (r.id IS NULL AND h.created_at<?))"+(organization?' AND h.organization_id=?':'')+' ORDER BY h.created_at LIMIT ?').bind(...(organization?[Date.now()-30000,Date.now()-300000,organization,limit]:[Date.now()-30000,Date.now()-300000,limit])).all<{id:string;reference:string}>();
+ for(const hold of stranded.results)try{await finishRunBudget({runId:hold.reference.slice(5),holdId:hold.id});}catch{/* Keep an unconfirmed cost reserved; the next tick retries without rerunning the agent. */}
+ // A cancelled stream can outlive its finally block. Repair only old locks
+ // with terminal runs; an active/new request must never be unlocked here.
+ await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id IN (SELECT c.id FROM resources c WHERE c.kind='conversation' AND c.status='streaming' AND c.updated_at<? AND EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status IN ('completed','failed','partial','cancelled')) AND NOT EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status='streaming') LIMIT 50)").bind(Date.now(),Date.now()-300000).run();
  return {checked:rows.results.length};
 }
 export async function meteredModel(b:RunBudget,role:string,url:string,init:RequestInit,selected?:RoutedModel,originalBody?:Record<string,unknown>){
@@ -125,7 +134,7 @@ export async function meteredModel(b:RunBudget,role:string,url:string,init:Reque
  const iterator=(selected?.provider==='openai'?normalizedResponses(response.body,selected):parseSSE(response.body))[Symbol.asyncIterator](),encoder=new TextEncoder();let usage:ModelUsage={},complete=false,finished=false;
  const save=async()=>{if(finished)return;finished=true;let cost:number|null=null,estimated=false;const streamComplete=complete;
  if(connection.provider==='openrouter'){
-  try{const actual=await generationCost(generationId||'',rate);cost=actual.xaf;usage={...usage,openrouter_cost_usd:actual.usd,routed_provider:actual.provider,stream_complete:streamComplete,cost_source:'generation'};complete=true;}catch{complete=false;if(streamComplete)try{usageUnits(usage,rate);estimated=true;usage={...usage,stream_complete:true,cost_source:'rate_estimate'};}catch{}}
+  try{const actual=await generationCost(generationId||'',rate,{requireFinal:!streamComplete});cost=actual.xaf;usage={...usage,openrouter_cost_usd:actual.usd,routed_provider:actual.provider,stream_complete:streamComplete,cost_source:'generation'};complete=true;}catch{complete=false;if(streamComplete)try{usageUnits(usage,rate);estimated=true;usage={...usage,stream_complete:true,cost_source:'rate_estimate'};}catch{}}
  }else try{if(complete){if(selected&&Number(usage.input_tokens||0)+Number(usage.cache_creation_input_tokens||0)+Number(usage.cache_read_input_tokens||0)>selected.maxInputTokens)throw new AppError('Le contexte dépasse le tarif autorisé.',409,'usage_unknown');cost=usageUnits(usage,rate).xaf;}}catch{complete=false;}
   await db().prepare('UPDATE provider_usage SET usage=?,cost_xaf=?,status=? WHERE id=?').bind(JSON.stringify(usage),cost,complete?'complete':estimated?'estimated':'unknown',id).run();};
  const stream=new ReadableStream({async pull(controller){try{

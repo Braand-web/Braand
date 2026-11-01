@@ -25,6 +25,11 @@ const routingSchema=z.object({task:z.enum(MODEL_TASKS),tier:z.enum(MODEL_TIERS).
 const entrySchema=z.object({enabled:z.literal(true),transport:z.enum(['openai','anthropic','openrouter']).optional(),rate:modelRateSchema,maxInputTokens:z.number().int().min(1).max(100000),maxOutputTokens:z.number().int().min(128).max(32768)}).strict();
 export type RoutedModel={key:ModelKey;provider:'openai'|'anthropic'|'openrouter';model:string;rate:ModelRate;maxInputTokens:number;maxOutputTokens:number;apiKey:string;url:string;headers:Record<string,string>;routing:RoutingRequest};
 export function routingEnabled(env:Record<string,string|undefined>){return env.MODEL_ROUTING_ENABLED==='true';}
+export function routingReadiness(env:Record<string,string|undefined>){
+ const enabled=routingEnabled(env),adaptive=enabled&&env.MODEL_ROUTING_POLICY==='adaptive';
+ const tiers=Object.fromEntries(MODEL_TIERS.map(tier=>{if(!adaptive)return [tier,false];try{routedModel(env,{task:'conversation',tier});return [tier,true];}catch{return [tier,false];}}));
+ return {enabled,policy:adaptive?'adaptive':enabled?'task':'default',tiers};
+}
 // Selection accepts a server-owned task, never user text, a model name, URL or key.
 // One identified validation problem permits one higher-capability attempt. It is
 // not an automatic retry policy, especially after a tool has changed a service.

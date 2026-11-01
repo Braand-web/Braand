@@ -15,6 +15,7 @@ const profileSchema=z.object({
 }).strict();
 // This is a preference store, never a substitute for the protected secret vault.
 const credential=/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:sk-(?:proj-)?|gh[pousr]_|github_pat_|cfut_)[a-zA-Z0-9_-]{16,}|\b(?:password|mot de passe|api[_ -]?key|token|secret)\s*[:=]\s*\S{8,})/iu;
+export function containsCredential(value:string){return credential.test(value);}
 export function currentTime(input:unknown={},now=Date.now()){
  const {timezone='UTC'}=z.object({timezone:z.string().min(1).max(80).refine(validTimezone,'Fuseau IANA invalide.').optional()}).strict().parse(input);
  const date=new Date(now),formatter=new Intl.DateTimeFormat('fr-FR',{timeZone:timezone,dateStyle:'full',timeStyle:'long'});
@@ -30,7 +31,7 @@ export async function readAgentContext(tenant:string,input:unknown={}){
 }
 export async function updateAgentContext(tenant:string,input:unknown){
  const p=z.object({version:z.number().int().min(0),profile:profileSchema}).strict().parse(input);
- if(credential.test(JSON.stringify(p.profile)))throw new AppError('Les identifiants et secrets doivent rester dans le coffre de connexion, pas dans le profil.',400,'profile_secret_rejected');
+ if(containsCredential(JSON.stringify(p.profile)))throw new AppError('Les identifiants et secrets doivent rester dans le coffre de connexion, pas dans le profil.',400,'profile_secret_rejected');
  const current=await readAgentContext(tenant),now=Date.now(),data={profile:p.profile,updatedAt:now};
  if(p.version!==current.version)throw new AppError('Le profil a changé. Relisez-le avant de continuer.',409,'stale_version');
  if(p.version===0){
@@ -42,7 +43,7 @@ export async function updateAgentContext(tenant:string,input:unknown){
 export async function explainMemory(tenant:string,input:unknown){
  const {id}=z.object({id:z.string().min(1).max(160)}).strict().parse(input),resource=await getResource(tenant,id);
  if(resource.kind!=='knowledge'||resource.status!=='saved')throw new AppError('Souvenir introuvable.',404);
- return {id,title:resource.title,version:resource.version,content:resource.data.content,source:resource.data.source||null,memoryType:resource.data.memoryType||'fact',createdAt:resource.created_at,updatedAt:resource.updated_at,validatedAt:resource.data.validatedAt||null,sourceIndependentlyVerified:false,supersededHistoryAvailable:false,untrusted:true};
+ return {id,title:resource.title,version:resource.version,content:resource.data.content,source:resource.data.source||null,memoryType:resource.data.memoryType||'fact',createdAt:resource.created_at,updatedAt:resource.updated_at,validatedAt:resource.data.validatedAt||null,learning:resource.data.learning||null,sourceIndependentlyVerified:false,supersededHistoryAvailable:false,untrusted:true};
 }
 export async function agentRuntimeContext(tenant:string){
  const context=await readAgentContext(tenant),timezone=context.profile.timezone;

@@ -13,6 +13,6 @@ test('guide lookups cannot read files, prototypes or arbitrary offsets',()=>{
  for(const input of [{topic:'__proto__'},{topic:'constructor'},{topic:'../../MEMORY.md'},{topic:'memory',offset:-1},{topic:'memory',offset:Infinity},{topic:'memory',offset:1e9},{offset:1},{path:'USER.md'},null,[]])assert.throws(()=>readAgentGuide(input));
 });
 test('new read tools do not give missions or planning the power to change a profile',()=>{
- for(const name of agentContextTools.map(tool=>tool.name)){assert.equal(agentToolAllowedForMode('accompanied',name),true);for(const mode of ['autonomous','approved_mission'])assert.equal(agentToolAllowedForMode(mode,name),name!=='update_agent_context');}
+ for(const name of agentContextTools.map(tool=>tool.name)){assert.equal(agentToolAllowedForMode('accompanied',name),true);for(const mode of ['autonomous','approved_mission'])assert.equal(agentToolAllowedForMode(mode,name),!['update_agent_context','record_learning'].includes(name));}
  assert.match(personalAgentPolicy,/jamais une nouvelle autorisation/);assert.match(personalAgentPolicy,/Ne prétends pas être Muse/);
 });

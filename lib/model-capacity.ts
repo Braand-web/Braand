@@ -4,13 +4,13 @@ const MODEL_TIERS=['light','standard','advanced'] as const;
 type ModelTier=typeof MODEL_TIERS[number];
 
 export type CapacityState={tier:ModelTier;changes:number;purpose?:'video_motion'};
-const requestSchema=z.object({tier:z.enum(['standard','advanced']),reason:z.enum(['task_complexity','uncertainty','validation_failed','tool_failure','provider_refusal','video_motion'])}).strict();
+const requestSchema=z.object({tier:z.enum(['standard','advanced']),reason:z.enum(['task_complexity','uncertainty','validation_failed','tool_failure','video_motion'])}).strict();
 // Cognitive selection belongs to the model. This controller only bounds changes;
 // it never examines user text, grants tools, retries a request or changes a budget.
-export function requestModelCapacity(current:CapacityState,input:unknown,initialDecision:boolean):CapacityState{
- const request=requestSchema.parse(input);
+export function requestModelCapacity(current:CapacityState,input:unknown,initialDecision:boolean,evidence:{toolFailure?:boolean;validationFailure?:boolean}={}):CapacityState{
+ const request=requestSchema.parse(input),from=MODEL_TIERS.indexOf(current.tier),to=MODEL_TIERS.indexOf(request.tier);
  if(request.reason==='video_motion'&&request.tier!=='advanced')throw new AppError('La production vidéo utilise la capacité avancée.',400,'model_capacity_invalid');
- const from=MODEL_TIERS.indexOf(current.tier),to=MODEL_TIERS.indexOf(request.tier);
+ if(!initialDecision&&['task_complexity','video_motion'].includes(request.reason)||request.reason==='tool_failure'&&!evidence.toolFailure||request.reason==='validation_failed'&&!evidence.validationFailure)throw new AppError('Aucune difficulté observée ne justifie ce changement de capacité.',409,'model_capacity_evidence_required');
  if(current.changes>=2||to<=from||to>from+1&&!(initialDecision&&current.changes===0&&['task_complexity','video_motion'].includes(request.reason)))throw new AppError('Cette capacité ne peut pas être sélectionnée pour cette étape.',409,'model_escalation_limit');
  return {tier:request.tier,changes:current.changes+1,...(request.reason==='video_motion'?{purpose:'video_motion' as const}:current.purpose?{purpose:current.purpose}:{})};
 }

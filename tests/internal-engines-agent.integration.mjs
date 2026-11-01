@@ -55,7 +55,7 @@ await check('planning cannot acquire computation or file-writing rights through 
 });
 await check('the real principal receives the new policy and runtime and can read guides and time',async()=>{
  const execution=await setup();fixture.responses=[stream([tool('context-discover','capabilities',{area:'context'})]),stream([tool('clock','get_current_time',{timezone:'Europe/Paris'}),tool('guide','read_agent_guide',{topic:'tool-map'})]),text('Voici les capacités et l’heure vérifiées.')];await run(execution);
- const initial=fixture.requests[0].body;assert.match(initial.system[0].text,/IDENTITÉ ET RELATION/);assert.ok(initial.system.some(block=>block.text.includes('braand-personal-agent-v1')));
+ const initial=fixture.requests[0].body;assert.match(initial.system[0].text,/IDENTITÉ ET RELATION/);assert.ok(initial.system.some(block=>block.text.includes('braand-personal-agent-v2')));
  assert.equal(initial.tools.some(t=>t.name==='read_agent_context'),false);assert.equal(fixture.requests[1].body.tools.some(t=>t.name==='read_agent_context'),true);assert.equal(fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='clock').data.result.timezone,'Europe/Paris');assert.match(fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='guide').data.result.content,/Correspondance/);assert.deepEqual(fixture.external,[]);
 });
 await check('profile updates have durable receipts and appear in the next real conversation',async()=>{
@@ -67,6 +67,13 @@ await check('profile updates have durable receipts and appear in the next real c
 await check('a planning conversation cannot mutate the assistant profile',async()=>{
  const execution=await setup();fixture.responses=[stream([tool('profile-forbidden','update_agent_context',{version:1,profile:{displayName:'Unexpected'}})]),text('Le profil reste inchangé.')];
  await agent.runAgent(who.tenant,execution.conversationId,execution.runId,emit,signal(),execution.budget,'autonomous');assert.equal(fixture.requests[0].body.tools.some(t=>t.name==='update_agent_context'),false);assert.ok(fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='profile-forbidden').data.error);assert.equal((await agent.executeTool(who.tenant,'read_agent_context',{})).profile.displayName,'Recette privée');
+});
+await check('a real user correction becomes sourced learning and is reused on the next principal turn',async()=>{
+ const execution=await setup(),quote='Dans mes rapports, sépare les faits des hypothèses.';
+ sql.prepare("UPDATE messages SET content=? WHERE conversation_id=? AND role='user'").run(JSON.stringify([{type:'text',text:quote}]),execution.conversationId);
+ fixture.responses=[stream([tool('learning-discover','capabilities',{area:'context'})]),stream([tool('learn','record_learning',{quote,kind:'preference'})]),text('Cette préférence est enregistrée.')];await run(execution);
+ const receipt=fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='learn').data.result;assert.equal(receipt.data.content,quote);assert.equal(receipt.data.learning.evidence,'exact_user_quote');
+ const next=await setup();fixture.responses=[text('Je distingue les éléments vérifiés des hypothèses.')];await run(next);assert.ok(fixture.requests[0].body.system.some(block=>block.text.startsWith('Mémoire de cet espace')&&block.text.includes(quote)));assert.deepEqual(fixture.external,[]);
 });
 console.log(`${count} native engine orchestrator checks passed. Real services/SQLite, simulated model and capability readiness, no provider calls.`);
 sql.close();delete globalThis.__internalAgentTest;

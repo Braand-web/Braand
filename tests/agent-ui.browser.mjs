@@ -33,7 +33,7 @@ let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,fail
 const firstChatHeaders=Promise.withResolvers();
 const backgroundCompletion=Promise.withResolvers();
 const deferredDelivery=Promise.withResolvers();
-let workspaceReads=0,summaryReads=0,walletAvailable=200;
+let workspaceReads=0,summaryReads=0,walletAvailable=200,walletReserved=12;
 let checkoutCalls=0,billingEnabled=false;
 let analyticsConnected=false,analyticsMode='full';const analyticsReads=[];
 let workspaceRole='owner',failCampaignSave=false;const campaignWrites=[];
@@ -68,7 +68,7 @@ skillReads++;if(failSkills){res.writeHead(503,{'content-type':'application/json'
     const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks).toString());workspaceMutations.push(body);
     const created={id:'fixture-imported-skill',workspace_id:'fixture',kind:body.kind,title:body.title,status:'candidate',version:1,created_at:now,updated_at:now,data:body.data};workspaceResources.push(created);json(res,created);return;
   }
-  if(url.pathname==='/api/workspace'){workspaceReads++;if(anonymousSession){json(res,{error:'Sign in required'},401);return;}json(res,{role:workspaceRole,user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:walletAvailable+12,reserved:12},resources:workspaceResources,catalog:[{id:'fixture-image',kind:'image'}],capabilities:{model:true,modelReady:true,filePreview:false,metaConnected:analyticsConnected}});return;}
+  if(url.pathname==='/api/workspace'){workspaceReads++;if(anonymousSession){json(res,{error:'Sign in required'},401);return;}json(res,{role:workspaceRole,user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:walletAvailable+walletReserved,reserved:walletReserved},resources:workspaceResources,catalog:[{id:'fixture-image',kind:'image'}],capabilities:{model:true,modelReady:true,filePreview:false,metaConnected:analyticsConnected}});return;}
   const campaignIndex=workspaceResources.findIndex(resource=>resource.kind==='campaign'&&url.pathname==='/api/resources/'+resource.id);
   if(campaignIndex>=0){
     if(req.method==='GET'){json(res,workspaceResources[campaignIndex]);return;}
@@ -195,6 +195,18 @@ try{
   };
   await page.addInitScript(()=>{window.__copyFail=false;window.__copied=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{if(window.__copyFail)throw new Error('Clipboard denied');window.__copied.push(text);}}});});
   await page.goto(origin);await page.getByRole('textbox',{name:'Votre demande à Braand'}).waitFor();
+  await page.getByText('12 réservés · non débités',{exact:true}).waitFor();
+  assert.equal(await page.locator('.account-credit-row > small').innerText(),'200 disponibles');
+  await capture({path:path.join(output,'credit-reservation-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Ouvrir la navigation',exact:true}).click();
+  assert.ok(await page.locator('.account-trigger').evaluate(element=>element.scrollWidth<=element.clientWidth));
+  await capture({path:path.join(output,'credit-reservation-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1280,height:800});
+  walletReserved=0;walletAvailable=211.8;
+  await page.waitForFunction(()=>document.querySelector('.account-credit-row > small')?.textContent==='211,8 disponibles');
+  assert.equal(await page.locator('.account-reserved-credits').count(),0);
+  checks.push('Available and reserved credits stay distinct on desktop/mobile and settlement refreshes without reloading or charging the reservation');
+  walletAvailable=200;walletReserved=12;await page.goto(origin);await page.getByRole('textbox',{name:'Votre demande à Braand'}).waitFor();
   assert.equal(await page.locator('.brand-lockup').innerText(),'Braand');
   assert.equal(await page.locator('.brand-lockup [data-brand-logo="relais"]').count(),1);
   assert.ok(await page.locator('.brand-lockup .sr-only').evaluate(element=>element.getBoundingClientRect().width<=1&&getComputedStyle(element).clipPath==='inset(50%)'),'Accessible product name stays available without a second visible wordmark');

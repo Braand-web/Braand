@@ -17,5 +17,6 @@ export async function buildDocument(tenant:string,raw:unknown){
 export async function exportDeliverable(who:BillingIdentity,raw:unknown){
  await authorize(who.tenant,who.user.userId,'write');
  const output=await buildDocument(who.tenant,raw);
- return saveGeneratedFile(who,{source:output.source,name:output.name,mime:['md','html','csv'].includes(output.p.format)?'text/plain':output.mime,format:output.p.format,bytes:output.bytes,audit:'deliverable.exported'});
+ const file=await saveGeneratedFile(who,{source:output.source,name:output.name,mime:['md','html','csv'].includes(output.p.format)?'text/plain':output.mime,format:output.p.format,bytes:output.bytes,audit:'deliverable.exported'});
+ return {...file,downloadUrl:'/api/files?id='+encodeURIComponent(file.id)};
 }

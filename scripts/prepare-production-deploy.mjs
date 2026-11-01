@@ -1,11 +1,22 @@
 // Reuse the live Worker and its bindings. Secrets and variables remain remote.
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
+import {execFileSync,spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {assertProductionSource} from './production-source-policy.mjs';
 const root=process.cwd();
 const built=JSON.parse(await readFile(path.join(root,'dist/server/wrangler.json'),'utf8'));
 const account=process.env.CLOUDFLARE_ACCOUNT_ID;
 if(!/^[a-f0-9]{32}$/.test(account||'')||!process.env.CLOUDFLARE_API_TOKEN)throw new Error('Cloudflare deployment credentials are missing.');
 const script='aira-production';
+const sourceRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const candidate=execFileSync('git',['rev-parse','HEAD'],{cwd:sourceRoot,encoding:'utf8'}).trim();
+if(process.env.GITHUB_SHA&&process.env.GITHUB_SHA!==candidate)throw Error('The checked-out source does not match the verified GitHub revision.');
+const readWorker=async suffix=>{const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}${suffix}`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(30000)});const json=await r.json();if(!r.ok||!json.success)throw Error('Unable to verify the live production source.');return json.result;};
+const deployment=(await readWorker('/deployments')).deployments[0];
+if(deployment.versions.length!==1||deployment.versions[0].percentage!==100)throw Error('Resolve the current split deployment before publishing.');
+const liveVersion=await readWorker('/versions/'+deployment.versions[0].version_id);
+assertProductionSource(candidate,liveVersion.annotations?.['workers/message'],(live,next)=>spawnSync('git',['merge-base','--is-ancestor',live,next],{cwd:sourceRoot,stdio:'ignore'}).status===0);
 const response=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}/settings`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`}});
 const body=await response.json();if(!response.ok||!body.success)throw new Error('Unable to read the current production settings.');
 const bindings=body.result.bindings;

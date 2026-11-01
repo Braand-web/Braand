@@ -63,37 +63,42 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Save the verified production build
-        if: github.ref == 'refs/heads/feat/global-workflow' || github.ref == 'refs/heads/feat/system-agent-context'
         uses: actions/upload-artifact@v4
         with:
           name: verified-production-build
           path: dist/
           include-hidden-files: true
           retention-days: 1
-      - name: Deploy the reviewed chat and billing correction
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/chat-routing-credit-settlement'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
-          CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
-        shell: bash
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Build and tests completed. Deployment awaits the temporary Cloudflare credential."
-            exit 0
-          fi
-          node scripts/prepare-production-deploy.mjs
-          npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified chat and billing fix ${GITHUB_SHA}"
-          curl --fail --silent --show-error https://braand.fun/api/health
-          curl --fail --silent --show-error "https://braand.fun/api/health?check=assistant"
-      - name: Deploy the verified personal agent system
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/system-agent-context'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
-          CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
-        shell: bash
+  deploy:
+    name: Publish verified main source
+    needs: verify
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: braand-production
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --include=dev --include=optional
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-production-build
+          path: dist
+      - name: Preserve live changes and publish the tested build
         run: |
           test -n "$CLOUDFLARE_API_TOKEN"
           node scripts/prepare-production-deploy.mjs
-          npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified personal agent system ${GITHUB_SHA}"
+          npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified production ${GITHUB_SHA}"
           curl --fail --silent --show-error https://braand.fun/api/health
-          node --input-type=module -e 'const r=await fetch("https://braand.fun/api/health?check=assistant");const b=await r.json();if(!r.ok||!b.assistantReady||b.agentSystemVersion!=="braand-personal-agent-v1")throw Error("Assistant system readiness not confirmed");console.log(JSON.stringify(b));'
+          curl --fail --silent --show-error "https://braand.fun/api/health?check=assistant"

@@ -22,7 +22,7 @@ const env=globalThis.__openrouterTest.env;
 const who=await server.identity(new Request('https://braand.test/api/chat'));
 const now=Date.now();sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('fixture-credit',who.organization,'topup','fixture',1000000,1000000,now,now);
 const rate={model:'anthropic/claude-opus-5.5',input:5,output:25,cacheWrite:6.25,cacheRead:.5,usdXaf:600,overheadXaf:1,fundingFeeBps:300,verifiedAt:new Date().toISOString()};
-const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 10 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.toolDefinitions};
+const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 10 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.initialToolDefinitions(env)};
 const actualAgentInput=llm.estimateInputTokens(masterBody);
 const body={max_tokens:64,stream:true,system:'Help the user.',messages:[{role:'user',content:'Create an advertisement.'}],tools:[{name:'save_draft',description:'Save a draft',input_schema:{type:'object',properties:{title:{type:'string'}},required:['title']}}]};
 const signal=()=>new AbortController().signal;
@@ -49,7 +49,7 @@ globalThis.fetch=async(url,init={})=>{
  if(u.pathname==='/api/v1/generation'){
   assert.equal(u.searchParams.get('id'),generationId);
   if(!generationAvailable)return new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('{"error":"not ready"}'));},cancel(){metadataCancelled++;}}),{status:404,headers:{'Content-Type':'application/json'}});
-  return Response.json({data:generationOverride||{id:generationId,total_cost:generationCost,provider_name:'provider-fixture'}});
+  return Response.json({data:generationOverride||{id:generationId,total_cost:generationCost,provider_name:'provider-fixture',finish_reason:'stop'}});
  }
  assert.equal(u.pathname,'/api/v1/messages');
  const request=JSON.parse(init.body);assert.equal(request.model,'anthropic/claude-opus-5.5');assert.equal(String(init.body).includes(secret),false);
@@ -154,7 +154,64 @@ await check('terminal interrupted runs reconcile stale pending usage only from a
  generationOverride={id:generationId,total_cost:0,finish_reason:null};await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(row(b).status,'pending');assert.equal(hold(b).status,'needs_reconciliation');
  generationOverride={id:generationId,total_cost:.013,finish_reason:'stop'};await meter.reconcileOpenRouterUsage(who.organization,100);await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(row(b).status,'complete');assert.equal(hold(b).status,'settled');assert.equal(hold(b).actual,Math.ceil((.013*600*1.03+1)/4*100));assert.equal(sql.prepare("SELECT COUNT(*) n FROM credit_ledger WHERE reference=? AND kind='consume'").get(b.holdId).n,1);assert.equal(calls.filter(c=>c.url.endsWith('/messages')).length,before);
 });
+await check('a confirmed cancelled receipt settles interrupted usage without requiring finish_reason',async()=>{
+ reset();const b=await budget();await (await meter.meteredMessage(b,'master',body,signal())).text();
+ sql.prepare("UPDATE provider_usage SET status='pending',usage=NULL,cost_xaf=NULL WHERE run_id=?").run(b.runId);
+ sql.prepare("UPDATE runs SET status='cancelled',updated_at=? WHERE id=?").run(Date.now()-60000,b.runId);
+ generationOverride={id:generationId,total_cost:.00279685,cancelled:true,finish_reason:null};
+ const before=calls.filter(c=>c.url.endsWith('/messages')).length;
+ await meter.reconcileOpenRouterUsage(who.organization,100);await meter.reconcileOpenRouterUsage(who.organization,100);
+ assert.equal(row(b).status,'complete');assert.equal(hold(b).status,'settled');
+ assert.equal(hold(b).actual,Math.ceil((.00279685*600*1.03+1)/4*100));
+ assert.equal(sql.prepare("SELECT COUNT(*) n FROM credit_ledger WHERE reference=? AND kind='consume'").get(b.holdId).n,1);
+ assert.equal(calls.filter(c=>c.url.endsWith('/messages')).length,before);
+});
+await check('an unfinished receipt cannot settle an interrupted response',async()=>{
+ reset('truncated');generationOverride={id:generationId,total_cost:0,cancelled:false,finish_reason:null};
+ const b=await budget();await (await meter.meteredMessage(b,'master',body,signal())).text();await finish(b,'cancelled');
+ await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(hold(b).actual,null);assert.equal(hold(b).status,'needs_reconciliation');
+ generationOverride={id:generationId,total_cost:.003,cancelled:true,finish_reason:null};await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(hold(b).status,'settled');
+});
+await check('terminal holds recover after a worker stops between saving usage and settlement',async()=>{
+ reset();const b=await budget();await (await meter.meteredMessage(b,'master',body,signal())).text();
+ sql.prepare("UPDATE runs SET status='completed',updated_at=? WHERE id=?").run(Date.now()-60000,b.runId);
+ assert.equal(row(b).status,'complete');assert.equal(hold(b).status,'reserved');
+ await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(hold(b).status,'settled');assert.ok(hold(b).actual>0);
+ await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(sql.prepare("SELECT COUNT(*) n FROM credit_ledger WHERE reference=? AND kind='consume'").get(b.holdId).n,1);
+});
+await check('chat uses a fractional remaining balance without raising its accepted ceiling or changing media reservations',async()=>{
+ reset();const person={...who,organization:'small-wallet'},time=Date.now();
+ sql.prepare('INSERT INTO organizations(id,name,owner_id,created_at) VALUES (?,?,?,?)').run(person.organization,'Small wallet',who.user.userId,time);
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('small-lot',person.organization,'topup','fixture',537,537,time,time);
+ await assert.rejects(()=>billing.reserve(person,'media:unaffordable',1000),e=>e.code==='insufficient_credits');
+ const first=await meter.startRunBudget(person,crypto.randomUUID(),10);assert.equal(first.limit,537);
+ await billing.settleHold(first.holdId,500);assert.equal((await billing.summary(person.organization)).wallet.available,.37);
+ const second=await meter.startRunBudget(person,crypto.randomUUID(),10);assert.equal(second.limit,37);
+ await billing.settleHold(second.holdId,37);await assert.rejects(()=>meter.startRunBudget(person,crypto.randomUUID(),10),e=>e.code==='insufficient_credits');
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('small-refill',person.organization,'topup','fixture2',500,500,time,time);
+ const capped=await meter.startRunBudget(person,crypto.randomUUID(),2);assert.equal(capped.limit,200);await billing.settleHold(capped.holdId,0);
+});
+await check('abandoned pre-run chat reservations are released but recent reservations remain protected',async()=>{
+ reset();const id=crypto.randomUUID(),h=await billing.reserve(who,'chat:'+id,1000);
+ await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(sql.prepare('SELECT status FROM credit_holds WHERE id=?').get(h.id).status,'reserved');
+ sql.prepare('UPDATE credit_holds SET created_at=? WHERE id=?').run(Date.now()-360000,h.id);
+ await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(sql.prepare('SELECT actual FROM credit_holds WHERE id=?').get(h.id).actual,0);
+});
 await check('unavailable cost responses release their response bodies before another request',async()=>{reset();generationAvailable=false;const before=metadataCancelled;await assert.rejects(()=>llm.generationCost(generationId,rate),e=>e.code==='usage_unknown');assert.equal(metadataCancelled,before+1);generationAvailable=true;});
+await check('terminal conversation locks recover without unlocking recent or active responses',async()=>{
+ const old=Date.now()-360000;
+ const cancelled=await server.createResource(who.tenant,'conversation','Interrupted fixture',{},'streaming');
+ const active=await server.createResource(who.tenant,'conversation','Active fixture',{},'streaming');
+ const recent=await server.createResource(who.tenant,'conversation','Recent fixture',{},'streaming');
+ for(const [conversation,status] of [[cancelled,'cancelled'],[active,'streaming'],[recent,'completed']]){
+  sql.prepare('INSERT INTO runs(id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(),who.tenant,conversation.id,status,old,old);
+  if(conversation!==recent)sql.prepare('UPDATE resources SET updated_at=? WHERE id=?').run(old,conversation.id);
+ }
+ await meter.reconcileOpenRouterUsage(who.organization,100);
+ assert.equal((await server.getResource(who.tenant,cancelled.id)).status,'saved');
+ assert.equal((await server.getResource(who.tenant,active.id)).status,'streaming');
+ assert.equal((await server.getResource(who.tenant,recent.id)).status,'streaming');
+});
 await check('Usage records, ledger and surfaced errors never persist the API secret',async()=>{
  for(const table of ['provider_usage','credit_holds','credit_ledger','events','messages'])assert.equal(JSON.stringify(sql.prepare('SELECT * FROM '+table).all()).includes(secret),false);
  env.LLM_PROVIDER='unsupported';assert.throws(()=>llm.modelRequest(body,signal()),e=>!e.message.includes(secret));delete env.LLM_PROVIDER;

@@ -44,6 +44,6 @@ export async function generationCost(id:string,rate:ModelRate,options?:{requireF
  const receipt=z.object({data:z.object({id:z.string(),total_cost:z.number().finite().nonnegative(),provider_name:z.string().nullable().optional()}).passthrough()}).safeParse(await response.json());
  if(!receipt.success||receipt.data.data.id!==id)throw new AppError('Coût OpenRouter non confirmé.',409,'usage_unknown');
  const {data}=receipt.data;
- if(options?.requireFinal&&(typeof data.finish_reason!=='string'||!data.finish_reason.trim()))throw new AppError('Le reçu fournisseur n’est pas encore final.',409,'usage_unknown');
+ if(options?.requireFinal&&data.cancelled!==true&&(typeof data.finish_reason!=='string'||!data.finish_reason.trim()))throw new AppError('Le reçu fournisseur n’est pas encore final.',409,'usage_unknown');
  return {usd:data.total_cost,xaf:data.total_cost*rate.usdXaf*(1+Number(rate.fundingFeeBps)/10000)+rate.overheadXaf,provider:data.provider_name||null};
 }

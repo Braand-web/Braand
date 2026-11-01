@@ -101,3 +101,7 @@ html[data-design-system="muse"] .home-ideas .workspace-menu-trigger>svg:last-chi
  html[data-design-system="muse"] .atelier-source{padding:16px}
 }
 @media(prefers-reduced-motion:reduce){html[data-design-system="muse"] .workspace-menu-trigger,html[data-design-system="muse"] .workspace-menu-list>button,html[data-design-system="muse"] .sidebar-project{transition:none}}
+/* Keep temporary reservations distinct from spendable credits in the account. */
+.account-trigger.has-credit-reservation{height:auto;min-height:68px}
+.account-credit-row .credit-meter{min-width:20px;width:auto;max-width:70px;flex:1 1 40px}
+.account-workspace .account-reserved-credits{color:var(--braand-sidebar-quiet);font-size:11px;font-variant-numeric:tabular-nums}
