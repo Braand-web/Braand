@@ -1,0 +1,19 @@
+name: Inspect production source revision
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/credits-postpaid]
+    paths: [.github/workflows/inspect-production.yml, scripts/inspect-production-source.mjs]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the current source revision
+        run: node scripts/inspect-production-source.mjs

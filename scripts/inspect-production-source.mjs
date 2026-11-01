@@ -1,0 +1,10 @@
+import {productionSourceAnnotation} from './production-source-policy.mjs';
+const base=`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/aira-production`;
+const read=async suffix=>{const r=await fetch(base+suffix,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`}});const body=await r.json();if(!r.ok||!body.success)throw Error('Unable to read production metadata');return body.result;};
+const deployments=(await read('/deployments')).deployments,active=deployments[0];
+if(active.versions.length!==1||active.versions[0].percentage!==100)throw Error('Production has split traffic');
+const current=await read('/versions/'+active.versions[0].version_id),history=[];
+for(const id of [...new Set(deployments.flatMap(d=>d.versions.map(v=>v.version_id)))].filter(id=>id!==current.id).slice(0,10))history.push(await read('/versions/'+id));
+const annotation=productionSourceAnnotation(current,history),sha=annotation.match(/\b[a-f0-9]{40}\b/)?.[0];
+if(!sha)throw Error('Production source revision unavailable');
+console.log('Production source revision: '+sha);
