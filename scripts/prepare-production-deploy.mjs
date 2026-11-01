@@ -3,7 +3,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {assertProductionSource} from './production-source-policy.mjs';
+import {assertProductionSource,productionSourceAnnotation} from './production-source-policy.mjs';
 const root=process.cwd();
 const built=JSON.parse(await readFile(path.join(root,'dist/server/wrangler.json'),'utf8'));
 const account=process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -13,10 +13,18 @@ const sourceRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const candidate=execFileSync('git',['rev-parse','HEAD'],{cwd:sourceRoot,encoding:'utf8'}).trim();
 if(process.env.GITHUB_SHA&&process.env.GITHUB_SHA!==candidate)throw Error('The checked-out source does not match the verified GitHub revision.');
 const readWorker=async suffix=>{const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}${suffix}`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(30000)});const json=await r.json();if(!r.ok||!json.success)throw Error('Unable to verify the live production source.');return json.result;};
-const deployment=(await readWorker('/deployments')).deployments[0];
+const deployments=(await readWorker('/deployments')).deployments;
+const deployment=deployments[0];
 if(deployment.versions.length!==1||deployment.versions[0].percentage!==100)throw Error('Resolve the current split deployment before publishing.');
 const liveVersion=await readWorker('/versions/'+deployment.versions[0].version_id);
-assertProductionSource(candidate,liveVersion.annotations?.['workers/message'],(live,next)=>spawnSync('git',['merge-base','--is-ancestor',live,next],{cwd:sourceRoot,stdio:'ignore'}).status===0);
+let sourceAnnotation;
+try{sourceAnnotation=productionSourceAnnotation(liveVersion);}catch{
+ const history=[];
+ const ids=[...new Set(deployments.flatMap(item=>item.versions.map(version=>version.version_id)))].filter(id=>id!==liveVersion.id).slice(0,10);
+ for(const id of ids){history.push(await readWorker('/versions/'+id));try{sourceAnnotation=productionSourceAnnotation(liveVersion,history);break;}catch{/* Continue the bounded fingerprint search. */}}
+ if(!sourceAnnotation)throw Error('The current script has no verified source provenance.');
+}
+assertProductionSource(candidate,sourceAnnotation,(live,next)=>spawnSync('git',['merge-base','--is-ancestor',live,next],{cwd:sourceRoot,stdio:'ignore'}).status===0);
 const response=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}/settings`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`}});
 const body=await response.json();if(!response.ok||!body.success)throw new Error('Unable to read the current production settings.');
 const bindings=body.result.bindings;
