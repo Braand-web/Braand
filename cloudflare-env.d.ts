@@ -24,6 +24,11 @@ declare namespace Cloudflare {
     MEDIA_RENDER_VIDEO_EDIT_VERIFIED?: string;
     RESEARCH_ENABLED?: string;
     BROWSER?: Fetcher;
+    CREDENTIAL_VAULT?: Fetcher;
+    VAULT_ENABLED?: string;
+    VAULT_CALL_TOKEN?: string;
+    VAULT_BROWSER_TOKEN?: string;
+    BROWSER_LIVE_ENABLED?: string;
     BROWSER_SESSIONS?: DurableObjectNamespace;
     BROWSER_ENABLED?: string;
     BROWSER_AUTH_VERIFIED?: string;

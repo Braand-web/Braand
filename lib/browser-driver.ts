@@ -13,11 +13,13 @@ type Handle = { version: 1; providerId: string; domains: string[] };
 type ElementDetail = { selector: string; role: string; name: string; inputType?: string; sensitive: boolean; href?: string };
 type Snapshot = { title: string; text: string; elements: ElementDetail[]; stateFingerprint: string };
 type State = Awaited<ReturnType<BrowserContext['storageState']>>;
-type OwnedSession = {browser: Browser; context: BrowserContext; handle: Handle};
+type NetworkGrant={postsUntil:number;downloadsUntil:number};
+type OwnedSession = {browser: Browser; context: BrowserContext; handle: Handle;network:NetworkGrant};
 // Retain the guarded connection. Its incognito context is disposed by Chromium
 // on transport loss. A cold HTTP isolate must fail closed; an actual durable
 // owner must be verified before enabling this adapter in production.
 const owners = new WeakMap<Fetcher, Map<string, OwnedSession>>();
+const activePages=new WeakMap<BrowserContext,Page>();
 
 export class BrowserDriverError extends Error {
   constructor(public readonly code: string, public readonly status = 409) {
@@ -174,12 +176,13 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
   if (!sessions) { sessions = new Map(); owners.set(binding, sessions); }
   const owned = sessions;
 
-  async function protect(context: BrowserContext, domains: string[]) {
+  async function protect(context: BrowserContext, domains: string[],network:NetworkGrant) {
     context.setDefaultTimeout(ACTION_TIMEOUT);
     context.setDefaultNavigationTimeout(20_000);
     const route = async (requestRoute: Route) => {
       try {
         validateBrowserURL(requestRoute.request().url(), domains);
+        if(!['GET','HEAD','OPTIONS'].includes(requestRoute.request().method())&&network.postsUntil<Date.now())return await requestRoute.abort('blockedbyclient');
         if (requestRoute.request().headers()['service-worker']) return await requestRoute.abort('blockedbyclient');
         await requestRoute.continue();
       } catch { await requestRoute.abort('blockedbyclient'); }
@@ -189,6 +192,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
     await context.addInitScript(installPageRestrictions);
     await context.clearPermissions();
     const guard = async (page: Page) => {
+      page.on('download',download=>{if(network.downloadsUntil<Date.now()){void download.cancel();void download.delete();}});
       await page.route('**/*', route);
       await page.routeWebSocket('**/*', socket => socket.close());
       const cdp = await context.newCDPSession(page);
@@ -215,6 +219,8 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
 
   async function choose(context: BrowserContext, pageId?: string): Promise<{page: Page; id: string}> {
     const pages = context.pages();
+    const active=activePages.get(context);
+    if(!pageId&&active&&pages.includes(active))return {page:active,id:await pageIdentity(context,active)};
     for (const page of pages) { const id = await pageIdentity(context, page); if (!pageId || pageId === id) return {page, id}; }
     throw new BrowserDriverError('browser_page_missing', 404);
   }
@@ -246,6 +252,78 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
 
   return {
     receipt,
+    async configureNetwork(sessionId,policy){
+      const owner=owned.get(sessionId);if(!owner)throw new BrowserDriverError('browser_retained_session_required');
+      owner.network.postsUntil=policy.submit!=='deny'&&policy.approvedAction?Date.now()+3000:0;
+      owner.network.downloadsUntil=policy.download==='allow'||policy.download==='ask'&&policy.approvedAction?Date.now()+3000:0;
+    },
+    async humanInput(sessionId,input,pageId){
+      await connected(sessionId,async(_browser,context)=>{
+        const {page}=await choose(context,pageId);
+        if(input.kind==='pointer')await page.mouse.click(input.x,input.y);
+        else if(input.kind==='scroll')await page.mouse.wheel(0,input.deltaY);
+        else if(input.kind==='key')await page.keyboard.press(input.key);
+        else await page.keyboard.insertText(input.text);
+      });
+    },
+    async live(sessionId,emit){
+      return connected(sessionId,async(_browser,context)=>{
+        let closed=false,changing=false,last=0,busy=false,active:Page|undefined,cdp:Awaited<ReturnType<BrowserContext['newCDPSession']>>|undefined;
+        let removeListener:(()=>void)|undefined;
+        const detach=async()=>{removeListener?.();if(cdp){await cdp.send('Page.stopScreencast').catch(()=>{});await cdp.detach().catch(()=>{});}cdp=undefined;};
+        const attach=async()=>{
+          const next=activePages.get(context)||context.pages()[0];if(!next||next===active||changing||closed)return;
+          changing=true;await detach();active=next;
+          try{
+            const connection=await context.newCDPSession(next);cdp=connection;let frameURL='';
+            const listener=(frame:{sessionId:number;data:string})=>{
+              void connection.send('Page.screencastFrameAck',{sessionId:frame.sessionId}).catch(()=>{});
+              if(closed||busy||Date.now()-last<100||frame.data.length>3_000_000)return;
+              busy=true;last=Date.now();
+              void (async()=>{
+                const url=next.url();if(url!=='about:blank')validateBrowserURL(url,handleOf(sessionId).domains);
+                let image=frame.data;
+                if(url!==frameURL){const bytes=await next.screenshot({type:'jpeg',quality:65});let raw='';for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));image=btoa(raw);}
+                const title=redactBrowserText(await next.title()).slice(0,300);
+                if(closed||active!==next||next.url()!==url)return;frameURL=url;
+                const size=next.viewportSize()||{width:1280,height:720};emit({image,url:url==='about:blank'?'':publicURL(url),title,width:size.width,height:size.height});
+              })().catch(()=>{}).finally(()=>{busy=false;});
+            };
+            connection.on('Page.screencastFrame',listener);removeListener=()=>connection.off('Page.screencastFrame',listener);
+            await connection.send('Page.startScreencast',{format:'jpeg',quality:65,maxWidth:1280,maxHeight:720,everyNthFrame:1});
+          }catch{active=undefined;await detach();throw new BrowserDriverError('browser_live_unavailable');}finally{changing=false;}
+        };
+        await attach();const timer=setInterval(()=>{void attach().catch(()=>{});},300);
+        return {async close(){if(closed)return;closed=true;clearInterval(timer);await detach();}};
+      });
+    },
+    async loginTarget(sessionId,method){
+      return connected(sessionId,async(_browser,context,handle)=>{
+        const {page,id}=await choose(context);const url=validateBrowserURL(page.url(),handle.domains);
+        const field=page.locator(method==='otp'?'input[autocomplete="one-time-code"]:visible':'input[type="password"]:visible');
+        if(await field.count()!==1||!await field.isEnabled())throw new BrowserDriverError('browser_login_field_not_ready');
+        const formAction=await field.evaluate(element=>{const form=(element as HTMLInputElement).form;return form?.action||location.href;});
+        if(new URL(formAction).origin!==url.origin)throw new BrowserDriverError('browser_login_origin_mismatch');
+        return {origin:url.origin,pageId:id,method};
+      });
+    },
+    async fillLogin(sessionId,target,secret){
+      await connected(sessionId,async(_browser,context,handle)=>{
+        const {page}=await choose(context,target.pageId),url=validateBrowserURL(page.url(),handle.domains);
+        if(url.origin!==target.origin)throw new BrowserDriverError('browser_login_origin_mismatch');
+        const field=page.locator(target.method==='otp'?'input[autocomplete="one-time-code"]:visible':'input[type="password"]:visible');
+        if(await field.count()!==1||!await field.isEnabled())throw new BrowserDriverError('browser_login_field_not_ready');
+        const formAction=await field.evaluate(element=>(element as HTMLInputElement).form?.action||location.href);
+        if(new URL(formAction).origin!==target.origin)throw new BrowserDriverError('browser_login_origin_mismatch');
+        if(target.method==='password'){
+          if(!secret.password)throw new BrowserDriverError('browser_login_field_not_ready');
+          const username=page.locator('input[autocomplete="username"]:visible, input[type="email"]:visible');
+          if(secret.username&&await username.count()===1)await username.fill(secret.username);
+          await field.fill(secret.password);
+        }else{if(!secret.code)throw new BrowserDriverError('browser_login_field_not_ready');await field.fill(secret.code);}
+        // Deliberately no click/submit. Returning control never approves an external action.
+      });
+    },
     async open(input) {
       const domains = normalizeBrowserDomains(input.allowedDomains);
       const state = input.storageState ? validateState(input.storageState, domains) : undefined;
@@ -254,11 +332,12 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
       try {
         const providerId = browser.sessionId();
         if (!providerId || !/^[\w-]{1,200}$/.test(providerId)) throw new BrowserDriverError('browser_invalid_session');
-        const context = await browser.newContext({serviceWorkers: 'block', acceptDownloads: true, ...(state ? {storageState: state} : {})});
-        const guard = await protect(context, domains);
+        const context = await browser.newContext({serviceWorkers: 'block', acceptDownloads: true, viewport:{width:1280,height:720}, ...(state ? {storageState: state} : {})});
+        const network={postsUntil:0,downloadsUntil:0};
+        const guard = await protect(context, domains,network);
         if (!context.pages().length) { const page = await context.newPage(); await guard(page); }
         const result = JSON.stringify({version: 1, providerId, domains} satisfies Handle);
-        owned.set(result, {browser, context, handle: {version: 1, providerId, domains}});
+        owned.set(result, {browser, context, handle: {version: 1, providerId, domains},network});
         return {sessionId: result};
       } catch (error) {
         try { const cdp = await browser.newBrowserCDPSession(); await cdp.send('Browser.close'); } catch { /* Unknown acknowledgement. */ }
@@ -298,8 +377,8 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
         try {
           switch (command.kind) {
             case 'navigate': await page.goto(command.url!, {waitUntil: 'domcontentloaded'}); break;
-            case 'new_tab': page = await context.newPage(); id = await pageIdentity(context, page); await page.goto(command.url!, {waitUntil: 'domcontentloaded'}); break;
-            case 'select_tab': await page.bringToFront(); break;
+            case 'new_tab': page = await context.newPage(); activePages.set(context,page); id = await pageIdentity(context, page); await page.goto(command.url!, {waitUntil: 'domcontentloaded'}); break;
+            case 'select_tab': activePages.set(context,page); await page.bringToFront(); break;
             case 'close_tab': await page.close(); if (!context.pages().length) await context.newPage(); ({id} = await choose(context)); break;
             case 'scroll': await page.mouse.wheel(0, command.deltaY!); break;
             case 'click': await page.locator(target!.selector).click(); break;
@@ -321,7 +400,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
     async capture(sessionId, pageId) {
       return connected(sessionId, async (_browser, context) => {
         const {page} = await choose(context, pageId);
-        return new Uint8Array(await page.screenshot({type: 'png', fullPage: false, mask: [page.locator('input,textarea,[contenteditable]')]}));
+        return new Uint8Array(await page.screenshot({type: 'png', fullPage: false, mask: [page.locator('input,textarea,[contenteditable]'),page.locator('body:has(input[type=password]),body:has(input[autocomplete=one-time-code])')]}));
       });
     },
     async storageState(sessionId) { return connected(sessionId, async (_browser, context, handle) => {
