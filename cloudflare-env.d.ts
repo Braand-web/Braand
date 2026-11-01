@@ -1,5 +1,6 @@
 declare namespace Cloudflare {
   interface Env {
+    WEB_PROVIDERS_JSON?: string;
     APP_ENV?: string;
     APP_ORIGIN?: string;
     AUTH_ENABLED?: string;

@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
   workflow_dispatch:
+    inputs:
+      release_providers:
+        description: Verify Browserbase and Firecrawl, then publish this revision
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -72,14 +78,16 @@ jobs:
   deploy:
     name: Publish verified main source
     needs: verify
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || (github.ref == 'refs/heads/feat/browserbase-firecrawl' && github.event_name == 'workflow_dispatch' && inputs.release_providers)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
       group: braand-production
       cancel-in-progress: false
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
+      BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
       CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
       WRANGLER_SEND_METRICS: "false"
     steps:
@@ -95,6 +103,9 @@ jobs:
         with:
           name: verified-production-build
           path: dist
+      - name: Verify providers against a bounded public fixture
+        if: inputs.release_providers
+        run: node scripts/verify-web-providers-live.mjs
       - name: Preserve live changes and publish the tested build
         run: |
           test -n "$CLOUDFLARE_API_TOKEN"
@@ -102,3 +113,9 @@ jobs:
           npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified production ${GITHUB_SHA}"
           curl --fail --silent --show-error https://braand.fun/api/health
           curl --fail --silent --show-error "https://braand.fun/api/health?check=assistant"
+      - name: Activate the verified provider integrations
+        if: inputs.release_providers
+        run: |
+          node scripts/configure-web-providers.mjs
+          curl --fail --silent --show-error https://braand.fun/api/health
+          curl --fail --silent --show-error 'https://braand.fun/api/health?check=assistant'

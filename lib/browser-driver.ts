@@ -169,7 +169,9 @@ function validateState(raw: string, domains: string[]): State {
 }
 
 /** Injection exists for offline contract tests; production always uses the SDK. */
-export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): BrowserDriver {
+export type BrowserDriverLifecycle={provider:'browserbase';beforeOpen?:(input:{allowedDomains:string[];timeoutSeconds?:number})=>Promise<void>;receipt:(id:string)=>Promise<Omit<BrowserReceipt,'sessionId'>>;terminate:(id:string)=>Promise<void>};
+export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK, lifecycle?:BrowserDriverLifecycle): BrowserDriver {
+  const parseHandle=(value:string)=>{const handle=handleOf(value);const raw=JSON.parse(value);if((raw.provider||'cloudflare')!==(lifecycle?.provider||'cloudflare'))throw new BrowserDriverError('browser_provider_changed');return handle;};
   const sdk = async (): Promise<SDK> => injectedSDK || await import('@cloudflare/playwright');
   const endpoint = {fetch: binding.fetch.bind(binding) as typeof fetch};
   let sessions = owners.get(binding);
@@ -206,7 +208,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
   }
 
   async function connected<T>(sessionId: string, fn: (browser: Browser, context: BrowserContext, handle: Handle) => Promise<T>): Promise<T> {
-    handleOf(sessionId);
+    parseHandle(sessionId);
     const owner = owned.get(sessionId);
     if (!owner || !owner.browser.isConnected()) {
       owned.delete(sessionId);
@@ -242,7 +244,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
     return {observation: {id: `o_${fingerprint}`, pageId: id, url: publicURL(page.url()), title, text, tabs, elements, fingerprint, capturedAt: Date.now()}, details};
   }
 
-  async function receipt(sessionId:string):Promise<BrowserReceipt>{const handle=handleOf(sessionId);
+  async function receipt(sessionId:string):Promise<BrowserReceipt>{const handle=parseHandle(sessionId);if(lifecycle)return {...await lifecycle.receipt(handle.providerId),sessionId};
       try {
         const entry = (await (await sdk()).history(endpoint)).find(item => item.sessionId === handle.providerId);
         if (entry && Number.isFinite(entry.startTime) && Number.isFinite(entry.endTime) && entry.startTime >= 0 && entry.endTime >= entry.startTime && entry.endTime <= Date.now() + 300_000 && entry.endTime - entry.startTime <= 7 * 86_400_000) return {sessionId, status: 'complete', milliseconds: entry.endTime - entry.startTime, source: 'provider_history'};
@@ -281,7 +283,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
               if(closed||busy||Date.now()-last<100||frame.data.length>3_000_000)return;
               busy=true;last=Date.now();
               void (async()=>{
-                const url=next.url();if(url!=='about:blank')validateBrowserURL(url,handleOf(sessionId).domains);
+                const url=next.url();if(url!=='about:blank')validateBrowserURL(url,parseHandle(sessionId).domains);
                 let image=frame.data;
                 if(url!==frameURL){const bytes=await next.screenshot({type:'jpeg',quality:65});let raw='';for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));image=btoa(raw);}
                 const title=redactBrowserText(await next.title()).slice(0,300);
@@ -327,6 +329,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
     async open(input) {
       const domains = normalizeBrowserDomains(input.allowedDomains);
       const state = input.storageState ? validateState(input.storageState, domains) : undefined;
+      await lifecycle?.beforeOpen?.(input);
       const provider = await sdk();
       const browser = await provider.launch(endpoint, {guardrails: {allowedDomains: domains}, keep_alive: 60_000});
       try {
@@ -336,7 +339,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
         const network={postsUntil:0,downloadsUntil:0};
         const guard = await protect(context, domains,network);
         if (!context.pages().length) { const page = await context.newPage(); await guard(page); }
-        const result = JSON.stringify({version: 1, providerId, domains} satisfies Handle);
+        const result = JSON.stringify({version: 1, providerId, domains,...(lifecycle?{provider:lifecycle.provider}:{})} satisfies Handle);
         owned.set(result, {browser, context, handle: {version: 1, providerId, domains},network});
         return {sessionId: result};
       } catch (error) {
@@ -349,7 +352,7 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
     async observe(sessionId, pageId) { return connected(sessionId, async (_browser, context, handle) => (await observe(context, handle.domains, pageId)).observation); },
     async command(sessionId, input, file) {
       const command = parseBrowserCommand(input) as BrowserCommand;
-      const handle = handleOf(sessionId);
+      const handle = parseHandle(sessionId);
       if (command.kind === 'navigate' || command.kind === 'new_tab') validateBrowserURL(command.url, handle.domains);
       if (file && (file.bytes.byteLength > MAX_BYTES || !file.bytes.byteLength)) throw new BrowserDriverError('browser_file_too_large', 413);
       return connected(sessionId, async (_browser, context) => {
@@ -409,7 +412,8 @@ export function createBrowserDriver(binding: Fetcher, injectedSDK?: SDK): Browse
       return raw;
     }); },
     async close(sessionId): Promise<BrowserReceipt> {
-      const handle = handleOf(sessionId);
+      const handle = parseHandle(sessionId);
+      if(lifecycle){const owner=owned.get(sessionId);owned.delete(sessionId);await owner?.browser.close().catch(()=>{});await lifecycle.terminate(handle.providerId).catch(()=>{});return receipt(sessionId);}
       let browser: Browser | undefined;
       let disconnectOnly = false;
       const owner = owned.get(sessionId);

@@ -27,7 +27,7 @@ export type BrowserLiveFrame={image:string;url:string;title:string;width:number;
 export type BrowserLoginTarget={origin:string;pageId:string;method:'password'|'otp'};
 export interface BrowserDriver {
  receipt(sessionId:string):Promise<BrowserReceipt>;
-  open(input:{allowedDomains:string[];storageState?:string}):Promise<{sessionId:string}>;
+  open(input:{allowedDomains:string[];storageState?:string;timeoutSeconds?:number}):Promise<{sessionId:string}>;
   observe(sessionId:string,pageId?:string):Promise<BrowserObservation>;
   command(sessionId:string,command:BrowserCommand,file?:BrowserDownload):Promise<{observation:BrowserObservation;download?:BrowserDownload}>;
   capture(sessionId:string,pageId?:string):Promise<Uint8Array>;
