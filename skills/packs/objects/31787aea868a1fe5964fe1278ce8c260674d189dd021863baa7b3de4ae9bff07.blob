@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Run an HTML file in headless Chromium and report problems.
+
+Usage: python run_artifact.py page.html [--out DIR] [--allow host1,host2] [--storage-fail] [--wait MS]
+"""
+import argparse
+import json
+import os
+import sys
+from urllib.parse import urlparse
+
+from playwright.sync_api import sync_playwright
+
+DEFAULT_ALLOW = "cdnjs.cloudflare.com,cdn.jsdelivr.net,fonts.googleapis.com,fonts.gstatic.com,cdn.tailwindcss.com,code.jquery.com"
+
+STORAGE_STUB = """
+(() => {
+  const mem = new Map();
+  window.storage = {
+    async get(k){ if(!mem.has(k)) throw new Error('not found'); return {key:k,value:mem.get(k),shared:false}; },
+    async set(k,v){ mem.set(k,String(v)); return {key:k,value:String(v),shared:false}; },
+    async delete(k){ const had=mem.delete(k); return {key:k,deleted:had,shared:false}; },
+    async list(p){ return {keys:[...mem.keys()].filter(x=>!p||x.startsWith(p))}; }
+  };
+})();
+"""
+
+BREAK_LOCALSTORAGE = """
+(() => {
+  const boom = () => { throw new DOMException('storage disabled', 'SecurityError'); };
+  for (const name of ['localStorage','sessionStorage']) {
+    Object.defineProperty(window, name, { get: boom, configurable: true });
+  }
+})();
+"""
+
+AUDIT = """
+() => {
+  const out = {};
+  const de = document.documentElement;
+  out.overflowX = de.scrollWidth > de.clientWidth + 1;
+  out.scrollWidth = de.scrollWidth; out.clientWidth = de.clientWidth;
+  out.title = document.title; out.lang = de.lang;
+  out.imgsNoAlt = [...document.images].filter(i => !i.hasAttribute('alt')).length;
+  out.brokenImgs = [...document.images].filter(i => i.complete && i.naturalWidth === 0).map(i => i.src.slice(0,80));
+  out.buttonsNoName = [...document.querySelectorAll('button')].filter(b => !(b.textContent.trim() || b.getAttribute('aria-label') || b.title)).length;
+  out.inputsNoLabel = [...document.querySelectorAll('input,select,textarea')].filter(i => {
+    if (['hidden','submit','button'].includes(i.type)) return false;
+    return !(i.getAttribute('aria-label') || i.id && document.querySelector('label[for="'+i.id+'"]') || i.closest('label') || i.placeholder);
+  }).length;
+  out.bodyTextLength = document.body ? document.body.innerText.trim().length : 0;
+  const bg = getComputedStyle(document.body).backgroundColor;
+  out.bodyBackground = bg;
+  return out;
+}
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("html")
+    ap.add_argument("--out", default="/tmp/artifact")
+    ap.add_argument("--allow", default=DEFAULT_ALLOW)
+    ap.add_argument("--storage-fail", action="store_true")
+    ap.add_argument("--wait", type=int, default=800)
+    a = ap.parse_args()
+
+    allow = {h.strip() for h in a.allow.split(",") if h.strip()}
+    os.makedirs(a.out, exist_ok=True)
+    url = "file://" + os.path.abspath(a.html)
+    problems = 0
+    report = []
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        for size_name, (w, h) in {"desktop": (1280, 800), "phone": (375, 800)}.items():
+            for scheme in ("light", "dark"):
+                ctx = browser.new_context(viewport={"width": w, "height": h}, color_scheme=scheme,
+                                          device_scale_factor=1)
+                ctx.add_init_script(STORAGE_STUB)
+                if a.storage_fail:
+                    ctx.add_init_script(BREAK_LOCALSTORAGE)
+                page = ctx.new_page()
+                msgs, blocked = [], []
+
+                page.on("console", lambda m, msgs=msgs: msgs.append((m.type, m.text)) if m.type in ("error", "warning") else None)
+                page.on("pageerror", lambda e, msgs=msgs: msgs.append(("exception", str(e))))
+
+                def make_route(blocked):
+                    def route(r, request=None):
+                        req = r.request
+                        u = urlparse(req.url)
+                        if u.scheme in ("file", "data", "blob", "about"):
+                            return r.continue_()
+                        if u.hostname in allow and req.resource_type in ("script", "stylesheet", "font"):
+                            return r.continue_()
+                        blocked.append(f"{req.resource_type} {req.url[:100]}")
+                        return r.abort()
+                    return route
+
+                route = make_route(blocked)
+                page.route("**/*", route)
+                page.goto(url, wait_until="load")
+                page.wait_for_timeout(a.wait)
+                audit = page.evaluate(AUDIT)
+                shot = os.path.join(a.out, f"{size_name}-{scheme}.png")
+                page.screenshot(path=shot, full_page=True)
+
+                tag = f"{size_name}/{scheme}"
+                errs = [m for m in msgs if m[0] in ("error", "exception")]
+                report.append((tag, errs, msgs, blocked, audit, shot))
+                ctx.close()
+        browser.close()
+
+    for tag, errs, msgs, blocked, audit, shot in report:
+        print(f"\n== {tag}  screenshot: {shot}")
+        for kind, text in msgs[:10]:
+            print(f"   [{kind}] {text[:200]}")
+        for b in blocked[:8]:
+            print(f"   [blocked request] {b}")
+        flags = []
+        if audit["overflowX"]:
+            flags.append(f"horizontal overflow ({audit['scrollWidth']} > {audit['clientWidth']})")
+        if audit["brokenImgs"]:
+            flags.append(f"broken images {audit['brokenImgs']}")
+        if audit["bodyTextLength"] == 0:
+            flags.append("page body has no visible text (blank?)")
+        if not audit["title"]:
+            flags.append("missing <title>")
+        if not audit["lang"]:
+            flags.append("missing lang attribute")
+        for k, label in (("imgsNoAlt", "images without alt"), ("buttonsNoName", "unnamed buttons"),
+                         ("inputsNoLabel", "unlabeled inputs")):
+            if audit[k]:
+                flags.append(f"{audit[k]} {label}")
+        for f in flags:
+            print(f"   [check] {f}")
+        problems += len(errs) + len(blocked) + sum(1 for f in flags if "overflow" in f or "broken" in f or "blank" in f)
+
+    print("\nRESULT:", "OK" if problems == 0 else f"{problems} problem(s) found")
+    sys.exit(1 if problems else 0)
+
+
+if __name__ == "__main__":
+    main()

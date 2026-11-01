@@ -1,0 +1,21 @@
+# Installation du Kit Vidéo et Motion Design
+
+## Ordre d'installation
+
+1. **Le prompt** : place le bloc de `01-PROMPT/prompt-agent-video-motion.md` comme prompt principal ou section spécialisée de l'agent. Remplis les crochets (dossiers, voix, générateur éventuel).
+2. **La stack** : installe les logiciels de `05-OUTILS-ET-STACK/stack-technique.md` sur la machine de l'agent et vérifie avec une commande de mesure sur n'importe quel fichier vidéo.
+3. **Les moteurs** : copie `04-MOTEURS-DE-REFERENCE` dans l'espace de travail de l'agent. Ce sont des moteurs réels ayant produit des centaines de vidéos : lis-les, adapte les chemins et les polices, ne les réécris pas de zéro.
+4. **Les chartes** : mets les chartes de `03-CHARTES-ET-FORMATS` à côté des moteurs. Pour un nouveau projet, pars d'une charte exemple, adapte identité, couleurs, voix et structure, et fais valider un premier rendu court.
+5. **Les skills** : copie les dossiers de `02-SKILLS` dans le dossier des skills de l'agent (par plateforme : `~/.claude/skills/` pour Claude Code, `~/workspace/custom-skills/` pour Muse, fichiers de projet pour ChatGPT/Gemini).
+
+## Test de vérification en 3 temps
+
+1. Demande une vidéo courte de test sur un sujet libre. L'agent doit livrer un fichier réel, pas un plan.
+2. Demande-lui le résultat de ses contrôles. Il doit citer la transcription comparée au script, les frames inspectées et les mesures du fichier (dimensions, durée, LUFS).
+3. Demande une deuxième vidéo du même format avec un autre sujet. Elle doit sortir du même moteur avec une nouvelle spécification, dans le même style, sans réinvention.
+
+## Ce que ce kit ne contient pas, honnêtement
+
+- Aucun générateur vidéo propriétaire : la voie « vidéo vivante » dépend du service accessible à l'agent (Flow/Veo, Runway, etc.) et de sa région.
+- Aucune voix commerciale précise : le choix de la voix TTS dépend de la plateforme et de la langue du projet.
+- Les fichiers sources des projets d'origine (portraits de personnages, logos, écussons) : chaque projet apporte ses propres assets, avec une source unique par personnage récurrent.

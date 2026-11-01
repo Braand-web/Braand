@@ -65,7 +65,7 @@ try {
  await page.getByRole('button',{name:'Créer un compte',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Réessayer',exact:true}).isVisible(),true);
  await page.getByRole('button',{name:'Réessayer',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.auth-content').getAttribute('aria-busy')==='false');
  await page.getByRole('button',{name:'Se connecter',exact:true}).click();check('Session preparation errors remain recoverable after changing sign-in intent');
- assert.equal(await page.getByRole('button',{name:'Se connecter',exact:true}).getAttribute('aria-pressed'),'true');
+ assert.equal(await page.getByRole('button',{name:'Se connecter',exact:true}).first().getAttribute('aria-pressed'),'true');
  await page.screenshot({path:path.join(output,'desktop.png')});
  await page.getByRole('button',{name:'Créer un compte',exact:true}).click();assert.equal(mailCount,0);
  assert.equal(await page.getByRole('button',{name:'Créer un compte',exact:true}).getAttribute('aria-pressed'),'true');
@@ -76,6 +76,7 @@ try {
  await page.getByLabel('Adresse e-mail',{exact:true}).fill('owner@braand.test');
  await page.screenshot({path:path.join(output,'mobile.png')});check('Mobile layout has no overflow and keyboard focus is visible');
  await page.getByLabel('Adresse e-mail',{exact:true}).fill('owner@braand.test');
+ await page.getByLabel('Mot de passe',{exact:true}).fill('fixture-password-2026');
  await page.getByRole('button',{name:'Créer mon compte',exact:true}).waitFor({state:'visible'});
  await page.waitForFunction(()=>!document.querySelector('button[type=submit]').disabled);
  const [mailResponse]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/auth/request'),page.getByRole('button',{name:'Créer mon compte',exact:true}).click()]);
@@ -84,15 +85,16 @@ try {
  assert.equal(new URL(page.url()).pathname,'/');assert.equal(await page.getByRole('dialog').count(),1);
  await page.setViewportSize({width:1280,height:850});await page.screenshot({path:path.join(output,'desktop-confirmation.png')});
  await page.getByRole('button',{name:'Utiliser une autre adresse',exact:true}).click();assert.equal(await page.getByLabel('Adresse e-mail',{exact:true}).inputValue(),'owner@braand.test');assert.equal(mailCount,1);
- await page.getByRole('button',{name:'Se connecter',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Recevoir mon lien de connexion',exact:true}).count(),1);
+ await page.getByRole('button',{name:'Se connecter',exact:true}).first().click();assert.equal(await page.getByRole('button',{name:'Recevoir mon lien de connexion',exact:true}).count(),0);
  assert.equal(mailCount,1);check('The dialog requests one email without showing the private token or leaving Braand');
- const confirmation=await page.goto(link);assert.match(confirmation.headers()['content-security-policy'],/font-src 'self'/);await page.getByRole('button',{name:'Entrer dans mon espace'}).waitFor();await page.evaluate(()=>document.fonts.ready);assert.ok(await page.evaluate(()=>[...document.fonts].some(font=>font.family==='Manrope'&&font.status==='loaded')),'The secured confirmation page loads the same-origin Manrope font');assert.equal(sql.prepare('SELECT count(*) n FROM auth_sessions').get().n,0);check('Opening the email link requests confirmation before authentication');
- await page.getByRole('button',{name:'Entrer dans mon espace'}).click();
+ const verificationResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/auth/verify'&&r.request().method()==='GET');await page.goto(link,{waitUntil:'commit'});const confirmation=await verificationResponse;assert.match(confirmation.headers()['content-security-policy'],/script-src 'nonce-/);check('A verified same-browser email link proceeds automatically');
  await page.getByRole('heading',{name:'Espace Braand'}).waitFor();
  const cookies=await context.cookies(env.APP_ORIGIN),session=cookies.find(c=>c.name==='__Host-braand_session');assert.ok(session?.httpOnly&&session?.secure);assert.ok(await auth.sessionIdentity(new Headers({cookie:session.name+'='+session.value}),env));check('Confirmed login sets a private Secure/HttpOnly cookie and a real revocable session');
  const lot=sql.prepare("SELECT * FROM credit_lots WHERE source='free'").get();assert.equal(lot.balance,1500);assert.equal(lot.expires_at-lot.starts_at,7*86400000);assert.equal(sql.prepare('SELECT count(*) n FROM billing_claims').get().n,1);check('Browser signup automatically receives one 15-credit grant with a seven-day lifetime');
- await page.goto(env.APP_ORIGIN+'/auth/sign-out');await page.getByRole('button',{name:'Confirmer la déconnexion'}).click();await page.getByRole('heading',{name:'Espace Braand'}).waitFor();
+ await page.evaluate(()=>{const form=document.createElement('form');form.method='post';form.action='/auth/sign-out';const input=document.createElement('input');input.name='confirm';input.value='yes';form.append(input);document.body.append(form);form.submit();});await page.getByRole('heading',{name:'Espace Braand'}).waitFor();
  assert.equal(await auth.sessionIdentity(new Headers({cookie:session.name+'='+session.value}),env),null);check('Logout revokes the stored session and removes the browser cookie');
+ await page.goto(env.APP_ORIGIN+'/auth/sign-in');await page.getByLabel('Adresse e-mail',{exact:true}).fill('owner@braand.test');await page.getByLabel('Mot de passe',{exact:true}).fill('fixture-password-2026');
+ const [direct]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/auth/password'),page.getByRole('button',{name:'Se connecter',exact:true}).last().click()]);assert.equal(direct.status(),200);await page.waitForURL(env.APP_ORIGIN+'/');assert.equal(mailCount,1);check('The existing account signs in directly with a password and no new email');
  assert.deepEqual(errors,[]);assert.deepEqual(requestFailures,[]);assert.equal(mailCount,1);check('No client errors and zero real provider or payment requests');
 } finally {globalThis.fetch=originalFetch;await browser?.close();await new Promise(resolve=>server.close(resolve));sql.close();}
 console.log(`${checks} independent login browser checks passed.`);

@@ -1,0 +1,91 @@
+---
+name: video-making
+description: Produce videos programmatically - slideshows, explainers, animated charts, title cards, captioned clips, GIFs and simple motion graphics - using ffmpeg, Pillow and headless-browser frame rendering. Use whenever the user asks to make, edit, trim, merge, resize, subtitle, speed up, add music to or convert a video or animated GIF, or turn images/slides/text into a video.
+---
+
+# Making video in the sandbox
+
+## Toolbox
+
+- **ffmpeg / ffprobe**: encode, trim, concatenate, scale, overlay, subtitles, audio mixing, GIFs.
+- **Pillow**: draw frames (title cards, captions, charts you render yourself).
+- **Playwright**: render HTML/CSS/JS animations to frames by stepping time and taking screenshots.
+- **matplotlib**: animated charts via saved frames.
+- Check what is installed first (`ffmpeg -version`, `python -c "import PIL"`). Encoder availability varies (`ffmpeg -encoders | grep x264`).
+
+## Workflow
+
+1. **Brief**: goal, length (keep it as short as the message allows), aspect ratio (16:9 for desktop, 9:16 for phone-first, 1:1 for feeds), resolution (1280x720 is plenty for previews), frame rate (24–30 fps), audio yes/no.
+2. **Storyboard**: a table of scenes with duration, visual, on-screen text, narration/music. Show it to the user for anything beyond a trivial clip.
+3. **Assets**: gather or generate images, text, audio. Only use media the user provided or that you generated; do not use copyrighted clips or music.
+4. **Build frames or clips**: one scene at a time; keep each scene reproducible by script.
+5. **Assemble** with ffmpeg; mix audio; add fades.
+6. **Check**: `ffprobe` duration/streams, extract a few frames to PNG at start/middle/end and look at them, check the audio levels if present.
+7. Save to `/mnt/user-data/outputs/` and present.
+
+## Design rules for on-screen video
+
+- Text: large (>= 5% of frame height), high contrast, safe margins (>= 5% each side), max ~12 words per screen, hold each text at least `0.3 s + 0.06 s × words`.
+- Motion: ease in/out, 0.3–0.6 s transitions, no more than one thing moving at once.
+- Consistency: one font family, 2–3 colors, same layout grid.
+- Pacing: new visual every 3–7 s for explainers.
+- Accessibility: captions for anything with speech; do not rely on color alone.
+
+## Reliable ffmpeg recipes
+
+```bash
+# Images -> video (each shown 3 s, 1280x720, letterboxed, H.264, yuv420p for broad compatibility)
+ffmpeg -framerate 1/3 -pattern_type glob -i 'frames/*.png' \
+  -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p" \
+  -r 30 -c:v libx264 -crf 20 out.mp4
+
+# Trim without re-encoding (cut at keyframes) / precise trim (re-encode)
+ffmpeg -ss 00:00:05 -to 00:00:12 -i in.mp4 -c copy cut.mp4
+ffmpeg -ss 00:00:05 -to 00:00:12 -i in.mp4 -c:v libx264 -c:a aac cut.mp4
+
+# Concatenate files with identical codecs
+printf "file '%s'\n" a.mp4 b.mp4 > list.txt && ffmpeg -f concat -safe 0 -i list.txt -c copy joined.mp4
+
+# Add audio, stop at the shorter stream
+ffmpeg -i video.mp4 -i music.mp3 -map 0:v -map 1:a -c:v copy -c:a aac -shortest out.mp4
+
+# Burn in subtitles from an .srt
+ffmpeg -i in.mp4 -vf "subtitles=subs.srt" -c:a copy out.mp4
+
+# Speed up 2x (video + audio)
+ffmpeg -i in.mp4 -filter_complex "[0:v]setpts=0.5*PTS[v];[0:a]atempo=2.0[a]" -map "[v]" -map "[a]" out.mp4
+
+# High-quality GIF
+ffmpeg -i in.mp4 -vf "fps=12,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" out.gif
+
+# Fade in/out
+ffmpeg -i in.mp4 -vf "fade=t=in:st=0:d=0.5,fade=t=out:st=4.5:d=0.5" out.mp4
+```
+
+Always use `-pix_fmt yuv420p` (or `format=yuv420p`) for H.264 so QuickTime and phones can play it. Quote paths with spaces.
+
+## Scripts
+
+`scripts/make_slideshow.py` builds a captioned slideshow from a JSON storyboard (images or plain color cards, captions, durations, optional audio) with cross-fades:
+
+```
+python scripts/make_slideshow.py storyboard.json out.mp4
+```
+
+Storyboard format:
+
+```json
+{"size": [1280, 720], "fps": 30, "background": "#101820", "font_size": 54,
+ "scenes": [
+   {"text": "Welcome", "seconds": 3},
+   {"image": "photo.jpg", "text": "A caption", "seconds": 4}
+ ],
+ "audio": "music.mp3"}
+```
+
+## Pitfalls
+
+- Odd dimensions break H.264: use even width/height.
+- Variable-frame-rate phone clips drift against audio: normalize with `-r 30` (and `-vsync cfr` on older ffmpeg).
+- Re-encoding repeatedly degrades quality: do edits in one pass when possible.
+- Large outputs: a 60 s 720p clip at CRF 23 is a few MB; check size before presenting, and offer a smaller version if needed.

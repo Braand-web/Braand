@@ -1,0 +1,72 @@
+---
+name: setup-writing-style
+description: Learn a person's writing style from samples and turn it into a reusable style guide, so future drafts sound like them. Use when the user wants Claude to write "like me", match their voice, set up a personal or brand writing style, analyze writing samples, or fix drafts that sound generic or AI-written. Produces a style profile they can store in their preferences or reuse as instructions.
+---
+
+# Setting up a writing style
+
+## 1. Collect samples
+
+Ask for **3–6 pieces** of the user's own writing (emails, posts, reports, messages), ideally of different contexts (casual and formal), 150+ words each. Say what to avoid: text heavily edited by others, text written by AI, quotes. Also ask:
+
+- Who do you write for, and in which situations will Claude draft for you?
+- Language(s) and regional variant.
+- Anything you dislike in AI-written text? Words, structures, tone.
+- Is there a writer or publication whose tone you aim for?
+
+## 2. Analyze (privately, then summarize)
+
+Examine each dimension and note concrete evidence:
+
+| Dimension | What to look for |
+|---|---|
+| Voice and register | Formal/casual; warm/dry/direct; humor; use of "I" and "we"; tu/vous or equivalent |
+| Sentence rhythm | Average length; mix of short and long; fragments; questions |
+| Paragraphs | Length, openers, transitions, how arguments are built |
+| Vocabulary | Plain vs. technical; favorite words and phrases; words they never use; jargon level |
+| Structure habits | Opens with context or with the point; uses lists, headers, bold; sign-offs |
+| Punctuation and mechanics | Dashes, parentheses, exclamation marks, ellipses, emoji, capitalization, contractions, numerals, date formats |
+| Stance | Hedging vs. assertiveness; how they ask, refuse, apologize, thank |
+| Quirks | Repeated moves that make the text recognizably theirs |
+
+Base findings on **patterns across samples**, not one-off choices. Quote short evidence for each finding (a few words).
+
+## 3. Write the style profile
+
+A compact guide (300–600 words) Claude can follow, in this shape:
+
+```
+STYLE PROFILE — <name or brand>
+Overview: <2 sentences describing the voice>
+Do:
+- …(specific, observable behaviors)
+Don't:
+- …(including banned phrases and structures)
+Rhythm and structure: …
+Vocabulary: prefers … ; avoids …
+Mechanics: …
+Context adjustments: emails … / social posts … / formal documents …
+Mini-example (original lines written in this style, not copied from the samples)
+```
+
+Prefer specific rules ("opens with the request in the first sentence; sentences average 14 words; no exclamation marks") over adjectives ("friendly and professional").
+
+## 4. Test and calibrate
+
+1. Draft two short pieces (different contexts) on topics the user chooses, using only the profile.
+2. Ask the user to mark what sounds right or wrong, line by line if possible.
+3. Revise the profile; re-test. Usually two rounds suffice.
+4. Ask whether any rule should differ by context.
+
+## 5. Deliver and use
+
+- Give the final profile in a block the user can copy into their preferences or a project's instructions. Offer a short version (under 100 words) for limited fields.
+- When later drafting in this style: follow the profile, keep the user's facts and opinions, and **do not imitate someone else's voice** or claim their authorship in a deceptive way.
+- Ghostwriting for the user's own communications is fine; the user remains responsible for what they send.
+
+## Cautions
+
+- Samples are private: use them only for this purpose and do not quote them back at length.
+- Do not infer sensitive traits from writing.
+- Avoid caricature: capture habits, not exaggerations.
+- A style evolves; offer to update the profile after new samples or feedback.

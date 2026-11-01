@@ -22,6 +22,8 @@ export function deploymentConfig(environment, input, built, root=process.cwd(), 
   const queue=input[prefix+'WORK_QUEUE'],deadLetter=input[prefix+'WORK_DEAD_LETTER_QUEUE'];
   if(!!queue!==!!deadLetter || [queue,deadLetter].some(name=>name&&!/^[a-z0-9][a-z0-9-]{2,62}$/.test(name)))throw new Error('Choose both environment-specific work queues.');
   const publicZone=input.BRAAND_PRODUCTION_PUBLIC_ZONE_ID;
+  const vaultService=input[prefix+'VAULT_SERVICE'];
+  if(vaultService&&!/^[a-z][a-z0-9-]{2,62}$/.test(vaultService))throw new Error('Choose the environment-specific credential vault Worker.');
   if(publicZone&&!/^[a-f0-9]{32}$/.test(publicZone))throw new Error('A verified production public zone is required.');
   return {
     name:'braand-'+environment,account_id:account,main:path.join(root,'dist/server/index.js'),
@@ -31,12 +33,14 @@ export function deploymentConfig(environment, input, built, root=process.cwd(), 
     d1_databases:[{binding:'DB',database_name:'braand-'+environment,database_id:database,migrations_dir:path.join(root,'drizzle')}],
     r2_buckets:databaseOnly?[]:[{binding:'BUCKET',bucket_name:files},{binding:'BACKUP_BUCKET',bucket_name:backups}],
     durable_objects:built.durable_objects,migrations:built.migrations,browser:built.browser,
+    ...(vaultService?{services:[{binding:'CREDENTIAL_VAULT',service:vaultService}]}:{}),
     triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false},
     ...(queue?{queues:{producers:[{binding:'WORK_QUEUE',queue}],consumers:[{queue,max_batch_size:1,max_retries:3,dead_letter_queue:deadLetter}]}}:{}),
     // Never claim an unperformed acceptance test by enabling a readiness flag.
     vars:{APP_ENV:environment,AUTH_ENABLED:'false',BILLING_ENABLED:'false',SASPAY_ENV:'sandbox',
       RESEND_MODE:'disabled',RESEND_LIVE_APPROVED:'false',MODEL_ROUTING_ENABLED:'false',
       COMPOSIO_INSTANT_ENABLED:'false',BROWSER_ENABLED:'false',AUTONOMY_ENABLED:'false',
+      VAULT_ENABLED:'false',BROWSER_LIVE_ENABLED:'false',
       BACKUP_ENABLED:'false',FREE_DAILY_CREDITS:'0',FILE_PREVIEW_V1:'false',
       WORK_ENABLED:'false',WORK_STAGING_VERIFIED:'false',WORK_SCHEDULER_VERIFIED:'false',
       ROUTINES_ENABLED:'false',ROUTINES_STAGING_VERIFIED:'false',

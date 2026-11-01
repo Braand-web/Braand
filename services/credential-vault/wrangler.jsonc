@@ -1,0 +1,12 @@
+// Template only. Generate an environment-specific manifest with prepare-config.mjs.
+{
+ "name":"braand-credential-vault",
+ "main":"worker.ts",
+ "compatibility_date":"2026-10-01",
+ "workers_dev":false,
+ "preview_urls":false,
+ "observability":{"enabled":false},
+ "vars":{"VAULT_ENABLED":"false"},
+ "d1_databases":[{"binding":"VAULT_DB","database_name":"braand-credential-vault","database_id":"REPLACE_WITH_SEPARATE_VAULT_DATABASE_ID","migrations_dir":"migrations"}],
+ "durable_objects":{"bindings":[{"name":"BROWSER_SESSIONS","class_name":"BrowserSession","script_name":"REPLACE_WITH_BROWSER_WORKER_NAME"}]}
+}

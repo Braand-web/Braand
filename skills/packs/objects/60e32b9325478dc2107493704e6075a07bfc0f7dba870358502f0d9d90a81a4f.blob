@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Recalculate all formulas in an .xlsx using headless LibreOffice, so cached values are stored.
+# The file is rewritten in place. Usage: recalc.sh file.xlsx
+set -euo pipefail
+f="$(readlink -f "${1:?xlsx file required}")"
+tmp="$(mktemp -d)"
+soffice --headless --calc --convert-to xlsx:"Calc MS Excel 2007 XML" --outdir "$tmp" "$f" >/dev/null 2>&1
+cp "$tmp/$(basename "$f")" "$f"
+rm -rf "$tmp"
+echo "recalculated: $f"

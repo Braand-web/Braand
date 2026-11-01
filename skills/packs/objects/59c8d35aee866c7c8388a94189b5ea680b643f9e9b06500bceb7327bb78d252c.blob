@@ -1,0 +1,59 @@
+---
+name: docs
+description: Write editable, shareable documents that people will keep, send, submit, print or collaborate on - reports, proposals, memos, resumes, cover letters, letters, contracts, policies, handbooks, guides, how-tos, SOPs, runbooks, essays, specs, meeting notes. Use whenever the user asks for a document and has not insisted on a specific file format; produce a well-structured doc (or Markdown/Word/PDF export) rather than a long chat reply. A quick answer, plan or comparison requested in chat should stay in chat.
+---
+
+# Documents people keep
+
+## Decide: chat reply or document?
+
+- **Chat reply**: the user will read it once here (an explanation, a short plan, a comparison, a quick summary).
+- **Document**: the user will keep, edit, share, send, sign, submit or print it; or it is long enough to be a document in its own right.
+- If the user names a format (Word, PDF, Markdown), use it. If they only say "document", prefer an editable doc and offer export to Word/PDF.
+
+## Workflow
+
+1. **Frame it** in one sentence: purpose, reader, what the reader should do or know afterward, length. Infer from context; ask only if a wrong guess would waste the work.
+2. **Skeleton first**: title, then headings only. Check that the order serves the reader: conclusion or request near the top, evidence after, details last.
+3. **Fill section by section** with finished prose, not placeholders. Each section opens with its main point.
+4. **Check the whole**: consistent terms, numbers, names and dates; no repeated content; every heading earns its place.
+5. **Deliver** the document and a two-line note: what it is, what the user should verify or complete (facts only they know, signatures, dates).
+
+## Structure by type
+
+| Type | Backbone |
+|---|---|
+| Report / analysis | Summary (3–5 sentences) → context → findings → implications → recommendations → appendix |
+| Proposal | Problem → proposed solution → scope and deliverables → timeline → cost → why us → next step |
+| Memo | To/From/Date/Subject → the ask or decision → reasons → details |
+| Spec / design doc | Goal and non-goals → background → design → alternatives considered → risks → open questions |
+| How-to / SOP / runbook | Purpose → prerequisites → numbered steps (one action each, with expected result) → troubleshooting → owners |
+| Meeting notes | Date/attendees → decisions → actions (owner, due date) → discussion notes |
+| Resume | Header → summary (2 lines) → experience (impact bullets, reverse chronological) → skills → education |
+| Cover letter | Why this role/company → two proof points → close with a clear next step; one page |
+| Letter / formal email | Purpose in the first sentence; facts; request; courteous close |
+| Policy / contract-style | Purpose and scope → definitions → rules → responsibilities → exceptions → effective date. For legal documents, say plainly that a qualified professional should review them |
+
+## Writing rules
+
+- Plain words, short sentences, active voice. One idea per paragraph.
+- Lead with the point. Put numbers, dates and names where the reader looks first.
+- Use lists for parallel items and steps only; use prose for reasoning.
+- Define a term the first time; then keep using the same term.
+- Tables for comparisons across the same attributes; label units.
+- Headings are descriptive ("Costs rose 12% in Q3"), not generic ("Results"), when the document is analytical.
+- Never invent facts, figures, quotations, references or credentials. If a needed fact is missing, mark it clearly (`[to confirm: …]`) and list the gaps at the end of your note.
+- Match the reader's language and regional conventions: date and number formats, paper size, salutation and register (e.g. tu/vous in French).
+
+## Formatting
+
+- Real heading levels (max 3), real lists, real tables. No typed bullets or manual spacing.
+- Consistent fonts and spacing; body 10.5–12 pt; line spacing 1.1–1.3.
+- Page numbers and a title block for anything over two pages.
+- Add a table of contents only when the document is long enough to need navigation.
+
+## Exports
+
+- Editable doc → Word (.docx) or PDF when the user needs a file to send; for those use the docx or pdf skills.
+- Markdown for developers and notes tools.
+- For fill-in templates, use clear placeholders in brackets and keep them consistent so find-and-replace works.

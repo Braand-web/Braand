@@ -1,6 +1,6 @@
 # Video & Motion Studio dans Braand
 
-La compétence `video-motion-studio` est disponible au modèle principal et aux spécialistes par `search_skills` / `read_skill`. Elle figure dans le catalogue des compétences avec le titre « Montage vidéo et motion design ». Le catalogue comporte désormais 146 méthodes ; aucun corpus n’est chargé intégralement dans chaque demande ou envoyé au navigateur client.
+La compétence `video-motion-studio` est disponible au modèle principal et aux spécialistes par `search_skills` / `read_skill`. Elle figure dans le catalogue des compétences avec le titre « Montage vidéo et motion design ». Le catalogue comporte désormais 166 méthodes ; aucun corpus n’est chargé intégralement dans chaque demande ou envoyé au navigateur client.
 
 ## Source et adaptation
 

@@ -6,6 +6,7 @@ import ConnectorsPanel from "@/app/connectors-panel";
 import {api} from "@/lib/client-api";
 import "./settings-panel.css";
 import {LEGAL_LINKS} from '@/lib/legal-links.mjs';
+import {BrowserSecuritySettings} from './browser-security-settings';
 import {MemoryPanel} from './memory-panel';
 import {AppearanceSettings} from '@/components/appearance-settings';
 
@@ -132,7 +133,7 @@ export function SettingsPanel({tab, onTabChange, user, workspace, capabilities, 
    <nav ref={navigation} className="settings-navigation" aria-label="Catégories des paramètres">
     {sections.map(({id, label, icon: Icon}) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => onTabChange(id)}><Icon size={18} aria-hidden="true"/><span>{label}</span></button>)}
    </nav>
-   {!pendingSession && !sessionError && <a onClick={event=>{if(!signedIn&&onSignIn){event.preventDefault();onSignIn();}}} className="settings-signout" href={signedIn ? "/auth/sign-out?return_to=/" : "/auth/sign-in?return_to=/"} target="_top"><LogOut size={18} aria-hidden="true"/><span>{signedIn ? "Se déconnecter" : "Se connecter"}</span></a>}
+   {!pendingSession && !sessionError && (signedIn?<form method="post" action="/auth/sign-out" target="_top" style={{display:'contents'}}><input type="hidden" name="confirm" value="yes"/><button type="submit" className="settings-signout"><LogOut size={18} aria-hidden="true"/><span>Se déconnecter</span></button></form>:<a onClick={event=>{if(onSignIn){event.preventDefault();onSignIn();}}} className="settings-signout" href="/auth/sign-in?return_to=/" target="_top"><LogOut size={18} aria-hidden="true"/><span>Se connecter</span></a>)}
   </aside>
   <section className="settings-main" aria-labelledby="settings-section-title">
    <header className="settings-header"><h3 id="settings-section-title">{heading}</h3><button className="settings-close" type="button" onClick={onClose} aria-label="Fermer les paramètres" title="Fermer les paramètres"><X size={18} aria-hidden="true"/></button></header>
@@ -176,6 +177,7 @@ export function SettingsPanel({tab, onTabChange, user, workspace, capabilities, 
      <div className="settings-billing-footer"><button type="button" className="settings-button" onClick={onFiles}><FolderClosed size={16} aria-hidden="true"/>Ouvrir mes fichiers</button><p>Les limites de stockage et de transfert dépendent du forfait actif.</p></div>
     </>}
     {tab === "permissions" && signedIn && <>
+     <BrowserSecuritySettings/>
      <p className="settings-intro">Ces règles s’appliquent à votre compte et aux actions de l’assistant.</p>
      <section className="settings-section" aria-labelledby="settings-rights-title"><h4 id="settings-rights-title">Votre accès</h4><dl className="settings-card settings-details"><div className="settings-row"><dt>Rôle dans l’organisation</dt><dd><Value value={roleLabel(organization?.role)} loading={loading}/></dd></div><div className="settings-row"><dt>Forfait actif</dt><dd><Value value={plan} loading={loading}/></dd></div></dl></section>
      <section className="settings-section" aria-labelledby="settings-approval-title"><h4 id="settings-approval-title">Validation et budgets</h4><div className="settings-card settings-policy-list"><div><h5>Actions dans les applications</h5><p>Les actions qui modifient une application demandent une validation dans Braand avant exécution. Cette validation est aussi requise lorsqu’une action n’est pas reconnue comme une simple consultation.</p></div><div><h5>Outils Instant payants</h5><p>Chaque appel demande une validation. Un tarif vérifié, un plafond compatible, des crédits et un budget disponible sont requis. L’accès dépend aussi du forfait actif et de la configuration de l’espace.</p></div><div><h5>Équipe et paiements</h5><p>Les paiements sont réservés au propriétaire. La gestion de l’équipe et des budgets dépend du rôle et d’un forfait Business actif.</p></div></div></section>

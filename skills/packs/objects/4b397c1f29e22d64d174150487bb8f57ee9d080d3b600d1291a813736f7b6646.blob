@@ -1,0 +1,63 @@
+---
+name: xlsx
+description: Create, read, clean, analyze and edit spreadsheets (.xlsx, .xlsm, .csv, .tsv). Use whenever a spreadsheet file is the input or the expected output - building a financial model, budget or tracker, fixing formulas, cleaning messy tabular data, adding charts or conditional formatting, merging sheets, pivoting, or converting between CSV and Excel. Trigger on any mention of Excel, a spreadsheet, a .xlsx or .csv file, even if casual ("the sheet in my downloads").
+---
+
+# Spreadsheets (.xlsx / .csv)
+
+## Tools
+
+- **openpyxl**: write and edit workbooks while keeping formulas, styles, charts, validation, conditional formatting.
+- **pandas**: load, clean, reshape, aggregate. Write the result to a clean sheet with `to_excel`, then style it with openpyxl.
+- **LibreOffice headless**: recalculate formulas so cached values exist (`scripts/recalc.sh`), and render to PDF/PNG to check layout.
+
+## Golden rules
+
+1. **Formulas, not pasted numbers.** If a value can be computed from other cells, write a formula so the model stays live. Hardcode only true inputs.
+2. **Inputs in one place.** Put assumptions in a clearly labeled block or sheet (blue font for inputs, black for formulas, green for cross-sheet links), and refer to them by cell, never type the constant inside a formula.
+3. **Never overwrite the user's data silently.** Work on a copy or write to new columns/sheets and say so.
+4. **Recalculate and audit before delivering.** openpyxl writes formulas but does not compute them. Run `bash scripts/recalc.sh file.xlsx` then `python scripts/xlsx_audit.py file.xlsx`. Deliver only with zero error cells.
+5. **Structure**: one header row, one record per row, one type per column, no merged cells inside data ranges, no blank rows in the middle of a table.
+
+## Workflow
+
+1. Inspect: `python scripts/xlsx_audit.py input.xlsx` (sheets, used ranges, formula counts, error values, merged cells, hidden sheets).
+2. For messy CSV/Excel: read with pandas using explicit `dtype`, `decimal`, `sep`, `encoding`; fix headers, trim whitespace, parse dates with an explicit format, normalize categories, drop exact duplicates, and keep a log of what changed (rows dropped, values altered).
+3. Build the workbook: sheets named plainly (no spaces if formulas refer to them often), freeze header row (`ws.freeze_panes = "A2"`), set column widths, number formats, and an Excel Table or autofilter for data sheets.
+4. Add charts with `openpyxl.chart` (bar, line, pie, scatter) anchored beside the data; title, axis labels, readable series names.
+5. Recalculate, audit, render a preview, deliver.
+
+## Formula practices
+
+- Absolute references (`$B$2`) for constants and lookup ranges.
+- Prefer `SUMIFS/COUNTIFS/AVERAGEIFS`, `INDEX/MATCH` or `XLOOKUP` (check the user's Excel version; `XLOOKUP`, `FILTER`, `LET` are not in Excel 2016/2019 or old LibreOffice).
+- Guard divisions: `=IF(B2=0,"",A2/B2)` or `IFERROR` only where an error is expected, never to hide real mistakes.
+- Dates are numbers: format cells as dates, never store text dates.
+- Percentages as fractions with a `0.0%` format, currency with a real number format, not text with a symbol.
+- Avoid volatile functions (`INDIRECT`, `OFFSET`, `TODAY`) in large models unless required.
+- Long formulas: break into helper columns.
+
+## Financial and planning models
+
+- Time across columns, line items down rows; consistent column meaning throughout all sheets.
+- Totals check themselves: add a "check" row that must equal zero (balance sheet balances, allocations sum to 100%).
+- Show units in the header ("EUR thousands"), and document the sources and assumptions on a notes sheet.
+- Scenarios: one selector cell driving `CHOOSE`/`INDEX` rather than copies of the model.
+
+## Formatting for readability
+
+- Header row bold with a fill; zebra striping optional; thin borders; consistent decimals.
+- Negative numbers visibly different (parentheses or red), zeros as dashes if it helps.
+- Conditional formatting for status or thresholds, with a legend.
+- Data validation lists for categorical input cells.
+- Print setup: landscape for wide tables, repeat header rows, fit to one page wide.
+
+## CSV specifics
+
+- Detect delimiter and encoding first (UTF-8 with BOM for Excel in French/European locales; `;` separators and decimal commas are common).
+- Keep leading zeros (zip codes, IDs) by reading as text.
+- When writing CSV for Excel in a European locale, use `sep=';'`, `decimal=','`, `encoding='utf-8-sig'`.
+
+## Delivery
+
+State in two or three lines: what sheets exist, the key assumptions, and any cell the user must change. Do not paste the table into chat unless it is tiny.

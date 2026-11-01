@@ -1,0 +1,450 @@
+"""Clone/recreation of the Porsche motion-graphics reference video.
+Programmatic rebuild: kinetic typography, dashed UI boxes, barcodes,
+swooshes, sparkle wipes and card slides, rendered frame by frame (Pillow)
+at 1080x1920 / 30 fps. Visual plates are crops from the user's own
+reference file; all typography and motion are rebuilt from scratch.
+"""
+import math, os, random, sys
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+W, H, FPS = 1080, 1920, 30
+DUR = 23.87
+BG = (212, 212, 212)
+INK = (35, 35, 38)
+MID = (88, 88, 92)
+BASE = os.path.expanduser("~/workspace/clone-porsche")
+AST = os.path.join(BASE, "assets")
+
+FDIR = "/usr/share/fonts/truetype/liberation/"
+BOLD = FDIR + "LiberationSans-Bold.ttf"
+SANS = FDIR + "LiberationSans-Regular.ttf"
+SERIF_I = FDIR + "LiberationSerif-Italic.ttf"
+SERIF_BI = FDIR + "LiberationSerif-BoldItalic.ttf"
+SERIF_B = FDIR + "LiberationSerif-Bold.ttf"
+
+_fonts = {}
+def F(path, size):
+    k = (path, size)
+    if k not in _fonts:
+        _fonts[k] = ImageFont.truetype(path, size)
+    return _fonts[k]
+
+def tw(font, s):
+    b = ImageDraw.Draw(Image.new("RGB", (8, 8))).textbbox((0, 0), s, font=font)
+    return b[2] - b[0], b[3] - b[1], b[0], b[1]
+
+def clamp01(x):
+    return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+def eo(x):  # ease out cubic
+    x = clamp01(x); return 1 - (1 - x) ** 3
+
+def eob(x):  # ease out back
+    x = clamp01(x); c = 1.70158
+    return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2
+
+def prog(t, t0, d):
+    return clamp01((t - t0) / d)
+
+# ---------------------------------------------------------------- assets
+def load_asset(name, size=None):
+    im = Image.open(os.path.join(AST, name))
+    if size:
+        im = im.resize(size, Image.LANCZOS)
+    return im
+
+BRAIN = load_asset("brain_circle.png", (768, 768))
+TRACK1 = load_asset("track1.jpg")
+TRACK2 = load_asset("track2.jpg")
+ICONIC = load_asset("iconic_band.png", (1068, 705))
+SIDE = load_asset("side_band.png", (1020, 187))
+TOPC = load_asset("top_band.png", (426, 1150))
+PANELS = [load_asset(f"panel{i}.jpg", (285, 668)) for i in (1, 2, 3)]
+
+def cover(im, w, h):
+    s = max(w / im.width, h / im.height)
+    im2 = im.resize((int(im.width * s) + 1, int(im.height * s) + 1), Image.LANCZOS)
+    x = (im2.width - w) // 2; y = (im2.height - h) // 2
+    return im2.crop((x, y, x + w, y + h))
+
+CARD1 = cover(TRACK1, 660, 1350)
+CARD2 = cover(TRACK2, 660, 1350)
+
+# ---------------------------------------------------------------- helpers
+def paste_shadow(img, plate, cx, cy, blur=28, off=(16, 26), alpha=110, rad=6):
+    sh = Image.new("RGBA", plate.size, (0, 0, 0, alpha))
+    if plate.mode == "RGBA":
+        sh.putalpha(plate.split()[3].point(lambda a: int(a * alpha / 255)))
+    canvas = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    canvas.alpha_composite(sh, (int(cx - plate.width / 2 + off[0]), int(cy - plate.height / 2 + off[1])))
+    canvas = canvas.filter(ImageFilter.GaussianBlur(blur))
+    img.alpha_composite(canvas)
+
+def paste(img, plate, cx, cy, scale=1.0, alpha=1.0, rot=0.0, dx=0, dy=0):
+    p = plate
+    if scale != 1.0:
+        p = p.resize((max(2, int(p.width * scale)), max(2, int(p.height * scale))), Image.LANCZOS)
+    if rot:
+        p = p.rotate(rot, expand=True, resample=Image.BICUBIC)
+    if alpha < 1.0:
+        p = p.copy()
+        a = p.split()[3].point(lambda v: int(v * alpha)) if p.mode == "RGBA" else None
+        if a is not None:
+            p.putalpha(a)
+        else:
+            p = p.convert("RGBA"); p.putalpha(int(255 * alpha))
+    elif p.mode != "RGBA":
+        p = p.convert("RGBA")
+    img.alpha_composite(p, (int(cx - p.width / 2 + dx), int(cy - p.height / 2 + dy)))
+
+def text_layer(w, h):
+    return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+def draw_text(img, s, font, x, y, fill=INK, anchor="la", shadow=True, sh_off=(5, 7), sh_alpha=70):
+    if shadow:
+        lay = text_layer(img.width, img.height)
+        d = ImageDraw.Draw(lay)
+        d.text((x + sh_off[0], y + sh_off[1]), s, font=font, fill=(60, 60, 60, sh_alpha), anchor=anchor)
+        img.alpha_composite(lay.filter(ImageFilter.GaussianBlur(5)))
+    d = ImageDraw.Draw(img)
+    d.text((x, y), s, font=font, fill=fill + (255,) if len(fill) == 3 else fill, anchor=anchor)
+
+def reveal_wipe(img, draw_fn, t0, dur, t, y_band=None):
+    """draw_fn draws on a full layer; we crop it horizontally by progress."""
+    p = eo(prog(t, t0, dur))
+    if p <= 0: return
+    lay = text_layer(img.width, img.height)
+    draw_fn(lay)
+    if p < 1:
+        crop = lay.crop((0, 0, int(img.width * (0.08 + 0.9 * p)) + 60, img.height))
+        lay = text_layer(img.width, img.height); lay.alpha_composite(crop, (0, 0))
+    img.alpha_composite(lay)
+
+def barcode(img, cx, y, w=210, h=64, seed=7, alpha=255):
+    rnd = random.Random(seed)
+    d = ImageDraw.Draw(img)
+    x = cx - w / 2
+    while x < cx + w / 2:
+        bw = rnd.choice([2, 3, 4, 6, 8, 3, 2, 5])
+        if rnd.random() > 0.32:
+            d.rectangle([x, y, x + bw, y + h], fill=INK + (alpha,))
+        x += bw + rnd.choice([2, 3, 4, 6])
+
+def swoosh(img, ybase, amp=120, thick=12, color=(70, 70, 74), alpha=200, xprog=1.0, phase=0.0):
+    pts = []
+    for i in range(81):
+        x = -40 + (W + 80) * i / 80
+        y = ybase + math.sin(i / 80 * math.pi * 1.15 + phase) * amp * (i / 80 - 0.35)
+        pts.append((x, y))
+    lay = text_layer(W, H)
+    d = ImageDraw.Draw(lay)
+    d.line(pts, fill=color + (alpha,), width=thick, joint="curve")
+    if xprog < 1:
+        cut = int(W * xprog)
+        lay = lay.crop((0, 0, cut, H))
+        base = text_layer(W, H); base.alpha_composite(lay, (0, 0)); lay = base
+    img.alpha_composite(lay.filter(ImageFilter.GaussianBlur(1)))
+
+def sparkle(img, cx, cy, r, rot=0.0, alpha=255, color=(20, 20, 22)):
+    """4-point star / sparkle polygon."""
+    pts = []
+    for i in range(8):
+        ang = rot + i * math.pi / 4
+        rad = r if i % 2 == 0 else r * 0.16
+        pts.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+    d = ImageDraw.Draw(img)
+    d.polygon(pts, fill=color + (alpha,))
+
+def dashed_circle(img, cx, cy, r, rot_deg, alpha=255, dash_r=7):
+    d = ImageDraw.Draw(img)
+    for a in range(0, 360, 14):
+        ang = math.radians(a + rot_deg)
+        x, y = cx + r * math.cos(ang), cy + r * math.sin(ang)
+        d.ellipse([x - dash_r, y - dash_r * 0.45, x + dash_r, y + dash_r * 0.45], fill=(30, 30, 32, alpha))
+
+def dashed_box(img, cx, cy, w, h, alpha=255):
+    d = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+    dash, gap = 14, 10
+    col = (40, 40, 44, alpha)
+    x = x0
+    while x < x1:
+        d.line([x, y0, min(x + dash, x1), y0], fill=col, width=3)
+        d.line([x, y1, min(x + dash, x1), y1], fill=col, width=3)
+        x += dash + gap
+    y = y0
+    while y < y1:
+        d.line([x0, y, x0, min(y + dash, y1)], fill=col, width=3)
+        d.line([x1, y, x1, min(y + dash, y1)], fill=col, width=3)
+        y += dash + gap
+    for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]:
+        d.ellipse([px - 13, py - 13, px + 13, py + 13], fill=(25, 25, 28, alpha))
+
+def filled_letter(letter, font, src, w, h):
+    mask = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(mask)
+    bb = d.textbbox((0, 0), letter, font=font)
+    d.text(((w - (bb[2] - bb[0])) / 2 - bb[0], (h - (bb[3] - bb[1])) / 2 - bb[1]), letter, font=font, fill=255)
+    fill = cover(src, w, h).convert("RGBA")
+    fill.putalpha(mask)
+    return fill
+
+# ---------------------------------------------------------------- scenes
+def s1(img, t):
+    swoosh(img, 210, amp=60, thick=4, color=(120, 120, 124), alpha=110)
+    swoosh(img, 1780, amp=70, thick=4, color=(120, 120, 124), alpha=110)
+    # Performance
+    p = prog(t, 0.10, 0.55)
+    if p > 0:
+        lay = text_layer(W, H)
+        draw_text(lay, "Performance", F(BOLD, 124), W / 2, 235 - 26 * (1 - eo(p)), fill=INK, anchor="ma")
+        img.alpha_composite(lay.crop((0, 0, int(120 + 880 * eo(p)), H)) if p < 1 else lay)
+    # black bar + isn't created
+    bp = eob(prog(t, 0.55, 0.45))
+    if bp > 0:
+        bw, bh = 810 * bp, 92
+        d = ImageDraw.Draw(img)
+        d.rectangle([W / 2 + 60 - bw / 2, 368, W / 2 + 60 + bw / 2, 368 + bh], fill=(30, 30, 33, 255))
+        if bp > 0.75:
+            draw_text(img, "isn’t created", F(SERIF_I, 74), W / 2 + 60, 376, fill=(245, 245, 245), anchor="ma", shadow=False)
+    # brain
+    bs = eob(prog(t, 0.05, 0.6))
+    if bs > 0:
+        cx, cy = W / 2, 1000
+        dashed_circle(img, cx, cy, 452 * bs, t * 14, alpha=int(230 * prog(t, 0.4, 0.5)))
+        paste_shadow(img, BRAIN, cx, cy, blur=30, alpha=90)
+        paste(img, BRAIN, cx, cy, scale=bs, rot=-7 * (1 - bs))
+    # It's engineered
+    ep = prog(t, 1.55, 0.5)
+    if ep > 0:
+        f1, f2 = F(SERIF_I, 66), F(BOLD, 84)
+        s1_, s2_ = "It’s ", "engineered"
+        wtot = tw(f1, s1_)[0] + tw(f2, s2_)[0]
+        x = W / 2 - wtot / 2
+        lay = text_layer(W, H)
+        draw_text(lay, s1_, f1, x, 1470 + 20 * (1 - eo(ep)), fill=INK, anchor="la")
+        draw_text(lay, s2_, f2, x + tw(f1, s1_)[0], 1452 + 20 * (1 - eo(ep)), fill=INK, anchor="la")
+        lay.putalpha(lay.split()[3].point(lambda a: int(a * ep)))
+        img.alpha_composite(lay)
+    pp = prog(t, 2.0, 0.5)
+    if pp > 0:
+        d = ImageDraw.Draw(img)
+        small = F(SANS, 27)
+        lines = ["Performance increase is not a single action but a continuous",
+                 "process to improving skills, processes, habits, and outcomes. Whether in",
+                 "personal development, professional roles, or organizational systems,"]
+        for i, ln in enumerate(lines):
+            d.text((W / 2, 1596 + i * 36), ln, font=small, fill=MID + (int(255 * pp),), anchor="ma")
+
+def s2(img, t):
+    lt = t - 2.7
+    barcode(img, W / 2, 150, alpha=int(255 * prog(lt, 0, 0.3)))
+    p = prog(lt, 0.05, 0.4)
+    if p > 0:
+        lay = text_layer(W, H)
+        draw_text(lay, "for Over", F(BOLD, 76), 105, 330, fill=INK, anchor="la")
+        img.alpha_composite(lay.crop((0, 0, int(90 + 430 * eo(p)), H)) if p < 1 else lay)
+    # giant 75 filled with car photo, letters slide together
+    fp = F(BOLD, 730)
+    slide = eo(prog(lt, 0.1, 0.55))
+    if slide > 0:
+        l7 = filled_letter("7", fp, TRACK1, 620, 850)
+        l5 = filled_letter("5", fp, TRACK1, 620, 850)
+        paste(img, l7, 330 - 190 * (1 - slide), 905, alpha=slide)
+        paste(img, l5, 768 + 190 * (1 - slide), 905, alpha=slide)
+    yp = prog(lt, 0.85, 0.35)
+    if yp > 0:
+        draw_text(img, "Years", F(BOLD, 70), 895, 1275 + 16 * (1 - eo(yp)), fill=INK, anchor="ma")
+    swoosh(img, 1620, amp=130, thick=17, color=(52, 52, 56), alpha=235, xprog=eo(prog(lt, 0.35, 0.9)))
+
+SEG = [(0.0, "Porsche", SERIF_BI, 108, 0), (0.95, "Has defined", BOLD, 56, 0),
+       (1.65, "pure driving", BOLD, 62, 1), (2.45, "excellence", BOLD, 62, 1)]
+def s3(img, t):
+    lt = t - 4.4
+    sparkle(img, 1015, 130, 120, rot=lt * 0.7, alpha=255)
+    sparkle(img, 60, 1805, 110, rot=-lt * 0.6, alpha=255)
+    # current segment
+    seg = SEG[0]
+    for s in SEG:
+        if lt >= s[0]: seg = s
+    idx = SEG.index(seg)
+    # card: slide during 0.30s after a segment that changes card
+    card = CARD1 if seg[4] == 0 else CARD2
+    dx = 0
+    if idx >= 2:
+        sp = eo(prog(lt, SEG[2][0], 0.35))
+        dx = 0  # new card already in place after quick slide handled below
+    if 1.65 <= lt < 2.0:  # sliding transition card1 -> card2
+        sp = eo(prog(lt, 1.65, 0.35))
+        paste_shadow(img, CARD1, W / 2, 1010); paste(img, CARD1, W / 2 - 700 * sp, 1010)
+        paste_shadow(img, CARD2, W / 2, 1010); paste(img, CARD2, W / 2 + 700 * (1 - sp), 1010)
+    else:
+        bob = math.sin(lt * 1.6) * 6
+        paste_shadow(img, card, W / 2, 1010 + bob)
+        paste(img, card, W / 2, 1010 + bob)
+    # title
+    tp = prog(lt, seg[0] + 0.03, 0.32)
+    if tp > 0:
+        lay = text_layer(W, H)
+        draw_text(lay, seg[1], F(seg[2], seg[3]), W / 2, 205 - 14 * (1 - eo(tp)), fill=INK, anchor="ma")
+        img.alpha_composite(lay.crop((0, 0, int(140 + 820 * eo(tp)), H)) if tp < 1 else lay)
+
+def s4(img, t):
+    lt = t - 7.6
+    sparkle(img, 1010, 120, 150, rot=lt * 0.5)
+    sparkle(img, 70, 1810, 140, rot=-lt * 0.5)
+    boxes = [(0.15, 620, [("Precision", SERIF_BI, 88), ("in every curve", SERIF_I, 76)]),
+             (1.75, 1090, [("Power in", SERIF_BI, 82), ("every detail", SERIF_I, 76)])]
+    for t0, cy, lines in boxes:
+        bp = eo(prog(lt, t0, 0.45))
+        if bp <= 0: continue
+        dashed_box(img, W / 2, cy, 800 * bp, 215 * bp, alpha=int(255 * bp))
+        if bp > 0.6:
+            tp = eo(prog(lt, t0 + 0.3, 0.6))
+            lay = text_layer(W, H)
+            y = cy - 88
+            for txt, fp, sz in lines:
+                wtot = tw(F(fp, sz), txt)[0]
+                # mixed: keep single style per line for legibility, like original serif look
+                draw_text(lay, txt, F(fp, sz), W / 2, y, fill=INK, anchor="ma")
+                y += 96
+            img.alpha_composite(lay.crop((0, 0, int(120 + 860 * tp), H)) if tp < 1 else lay)
+
+def s5(img, t):
+    lt = t - 11.0
+    barcode(img, W / 2, 70, w=170, h=54, alpha=int(255 * prog(lt, 0, 0.3)))
+    for i, word in enumerate(["Iconic", "Design"]):
+        p = prog(lt, 0.12 + i * 0.26, 0.42)
+        if p > 0:
+            lay = text_layer(W, H)
+            draw_text(lay, word, F(BOLD, 196), W / 2, 225 + i * 215 + 26 * (1 - eo(p)), fill=(58, 58, 62), anchor="ma")
+            img.alpha_composite(lay.crop((0, 0, int(90 + 920 * eo(p)), H)) if p < 1 else lay)
+    cp = eob(prog(lt, 0.25, 0.55))
+    if cp > 0:
+        if cp > 0.85:
+            paste_shadow(img, ICONIC, W / 2, 1152, blur=22, alpha=int(70 * (cp - 0.85) / 0.15))
+        paste(img, ICONIC, W / 2, 1152, scale=0.55 + 0.45 * cp, alpha=min(1, cp + 0.25))
+    p1 = prog(lt, 1.55, 0.45); p2 = prog(lt, 2.05, 0.55)
+    if p1 > 0:
+        draw_text(img, "fuzed with", F(SERIF_I, 60), W / 2, 1568 + 14 * (1 - eo(p1)), fill=INK, anchor="ma")
+    if p2 > 0:
+        f1, f2 = F(SERIF_I, 60), F(BOLD, 62)
+        a, b = "motorsport ", "DNA."
+        wtot = tw(f1, a)[0] + tw(f2, b)[0]; x = W / 2 - wtot / 2
+        draw_text(img, a, f1, x, 1652, fill=INK, anchor="la")
+        draw_text(img, b, f2, x + tw(f1, a)[0], 1650, fill=INK, anchor="la")
+
+def s6(img, t):
+    lt = t - 14.6
+    p = prog(lt, 0.05, 0.4)
+    if p > 0:
+        lay = text_layer(W, H)
+        draw_text(lay, "Built to", F(BOLD, 96), 68, 195, fill=INK, anchor="la")
+        img.alpha_composite(lay.crop((0, 0, int(60 + 520 * eo(p)), H)) if p < 1 else lay)
+    p = prog(lt, 0.3, 0.45)
+    if p > 0:
+        draw_text(img, "dominate", F(SERIF_I, 56), 752, 192 + 12 * (1 - eo(p)), fill=INK, anchor="la")
+        draw_text(img, "the road", F(SERIF_I, 56), 752, 252 + 12 * (1 - eo(p)), fill=INK, anchor="la")
+    for i, panel in enumerate(PANELS):
+        pp = eo(prog(lt, 0.25 + i * 0.16, 0.5))
+        if pp <= 0: continue
+        cx = 205 + i * 335
+        cy = 800 + 260 * (1 - pp)
+        paste_shadow(img, panel, cx, cy, blur=18, alpha=95)
+        paste(img, panel, cx, cy, alpha=pp)
+    sp = eo(prog(lt, 0.75, 0.55))
+    if sp > 0:
+        paste_shadow(img, SIDE, W / 2, 1225, blur=20, alpha=80)
+        paste(img, SIDE, W / 2 - 480 * (1 - sp), 1225, alpha=min(1, sp + 0.2))
+    c1 = prog(lt, 1.5, 0.55); c2 = prog(lt, 2.05, 0.5)
+    if c1 > 0:
+        f1, f2 = F(SERIF_I, 74), F(BOLD, 70)
+        a, b = "Crafted ", "to thrill"
+        wtot = tw(f1, a)[0] + tw(f2, b)[0]; x = W / 2 - wtot / 2
+        lay = text_layer(W, H)
+        draw_text(lay, a, f1, x, 1420, fill=INK, anchor="la")
+        draw_text(lay, b, f2, x + tw(f1, a)[0], 1424, fill=INK, anchor="la")
+        img.alpha_composite(lay.crop((0, 0, int(110 + 880 * eo(c1)), H)) if c1 < 1 else lay)
+    if c2 > 0:
+        draw_text(img, "the driver", F(SERIF_I, 66), W / 2, 1518 + 12 * (1 - eo(c2)), fill=INK, anchor="ma")
+    swoosh(img, 1660, amp=55, thick=6, color=(80, 80, 84), alpha=170, xprog=eo(prog(lt, 1.2, 1.2)))
+    if lt > 1.4:
+        barcode(img, W / 2, 1745, w=190, h=56, seed=11, alpha=int(255 * prog(lt, 1.4, 0.4)))
+
+def s7(img, t):
+    lt = t - 18.0
+    sparkle(img, 55, 90, 130, rot=lt * 0.45)
+    sparkle(img, 1030, 1830, 130, rot=-lt * 0.45)
+    cp = eo(prog(lt, 0.0, 0.55))
+    if cp > 0:
+        paste_shadow(img, TOPC, W / 2, 985 + 420 * (1 - cp), blur=24, alpha=85)
+        paste(img, TOPC, W / 2, 985 + 420 * (1 - cp), alpha=min(1, cp + 0.25))
+    def show(txt, font, x, y, t0, anchor="la"):
+        p = prog(lt, t0, 0.4)
+        if p > 0:
+            lay = text_layer(W, H)
+            draw_text(lay, txt, font, x, y + 16 * (1 - eo(p)), fill=INK, anchor=anchor)
+            lay.putalpha(lay.split()[3].point(lambda a: int(a * p)))
+            img.alpha_composite(lay)
+    show("This isn’t", F(BOLD, 92), W / 2, 235, 0.25, anchor="ma")
+    show("Just", F(BOLD, 88), 88, 1015, 0.75)
+    show("A", F(BOLD, 92), 872, 955, 1.1)
+    show("car", F(SERIF_I, 88), 838, 1048, 1.25)
+    show("It’s a", F(SERIF_I, 60), W / 2, 1565, 1.75, anchor="ma")
+    show("Statement", F(BOLD, 76), W / 2, 1645, 2.05, anchor="ma")
+
+def s8(img, t):
+    lt = t - 21.3
+    # sweeping grey swoosh band
+    lay = text_layer(W, H)
+    d = ImageDraw.Draw(lay)
+    off = -260 + 300 * eo(prog(lt, 0, 0.9))
+    d.ellipse([-620 + off, 420, 1150 + off, 1560], outline=(140, 140, 144, 200), width=95)
+    img.alpha_composite(lay.filter(ImageFilter.GaussianBlur(2)))
+    def show(txt, font, x, y, t0, anchor="ma"):
+        p = prog(lt, t0, 0.42)
+        if p > 0:
+            l2 = text_layer(W, H)
+            draw_text(l2, txt, font, x, y + 14 * (1 - eo(p)), fill=INK, anchor=anchor)
+            img.alpha_composite(l2.crop((0, 0, int(120 + 860 * eo(p)), H)) if p < 1 else l2)
+    show("Porsche", F(BOLD, 98), W / 2, 838, 0.25)
+    show("There is", F(BOLD, 56), W / 2, 972, 0.85)
+    if prog(lt, 1.25, 0.5) > 0:
+        f1, f2 = F(BOLD, 56), F(SERIF_I, 62)
+        a, b = "no ", "Substitute"
+        wtot = tw(f1, a)[0] + tw(f2, b)[0]; x = W / 2 - wtot / 2
+        draw_text(img, a, f1, x, 1048, fill=INK, anchor="la")
+        draw_text(img, b, f2, x + tw(f1, a)[0], 1044, fill=INK, anchor="la")
+    sparkle(img, 1015, 105, 95, rot=lt * 0.6)
+    sparkle(img, 65, 1815, 95, rot=-lt * 0.6)
+
+SCENES = [(0.0, 2.7, s1), (2.7, 4.4, s2), (4.4, 7.6, s3), (7.6, 11.0, s4),
+          (11.0, 14.6, s5), (14.6, 18.0, s6), (18.0, 21.3, s7), (21.3, 23.87, s8)]
+
+def frame(t):
+    img = Image.new("RGBA", (W, H), BG + (255,))
+    for a, b, fn in SCENES:
+        if a <= t < b:
+            fn(img, t); break
+    return img.convert("RGB")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "stills":
+        os.makedirs(os.path.join(BASE, "check"), exist_ok=True)
+        for tsec in [0.9, 2.2, 3.6, 5.0, 6.4, 8.6, 10.3, 12.4, 14.2, 16.9, 19.9, 22.8]:
+            frame(tsec).save(os.path.join(BASE, "check", f"c_{tsec}.jpg"), quality=88)
+        print("stills done")
+    else:
+        import subprocess
+        out = os.path.join(BASE, "render", "video_only.mp4")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+               "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-an", "-c:v", "libx264",
+               "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", out]
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        n = int(DUR * FPS)
+        for i in range(n):
+            p.stdin.write(frame(i / FPS).tobytes())
+            if i % 90 == 0: print(f"frame {i}/{n}", flush=True)
+        p.stdin.close(); p.wait()
+        print("rendered", out)

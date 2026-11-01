@@ -1,0 +1,62 @@
+---
+name: docx
+description: Create, read, edit and review Word documents (.docx, .dotx). Use whenever the user mentions Word, a .docx file, a Word template, tracked changes, comments in a Word file, find-and-replace in a document, headers/footers, tables of contents, or wants a polished document delivered as a Word file to download, email or print. Also use to extract text, tables or images from an uploaded .docx, even when the result will be used elsewhere. Do not use for PDFs, spreadsheets, or Google Docs.
+---
+
+# Word documents (.docx)
+
+## Decide the task first
+
+| Task | Approach |
+|---|---|
+| Read / summarize / extract | `scripts/docx_dump.py` first, then read what matters |
+| Create from scratch | python-docx (Python) or the `docx` npm package (Node) |
+| Edit an existing file | Open the original and change it in place. Never rebuild a file the user gave you: you will lose styles, numbering, headers and fields |
+| Tracked changes | Manipulate the XML (`w:ins`, `w:del`) — python-docx has no API for it |
+| Comments | `Document.add_comment` in python-docx >= 1.2; otherwise edit `comments.xml` |
+| Convert to PDF | `soffice --headless --convert-to pdf file.docx` |
+
+## Workflow
+
+1. **Inspect** an existing file: `python scripts/docx_dump.py input.docx`. It lists styles in use, headings, tables, sections, images, comments and tracked changes. Read this before touching anything.
+2. **Plan the structure** for a new document: title, headings (max 3 levels), body, tables, figures. Decide page size (A4 vs Letter by the user's locale), margins, base font.
+3. **Build with styles, not manual formatting.** Use `Title`, `Heading 1-3`, `List Bullet`, `List Number`, `Caption`. Define font/size/spacing once on the styles. Direct run formatting only for inline emphasis.
+4. **Render and look.** `bash scripts/render_preview.sh out.docx` produces a PDF and PNGs of every page. Open the PNGs. Check: orphan headings, tables running off the page, empty pages, broken numbering, wrong fonts.
+5. **Save to `/mnt/user-data/outputs/`** and present the file.
+
+## Quality rules
+
+- Real lists, never typed "-" or "1." characters.
+- Real headings so the navigation pane and a table of contents work.
+- Tables: header row repeated across pages (`w:tblHeader`), fixed column widths that sum to the text width, light borders, cell padding, numbers right-aligned.
+- Images: set width explicitly (never exceed text width), add alt text and a caption when they carry meaning.
+- Page numbers and a footer for anything longer than two pages. Insert them as fields, not typed numbers.
+- Table of contents: insert a TOC field; tell the user to right-click > Update field (or run a LibreOffice headless refresh) because python-docx cannot compute page numbers.
+- Language: set the document language on the styles (`w:lang`) so spell-check matches the content.
+- Fonts: stay with fonts that exist on the target machine (Calibri, Arial, Times New Roman, Cambria). Do not assume a custom font is installed.
+- Keep one idea per paragraph; avoid walls of bold text.
+
+## Editing existing documents
+
+- Find text across runs: Word splits sentences into several runs. To replace a phrase, join the runs of the paragraph, replace, then put the result in the first run and clear the others so the first run's formatting survives.
+- Preserve numbering, section breaks, headers/footers, and content controls. Touch only the paragraphs you must.
+- Templates (.dotx / a file the user wants imitated): copy the file, delete the sample body content, keep styles and section setup, then add your content with the template's own styles.
+- After editing, diff: dump before and after with `docx_dump.py` and confirm only the intended parts changed.
+
+## Tracked changes and comments (XML level)
+
+- Insertion: wrap runs in `<w:ins w:id w:author w:date>`.
+- Deletion: wrap runs in `<w:del ...>` and turn `w:t` into `w:delText`.
+- Use a unique incrementing `w:id` for every revision, a real author name, and an ISO date.
+- To accept all changes or reject them, remove the wrappers (accept: unwrap `w:ins`, drop `w:del`; reject: the opposite).
+- Re-open the saved file with python-docx and with LibreOffice to prove it still loads.
+
+## Common failure modes
+
+- File "needs repair" in Word: usually duplicate revision ids, a `w:t` containing a raw control character, or a relationship pointing at a missing part.
+- Fonts changed after opening in another viewer: the font name was set on runs only on one script (`w:rFonts` has `ascii`, `hAnsi`, `eastAsia`, `cs`; set all).
+- Table wider than the page: widths were set on cells but the table has `autofit` on.
+
+## Deliverable
+
+Summarize in two or three lines what the document contains and anything the user must do manually (update the TOC field, fill a placeholder). Do not paste the document's text back into the chat.

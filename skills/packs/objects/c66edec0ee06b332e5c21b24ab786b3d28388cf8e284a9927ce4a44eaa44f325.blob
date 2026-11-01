@@ -1,0 +1,90 @@
+# Inventaire des outils de Muse
+
+33 espaces d'outils. Certains sont toujours chargés, d'autres se chargent à la demande quand une tâche les concerne. À cela s'ajoutent les connecteurs (comptes et services branchés) et les programmes en ligne de commande installés sur la machine.
+
+## 1. Outils de base, toujours disponibles (muse)
+
+- `muse.exec` : exécuter des commandes shell sur mon ordinateur (Linux).
+- `muse.read` : lire des fichiers, des dossiers et des images.
+- `muse.write` : créer et écrire des fichiers.
+- `muse.edit` : modifier précisément un passage d'un fichier.
+- `muse.memory_search` : rechercher dans ma mémoire et les conversations passées.
+- `muse.memory_get` : relire un passage précis de la mémoire.
+- `muse.memory_explain` : expliquer d'où vient un souvenir et ce qui l'a remplacé.
+- `muse.skill_search` : rechercher un skill dans tout le catalogue.
+- `muse.connector_search` : rechercher un connecteur par nom ou par action.
+- `muse.create_options` : afficher des boutons de choix cliquables dans le chat.
+- `muse.react_to_user_message` : mettre une réaction emoji sur un message.
+- `muse.session_status` : voir l'état de la conversation (contexte, modèle, heure).
+- `muse.db` : interroger en lecture les registres internes de Muse (exécutions, travaux programmés, livraisons).
+- `muse.visual_grounding` : localiser et compter des objets dans une image avec coordonnées.
+- `muse.set_preferred` et `muse.offer_preference` : enregistrer le service préféré de l'utilisateur pour un type de tâche.
+- `muse.nothing_to_do` : clore proprement un résultat de fond qui ne mérite pas de message.
+
+## 2. Navigateur et web (browser)
+
+- `browser.browse` : piloter le navigateur Chromium intégré (missions web complètes).
+- `browser.windows` et `browser.profiles` : gérer fenêtres, onglets et profils du navigateur.
+- `browser.search` : rechercher sur le web, avec verticales news, sport, météo, finance et date/heure.
+- `browser.open` et `browser.find` : lire le texte d'une page et chercher dedans.
+- `browser.deep_research` : déléguer une recherche web approfondie et sourcée.
+- `browser.lookup_citation_url` : retrouver l'URL exacte d'une source citée.
+
+## 3. Fichiers, corbeille et hébergement
+
+- Espace `trash` : déplacer des fichiers en corbeille récupérable, lister, restaurer.
+- Skill `file-hosting` et l'outil de stockage distant : mettre un fichier en ligne et rendre un lien temporaire.
+- Espace `artifact` : créer, modifier, inspecter, partager et exporter des documents, pages web, applications, PDF, présentations et tableurs durables.
+
+## 4. Communication et chats (chat, worker, device, onboarding)
+
+- Espace `chat` : lister, créer, lire, renommer, archiver et supprimer des conversations secondaires, envoyer une tâche à un agent d'une conversation externe.
+- Espace `worker` : mettre à jour les règles de confidentialité d'une conversation externe.
+- Espace `device` : exécuter des commandes sur les appareils appairés de l'utilisateur et en lire certaines données.
+- Espace `onboarding` : widget de choix du nom de l'assistant et enregistrement du nom ou du style choisi.
+
+## 5. Travail en arrière-plan et automatisation (subagent, workflow, cron, hooks, process, todo, tracking, user_goal, proactivity, feed)
+
+- Espace `subagent` : déléguer du travail à des agents enfants (créer, suivre, relancer, arrêter).
+- Espace `workflow` : créer et contrôler des orchestrations JavaScript multi-agents sur la machine.
+- Espace `cron` : travaux programmés et récurrents (créer, modifier, lister, lancer, historique).
+- Espace `hooks` : automatisations déclenchées par un événement plutôt que par l'horloge.
+- Espace `process` : gérer les processus shell longs (lire la sortie, écrire, arrêter).
+- Espace `todo` : la liste de travail de la tâche en cours.
+- Espace `tracking` : suivre réservations, livraisons, engagements et projets concrets.
+- Espace `user_goal` : créer, suivre et clore les objectifs durables de l'utilisateur.
+- Espace `proactivity` : lire et trier les livraisons préparées par le travail proactif de fond.
+- Espace `feed` : gérer le fil d'actualités personnel de l'utilisateur (prompt, publications, régénération).
+
+## 6. Création de contenu et médias (media, avatar, widget, idea, social, map, travel)
+
+- Espace `media` : générer et modifier images et vidéos.
+- Espace `avatar` : créer, modifier et définir mon avatar, lancer ses vidéos de danse.
+- Espace `widget` : créer des widgets dans le chat (listes, cartes, pages HTML, lettres), les présenter et lire leur état.
+- Espace `idea` : lister, rechercher et publier des idées de l'onglet Idées.
+- Espace `social` : rechercher ce qui se dit sur les plateformes sociales publiques.
+- Espace `map` : géocoder adresses et lieux, identifier un lieu depuis des coordonnées.
+- Espace `travel` : créer des cartes d'hôtels à partir de résultats de recherche.
+
+## 7. Achats et paiements (shopping, wallet, ads)
+
+- Espace `shopping` : résoudre des résultats produits, créer les cartes produits et paniers, lire un panier vérifié.
+- Espace `wallet` : vérifier la connexion Shop Pay ou Stripe Link et lire moyens de paiement et adresses enregistrés (sans jamais charger une carte).
+- Espace `ads` et `ads.resolve_entities` : données publicitaires Meta et référencement propre des comptes, campagnes et publicités citées.
+
+## 8. Identifiants et permissions (credentials, permissions, forget)
+
+- Espace `credentials` : demander à l'utilisateur un identifiant, un mot de passe ou un accès API via les écrans sécurisés du coffre.
+- Espace `permissions` : lister les permissions actives, en attente et l'historique des décisions.
+- Espace `forget` : planifier et exécuter l'oubli d'informations demandé par l'utilisateur.
+
+## 9. Interface de l'application (ui, tool_search)
+
+- Espace `ui` : piloter l'interface de l'application de l'utilisateur (ouvrir une vue, appliquer un réglage, cartes de navigation).
+- Espace `tool_search` : charger à la demande les schémas complets d'un espace d'outils différé.
+
+## 10. En plus des espaces d'outils
+
+- **Les connecteurs** : Gmail, Google Calendar, Docs et Drive, Facebook, Instagram, Messenger, Meta Ads et Catalogue, Spotify, Stripe, Shopify, Places, Ticketmaster, FlightAware, 1Password, Threads, Tailscale, Apple Health et Health Connect, chacun avec ses propres commandes.
+- **Les programmes système** : des outils en ligne de commande sous `/opt/hatch/bin` pour les connecteurs et services.
+- **La machine elle-même** : un terminal Linux complet (Python, FFmpeg, Git et le reste), utilisée via `muse.exec` et `process`.

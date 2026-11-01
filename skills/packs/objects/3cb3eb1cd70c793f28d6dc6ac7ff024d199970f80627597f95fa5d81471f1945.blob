@@ -1,0 +1,20 @@
+# Navigateur gratuit pour agents - demarrage local
+# Lancement : docker compose up -d
+# Interface de debug : http://localhost:3000
+# API sessions Steel : http://localhost:3000/v1/sessions
+services:
+  steel-browser:
+    image: ghcr.io/steel-dev/steel-browser:latest
+    ports:
+      - "3000:3000"   # API + interface de debug
+      - "9223:9223"   # WebSocket CDP (connexion Playwright)
+    environment:
+      # En production, protege l'API par une cle que seul ton backend connait
+      - STEEL_API_KEY=${STEEL_API_KEY:-dev-local-key}
+    restart: unless-stopped
+    # Un Chromium consomme ~300 Mo a 1 Go de RAM.
+    # Fixe une limite pour proteger le serveur, ajuste selon ta machine.
+    deploy:
+      resources:
+        limits:
+          memory: 4G

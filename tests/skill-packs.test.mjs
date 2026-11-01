@@ -13,9 +13,9 @@ const buffer=file=>readFileSync(new URL(file.path,root));
 const storage={async get(key){const file=objects.get(key);assert.ok(file,'Only content-addressed manifest objects are accessible');const bytes=buffer(file);return {size:bytes.length,async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);}};}};
 
 test('all supplied sources are represented once, including nested .skill archives, scripts, fonts and prompts',()=>{
- assert.equal(manifest.sources.length,10);
- assert.equal(manifest.counts.skills,103);assert.equal(manifest.counts.newEntries,104);assert.equal(manifest.counts.augmentedEntries,1);
- assert.equal(SKILL_CATALOG.length,146);assert.equal(new Set(SKILL_CATALOG.map(entry=>entry.id)).size,146);
+ assert.equal(manifest.sources.length,18);
+ assert.equal(manifest.counts.skills,123);assert.equal(manifest.counts.newEntries,124);assert.equal(manifest.counts.augmentedEntries,1);
+ assert.equal(SKILL_CATALOG.length,166);assert.equal(new Set(SKILL_CATALOG.map(entry=>entry.id)).size,166);
  assert.equal(manifest.sources.find(file=>file.name==='Codex-Skills-Cloud.zip').sha256,manifest.sources.find(file=>file.name==='Codex-Skills-Cloud (1).zip').sha256);
  assert.equal(new Set(manifest.objects.map(file=>file.sha256)).size,manifest.objects.length);
  for(const file of manifest.objects){const bytes=buffer(file);assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);}
@@ -47,6 +47,16 @@ test('same named versions enrich one existing method; supplied scripts and asset
  const source=await readSkill({id:entry.id,reference:script},session,storage);assert.ok(source.content.length>0);
  const files=await skillPackFiles(entry.id);assert.equal(files[script].sha256,entry.files[script].sha256);
  for(const path of ['../system_prompt.md','/etc/passwd','imports/not-allowed.py','__proto__'])await assert.rejects(()=>packedAsset(files,path,storage),error=>error.code==='skill_not_found');
+});
+
+test('standalone aliases and copied kits retain one method and link the complete motion and browser resources',async()=>{
+ for(const [a,b]of [['kit-agent-video-motion.zip','kit-agent-video-motion (1).zip'],['SKILL.md','SKILL (1).md'],['SKILL (2).md','SKILL (3).md']])assert.equal(manifest.sources.find(source=>source.name===a).sha256,manifest.sources.find(source=>source.name===b).sha256);
+ for(const id of ['artifact-creation','montage-video-complet'])assert.equal(SKILL_CATALOG.filter(entry=>entry.id===id).length,1);
+ const montage=manifest.entries.find(entry=>entry.id==='montage-video-complet');assert.equal(montage.variants.length,1);
+ for(const filename of ['moteur-monolithe.py','moteur-reels-spec-json.py','post-niveaux-audio.py'])assert.ok(Object.keys(montage.files).some(path=>path.endsWith('/'+filename)));
+ assert.ok(Object.keys(manifest.entries.find(entry=>entry.id==='computer-use').files).some(path=>path.endsWith('/session-service.ts')));
+ const artifact=manifest.entries.find(entry=>entry.id==='artifact-creation');assert.equal(artifact.variants.length,1);assert.ok(manifest.coverage.some(file=>file.providedPath==='SKILL.md'));assert.ok(manifest.coverage.some(file=>file.providedPath==='SKILL (1).md'));
+ const session=createSkillSession(),method=await readSkill({id:'montage-video-complet'},session,storage);assert.match(method.content,/Opus 5\.5/);
 });
 
 test('storage reads verify hashes, sizes and availability; never substitute another object after an integrity failure',async()=>{

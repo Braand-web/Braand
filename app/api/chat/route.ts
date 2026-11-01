@@ -11,6 +11,7 @@ import {FILE_POLICY,safeFileDto} from '@/lib/file-policy.mjs';
 import type {FileRecord} from '@/lib/contracts';
 import {chatAttachmentBlocks} from '@/lib/chat-attachments.mjs';
 import {responseSources,responseStatus} from '@/lib/response-metadata.mjs';
+import {containsExplicitLoginSecret} from '@/lib/chat-secret-guard.mjs';
 export async function POST(request:Request){
  let tenant="",conversationId="",locked=false,budget:RunBudget|undefined;
  try{
@@ -18,6 +19,7 @@ export async function POST(request:Request){
   await ensureModelPricing();
   if(routingEnabled(config()))routedModel(config(),{task:'conversation'});else requireModel();
   const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().optional(),attachments:z.array(z.string()).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied")}).parse(await request.json());
+  if(containsExplicitLoginSecret(body.text))throw new AppError('Cette saisie semble contenir un identifiant secret. Utilisez la saisie sécurisée dans Paramètres → Autorisations, ou dans le navigateur sous votre contrôle.',400,'secure_login_input_required');
   const conversation=body.conversationId?await getResource(tenant,body.conversationId):await createResource(tenant,"conversation",body.text.slice(0,70),{},"saved");if(conversation.kind!=="conversation"||conversation.status==="deleted")throw new AppError("Discussion invalide.");const sidebar=conversation.data.sidebar;if(sidebar&&typeof sidebar==="object"&&!Array.isArray(sidebar)&&(sidebar as Record<string,unknown>).archived===true)throw new AppError("Restaurez cette discussion avant de la continuer.",409);conversationId=conversation.id;
   const lock=await db().prepare("UPDATE resources SET status='streaming',updated_at=? WHERE id=? AND workspace_id=? AND (status!='streaming' OR updated_at<?)").bind(Date.now(),conversationId,tenant,Date.now()-300000).run();if(!lock.meta.changes)throw new AppError("Une réponse est déjà en cours dans cette discussion.",409);
   locked=true;

@@ -93,7 +93,7 @@ test('adapted methods support model-led multilingual selection and progressive r
 
 test('settings metadata matches the reviewed registry and rejects private prose or extra executable fields',()=>{
  const skills=reviewedSkillMetadata();const dto=reviewedSkillCatalogSchema.parse({skills});
- assert.equal(dto.skills.length,146);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,146);
+ assert.equal(dto.skills.length,166);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,166);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],content:'private instructions'}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],tools:['shell']}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],id:'../unreviewed'}]}).success,false);

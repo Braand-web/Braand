@@ -1,6 +1,6 @@
 # Creative production and software delivery methods
 
-The reviewed, model-selected catalogue now has 146 methods. It loads entry text and
+The reviewed, model-selected catalogue now has 166 methods. It loads entry text and
 references only on explicit `read_skill`, under the existing shared context budget.
 The added software method is original Braand guidance, not a coding execution
 service. It differentiates proposed source, persisted commit, exact-revision CI,

@@ -1,0 +1,62 @@
+---
+name: pdf
+description: Create and manipulate PDF files. Use whenever the user wants to merge, split, reorder, rotate, crop, watermark, stamp, encrypt, decrypt, compress or fill a PDF, generate a new PDF (report, invoice, certificate, letter), convert content to PDF, or add page numbers or headers to a PDF. If the main goal is only to read or extract from a PDF, use pdf-reading instead. Use this skill even if the user just says "make it a PDF".
+---
+
+# PDF creation and manipulation
+
+## Choose the tool
+
+| Goal | Tool |
+|---|---|
+| Merge, split, rotate, reorder, encrypt, watermark, fill form fields | `pypdf` (`scripts/pdf_tools.py`) |
+| Generate a new PDF with precise layout (invoices, certificates, labels) | `reportlab` (Platypus for flowing text, canvas for exact placement) |
+| Convert a Word/PowerPoint/Excel file | `soffice --headless --convert-to pdf` |
+| Turn an HTML page into a PDF | headless Chromium via Playwright `page.pdf()` |
+| Page images | `pdftoppm -png -r 100 in.pdf out` |
+
+## Workflow
+
+1. Look at the input: `python scripts/pdf_tools.py info file.pdf` (pages, size, encryption, form fields, metadata).
+2. Do the operation with the smallest possible change. Never regenerate a PDF when you only need to stamp or reorder pages.
+3. Verify the result: reopen it, check the page count, rasterize one or two pages and look at them.
+4. Save under `/mnt/user-data/outputs/` and present it.
+
+## Command cheat sheet (`scripts/pdf_tools.py`)
+
+```
+info      file.pdf
+merge     out.pdf a.pdf b.pdf c.pdf
+split     file.pdf outdir            # one file per page
+extract   file.pdf out.pdf 1-3,7     # page ranges, 1-based
+rotate    file.pdf out.pdf 90 [1-3]  # degrees clockwise, optional page range
+watermark file.pdf out.pdf "DRAFT"   # diagonal text on every page
+numbers   file.pdf out.pdf           # "Page n / N" in the footer
+encrypt   file.pdf out.pdf userpwd [ownerpwd]
+decrypt   file.pdf out.pdf password
+fields    file.pdf                   # list fillable form fields
+fill      file.pdf out.pdf data.json # {"field name": "value"}
+```
+
+## Creating a PDF with reportlab
+
+- Use `SimpleDocTemplate` + `Paragraph`, `Spacer`, `Table`, `Image`, `PageBreak` for anything that flows.
+- Set page size by the reader's region (A4 outside North America, Letter inside).
+- Fonts: the 14 built-in PDF fonts have no accented-character coverage beyond Latin-1. For other scripts register a TTF with `pdfmetrics.registerFont`. For French, Spanish, German the built-ins are fine.
+- Escape `&`, `<`, `>` in Paragraph text, or it is parsed as markup.
+- Never use the Unicode characters for subscripts or superscripts with built-in fonts (they render as black boxes). Use `<sub>` and `<super>` tags inside Paragraph.
+- Tables: set `colWidths`, repeat the header (`repeatRows=1`), style with `TableStyle`; long cell text must be a `Paragraph` or it will overflow.
+
+## Forms
+
+- Run `fields` first. Field names are often cryptic; map them to meaning by reading the page text next to each field's rectangle.
+- Checkboxes need the field's "on" state name (not always `/Yes`). Read it from the field's appearance dictionary.
+- After filling, set `NeedAppearances` so viewers redraw values, and flatten only if the user asks for a non-editable copy.
+- Non-fillable (flat) forms: overlay text with reportlab at measured coordinates and merge with `pypdf` (`page.merge_page`). Measure positions from a rasterized image of the page; PDF origin is bottom-left, points = 1/72 inch.
+
+## Pitfalls
+
+- Encrypted input: ask for the password; do not try to crack it.
+- Scanned PDFs have no text layer. To make them searchable use OCR (`ocrmypdf` if present, else Tesseract per page); see pdf-reading.
+- Merging files with different page sizes: keep them as they are unless asked to normalize.
+- Compression: re-save with `writer.compress_identical_objects()` and `page.compress_content_streams()`; for images, downsample with Ghostscript if available. Report before/after sizes.

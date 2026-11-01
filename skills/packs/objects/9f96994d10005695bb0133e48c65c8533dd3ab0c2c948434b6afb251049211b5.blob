@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Tiny headless-browser CLI.
+
+Usage: python browse.py URL [--text] [--links] [--shot FILE [--full]] [--pdf FILE]
+                            [--select CSS [--attr NAME]] [--wait MS] [--mobile]
+"""
+import argparse
+import sys
+
+from playwright.sync_api import sync_playwright
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("url")
+    ap.add_argument("--text", action="store_true")
+    ap.add_argument("--links", action="store_true")
+    ap.add_argument("--shot")
+    ap.add_argument("--full", action="store_true")
+    ap.add_argument("--pdf")
+    ap.add_argument("--select")
+    ap.add_argument("--attr")
+    ap.add_argument("--wait", type=int, default=500)
+    ap.add_argument("--mobile", action="store_true")
+    a = ap.parse_args()
+    if not (a.text or a.links or a.shot or a.pdf or a.select):
+        a.text = True
+
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        ctx = b.new_context(viewport={"width": 390 if a.mobile else 1280, "height": 800})
+        page = ctx.new_page()
+        try:
+            resp = page.goto(a.url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            sys.exit(f"could not load {a.url}: {str(e).splitlines()[0]}\n"
+                     "If this is a network error, network access for the sandbox may be disabled.")
+        page.wait_for_timeout(a.wait)
+        print(f"# {page.title()!r}  status={resp.status if resp else '?'}  url={page.url}")
+        if a.text:
+            print(page.inner_text("body")[:20000])
+        if a.links:
+            for l in page.eval_on_selector_all("a[href]", "els => els.map(e => [e.innerText.trim().slice(0,70), e.href])"):
+                print(f"{l[0]!r}\t{l[1]}")
+        if a.select:
+            for el in page.query_selector_all(a.select):
+                print(el.get_attribute(a.attr) if a.attr else el.inner_text().strip()[:300])
+        if a.shot:
+            page.screenshot(path=a.shot, full_page=a.full)
+            print("screenshot:", a.shot)
+        if a.pdf:
+            page.pdf(path=a.pdf)
+            print("pdf:", a.pdf)
+        b.close()
+
+
+if __name__ == "__main__":
+    main()

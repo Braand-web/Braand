@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
+import {build} from 'esbuild';
+const root=path.resolve(import.meta.dirname,'..'),output=path.join(root,'.tmp/browser-live-vault-ui');await mkdir(output,{recursive:true});
+const require=createRequire(import.meta.url),{chromium}=await import(process.env.BRAAND_PLAYWRIGHT_MODULE?pathToFileURL(process.env.BRAAND_PLAYWRIGHT_MODULE).href:require.resolve('playwright'));
+await build({stdin:{contents:`import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{BrowserLiveView}from'./components/browser-live-view';import{BrowserSecuritySettings}from'./components/browser-security-settings';import './app/design-system.css';import './components/settings-panel.css';const base={id:'11111111-1111-4111-8111-111111111111',version:1,status:'running',control:'agent',objective:'Consulter un espace de recette local',url:'https://example.com',title:'Site de recette',allowedDomains:['example.com']};function App(){const [session,setSession]=useState(base);return <main style={{maxWidth:900,margin:'0 auto',padding:20,display:'grid',gap:24}}><h1>Navigateur privé</h1><div><button onClick={()=>{setSession({...base,version:2,control:'human',status:'awaiting_login'});window.fixtureMode('human',2);}}>Prendre la main</button><button onClick={()=>{setSession({...base,version:3});window.fixtureMode('agent',3);}}>Rendre la main</button></div><BrowserLiveView session={session}/><BrowserSecuritySettings/></main>;}createRoot(document.getElementById('root')).render(<App/>);`,resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',bundle:true,jsx:'automatic',format:'esm',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'}});
+let permissions={visit:'ask',submit:'ask',download:'ask',upload:'ask',credentials:'ask',version:0};
+let credentials=[{id:'22222222-2222-4222-8222-222222222222',origin:'https://example.com',label:'Compte de recette',method:'password',usagePermission:'ask',version:1,lastUsedAt:null,createdAt:Date.now()}];
+const requests=[],errors=[];let saved=0;
+const server=createServer(async(req,res)=>{
+ try{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/browser/')){
+  let raw='';for await(const part of req)raw+=part;const body=raw?JSON.parse(raw):null;requests.push({path:url.pathname,method:req.method});let result;
+  if(url.pathname==='/api/browser/permissions'){if(req.method==='POST'){assert.equal(body.version,permissions.version);permissions={...body,version:permissions.version+1};}result=permissions;}
+  else if(url.pathname==='/api/browser/vault')result={ready:true,credentials,history:[]};
+  else if(url.pathname==='/api/browser/vault/capture-ticket')result={token:'opaque-local-capture-token-1234567890',expiresAt:Date.now()+300000};
+  else if(url.pathname==='/api/browser/vault/save'){assert.equal(body.password,'fixture-password-only');assert.equal(body.persist,true);saved++;const entry={...credentials[0],id:'33333333-3333-4333-8333-333333333333',label:body.label};credentials.push(entry);result={saved:true,credential:entry};}
+  else if(url.pathname==='/api/browser/vault/delete'){credentials=credentials.filter(x=>x.id!==body.id);result={deleted:true};}
+  else throw Error('Unexpected fixture route');res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(result));return;
+ }
+ if(url.pathname==='/app.js'||url.pathname==='/app.css'){res.writeHead(200,{'content-type':url.pathname.endsWith('.css')?'text/css':'text/javascript'});res.end(await readFile(path.join(output,url.pathname.slice(1))));return;}
+ res.writeHead(200,{'content-type':'text/html'});res.end('<!doctype html><html class="dark"><head><link rel="stylesheet" href="/app.css"></head><body style="margin:0;background:var(--ds-bg);color:var(--ds-text);font-family:Manrope,system-ui,sans-serif"><div id="root"></div><script type="module" src="/app.js"></script></body></html>');
+ }catch(error){errors.push(error.message);res.writeHead(500);res.end('{}');}
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
+const browser=await chromium.launch({headless:true});let page;const checks=[];
+try{
+ const drawing=await browser.newPage({viewport:{width:1280,height:720}});await drawing.setContent('<body style="margin:0;background:#edf2f8;font:24px system-ui;padding:60px"><h1>Site de recette local</h1><p>Cette page est une fixture de test.</p><label>Connexion <input type="password"></label></body>');const jpeg=(await drawing.screenshot({type:'jpeg'})).toString('base64');await drawing.close();
+ const context=await browser.newContext({viewport:{width:1200,height:1000}});
+ await context.addInitScript(({image})=>{
+  const state={mode:'agent',version:1,sockets:[],inputs:[]};window.fixture=state;
+  class Socket {static OPEN=1;readyState=0;constructor(){state.sockets.push(this);setTimeout(()=>{this.readyState=1;this.onopen?.();this.frame();},20);}frame(){this.onmessage?.({data:JSON.stringify({type:'frame',image,url:'https://example.com/recette',title:'Site de recette local',width:1280,height:720,control:state.mode,status:state.mode==='human'?'awaiting_login':'running',version:state.version})});}send(raw){const data=JSON.parse(raw);state.inputs.push(data);setTimeout(()=>this.onmessage?.({data:JSON.stringify({type:'input_ack',seq:data.seq})}),5);}close(){this.readyState=3;this.onclose?.();}}
+  window.WebSocket=Socket;window.fixtureMode=(mode,version)=>{state.mode=mode;state.version=version;for(const socket of state.sockets)if(socket.readyState===1)socket.frame();};
+ },{image:jpeg});
+ page=await context.newPage();const consoleErrors=[];page.on('pageerror',error=>consoleErrors.push(error.message));await page.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();return route.continue();});
+ await page.goto(origin);await page.getByText('Session de l’agent',{exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('canvas')?.getContext('2d').getImageData(100,100,1,1).data[3]>0);
+ await page.locator('canvas').click({position:{x:100,y:80}});assert.equal(await page.evaluate(()=>window.fixture.inputs.length),0);checks.push('Observation ignores inputs and renders a real decoded frame fixture');
+ await page.screenshot({path:path.join(output,'desktop-observation.png'),fullPage:true});
+ await page.getByRole('button',{name:'Prendre la main',exact:true}).click();await page.getByText('Vous pilotez le navigateur',{exact:true}).waitFor();
+ const bounds=await page.locator('canvas').boundingBox();await page.locator('canvas').click({position:{x:bounds.width/2,y:bounds.height/2}});await page.waitForFunction(()=>window.fixture.inputs.length===1);assert.deepEqual(await page.evaluate(()=>window.fixture.inputs[0].input),{kind:'pointer',x:640,y:360});
+ await page.getByRole('button',{name:'Saisir au clavier',exact:true}).click();await page.keyboard.type('abc');await page.keyboard.press('Enter');await page.waitForFunction(()=>window.fixture.inputs.some(x=>x.input.kind==='key'));checks.push('Human clicks map to viewport coordinates, typing and named keys use the closed input protocol');
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'mobile-control.png'),fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+ const before=await page.evaluate(()=>window.fixture.inputs.length);await page.getByRole('button',{name:'Rendre la main',exact:true}).click();await page.locator('canvas').click({position:{x:100,y:80}});assert.equal(await page.evaluate(()=>window.fixture.inputs.length),before);checks.push('Returning control immediately prevents further user input');
+ const upload=page.getByLabel('Téléverser des fichiers',{exact:true});assert.equal(await upload.locator('option[value="allow"]').count(),0);
+ await page.getByLabel('Visiter des sites web',{exact:true}).selectOption('deny');await page.waitForFunction(()=>document.querySelector('select[aria-label="Visiter des sites web"]').value==='deny');checks.push('Permissions are independent and upload cannot be set to automatic allow');
+ await page.getByRole('button',{name:'Ajouter un identifiant',exact:true}).click();const form=page.getByRole('form',{name:'Saisie sécurisée d’un identifiant'});await form.getByLabel('Site HTTPS',{exact:true}).fill('https://example.com');await form.getByLabel('Libellé',{exact:true}).fill('Nouveau compte');await form.getByLabel('Identifiant',{exact:true}).fill('fixture@example.com');await form.getByLabel('Mot de passe',{exact:true}).fill('fixture-password-only');await form.getByRole('button',{name:'Enregistrer l’identifiant',exact:true}).click();await page.getByText('Identifiant enregistré dans votre coffre privé.',{exact:true}).waitFor();assert.equal(saved,1);assert.equal(await form.getByLabel('Mot de passe',{exact:true}).inputValue(),'');assert.ok(!(await page.evaluate(()=>JSON.stringify(localStorage)+JSON.stringify(sessionStorage))).includes('fixture-password-only'));checks.push('Secure form clears its password and never writes it into browser draft storage');
+ await page.getByRole('button',{name:'Fermer la saisie',exact:true}).click();const deletesBefore=requests.filter(x=>x.path.endsWith('/delete')).length;await page.getByRole('button',{name:'Supprimer',exact:true}).first().click();assert.equal(requests.filter(x=>x.path.endsWith('/delete')).length,deletesBefore);await page.getByRole('button',{name:'Confirmer la suppression',exact:true}).click();await page.getByText('Compte de recette',{exact:true}).waitFor({state:'detached'});checks.push('Deleting a credential requires the settings confirmation');
+ await page.screenshot({path:path.join(output,'mobile-settings.png'),fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));await page.setViewportSize({width:1200,height:1000});await page.screenshot({path:path.join(output,'desktop-settings.png'),fullPage:true});
+ assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[]);await writeFile(path.join(output,'results.json'),JSON.stringify({checks,requests,externalProviderCalls:0},null,2));for(const check of checks)console.log('PASS '+check);
+}catch(error){if(page)await page.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});throw error;}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -6,6 +6,8 @@ import type { RunBudget } from './metering';
 export async function executePlatformTool(name: string, input: unknown, scope: AgentScope, budget: RunBudget): Promise<unknown> {
     const parseId = () => z.object({ id: z.string().min(1).max(160) }).strict().parse(input).id;
     switch (name) {
+        case 'list_saved_logins': {z.object({}).strict().parse(input);const result=await (await import('./browser-vault')).vaultRequest(budget.who,'/list');return {credentials:result.credentials};}
+        case 'request_secure_login': {const p=z.object({site:z.string().url(),purpose:z.enum(['login','create','reset'])}).strict().parse(input),site=(await import('./browser-policy.mjs')).validateBrowserURL(p.site).origin;return {kind:'secure_login_request',site,purpose:p.purpose,openIn:'settings.permissions',notice:'Use the protected form. No secret may be sent to the conversation. This does not authorize account creation, reset submission or any external write.'};}
         case 'analyze_data': return (await import('./data-analysis')).analyzeData(budget.who,input);
         case 'get_analysis_result': return (await import('./data-analysis')).getAnalysisResult(budget.who,input);
         case 'save_source_project': return (await import('./source-projects')).saveSourceProject(budget.who,input);

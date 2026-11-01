@@ -1,0 +1,32 @@
+# KIT AGENT VIDÉO — Créer des vidéos et du motion design comme Muse
+
+Tout le nécessaire pour qu'un autre agent produise des vidéos comme celles fabriquées en sessions réelles : des centaines de Reels éditoriaux et publicitaires, des démos virales et des pubs produit, sur des pages de coaching et de sport, en production quotidienne automatisée. La méthode est universelle : n'importe quel sujet, n'importe quelle niche, n'importe quelle langue, n'importe quelle plateforme verticale.
+
+Le principe à comprendre avant tout : ces vidéos ne sortent pas d'un générateur vidéo. Elles sortent de **moteurs de rendu codés en Python et FFmpeg**, pilotés par des spécifications, guidés par des chartes de format, avec une voix générée en longs segments et un triple contrôle qualité avant livraison. Ce kit donne les 4 pièces : le prompt, les chartes, les moteurs et la stack.
+
+## Contenu
+
+### 01-PROMPT
+- `prompt-agent-video-motion.md` : le prompt spécialisé complet. Les 3 voies de fabrication (motion design par code, vidéo générée, montage de médias réels), le cadrage par variables de projet, le script en 7 temps écrit pour la rétention, la voix en 1 à 3 longs segments, les standards de rendu, le mix à -14 LUFS, le contrôle qualité obligatoire (transcription, frames, mesures) et la livraison master + version upload.
+- `prompt-agent-maitre.md` : le prompt de comportement général de l'agent, à combiner si l'agent cible n'en a pas.
+
+### 02-SKILLS — 10 skills en texte complet
+- `reels_viraux_motion_design` : la méthode Reels complète, toute niche.
+- `video_pub_monolithe` : le format publicitaire prestige en 8 temps, 4 variables.
+- `montage_video_complet` : le montage de sources existantes, dérushage, rythme, habillage, mixage mesuré, exports par plateforme et triple contrôle.
+- `video_audio_transcription_check` : le contrôle qui empêche de livrer une vidéo avec une voix cachée dans la musique.
+- Création de contenu, storytelling et scripts, tendances et viralité, stratégie social media, publicité sociale, campagnes pub en temps réel (pack portable).
+
+### 03-CHARTES-ET-FORMATS — les chartes réelles
+Les documents de format qui ont réellement servi en production : la charte des Reels éditoriaux en motion design (structure 7 temps, identité, rythme), la charte « beau motion » (règles d'animation), les règles MOTION et le format Monolithe verrouillé. Ce sont des exemples à adapter : chaque nouveau projet écrit sa charte sur ce modèle et la fait évoluer par versions.
+
+### 04-MOTEURS-DE-REFERENCE — le code réel
+Les moteurs Python qui ont produit les vidéos : le moteur de Reels piloté par spécification JSON, le moteur « beau motion » (easings, fonds animés, compteurs), la correction de niveaux audio et le moteur Monolithe. À lire et adapter, pas à réinventer.
+
+### 05-OUTILS-ET-STACK
+La stack technique complète : logiciels gratuits à installer, commandes types FFmpeg et ffprobe, réglages éprouvés (crf, LUFS, voix, temps de rendu) et organisation des fichiers par production.
+
+### 06-INSTALLATION
+L'ordre d'installation et le test de vérification en 3 temps, avec ce que le kit ne contient pas, dit honnêtement (générateur vidéo, voix commerciale, assets des projets d'origine).
+
+Version 1.0 — Octobre 2026

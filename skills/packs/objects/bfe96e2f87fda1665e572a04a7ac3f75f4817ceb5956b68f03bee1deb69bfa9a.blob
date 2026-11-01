@@ -1,0 +1,38 @@
+# FORMAT MONOLITHE
+
+Nom officiel (donné le 2026-10-28) du format de la vidéo Porsche clonée.
+**Invocation : dire « Monolithe » suffit.** Exemples : « fais-moi un Monolithe
+pour Braand », « un Monolithe pour le guide Coran », « Monolithe, produit X,
+chiffre 30, bénéfices A et B, signature Y ».
+
+## Définition verrouillée
+- Motion design éditorial monochrome prestige, vertical 9:16, 1080×1920,
+  30 i/s, ~24 s, cuts secs sur les temps (1–3 s), aucune voix off.
+- Fond gris clair uni #D4D4D4 ; palette 100 % noir/blanc/gris.
+- Typo : sans-serif gras très serré pour les titres, serif italique pour les
+  accents, ombre portée douce, révélations par balayage horizontal (wipe).
+- Éléments signatures : code-barres, cercle pointillé rotatif, cadres
+  pointillés « sélection » à points de coin, étoiles noires aux coins,
+  swoosh sombre traversant, chiffres géants remplis par la photo produit.
+
+## Les 8 temps (variables entre [crochets])
+1. Symbole/cerveau dans disque noir — « [Accroche] isn't created / It's engineered »
+2. « for Over » + [CHIFFRE PREUVE] géant rempli photo + [unité : Years…]
+3. Carte photo verticale qui glisse — « [MARQUE] / Has defined / [domaine] / excellence »
+4. Deux cadres pointillés — « [Bénéfice 1] » puis « [Bénéfice 2] »
+5. « Iconic Design » — produit de face sur ovale blanc — « fuzed with [ADN] »
+6. « Built to [verbe] » — triptyque photos + produit en profil qui glisse —
+   « Crafted to [émotion] »
+7. Produit vu de dessus — « This isn't just [catégorie] / It's a Statement »
+8. Signature — « [MARQUE] / There is / no [Substitute] » sur grand swoosh gris
+
+## Production
+- Moteur : ~/workspace/clone-porsche/render_clone.py (Python/Pillow + FFmpeg),
+  assets dans ~/workspace/clone-porsche/assets/, bande-son à fournir ou à
+  réutiliser selon le sujet.
+- Référence livrée : ~/workspace/your_files/clone-porsche/porsche-clone-recree.mp4
+- Prompt texte (Flow/Veo) : ~/workspace/your_files/clone-porsche/prompt-maitre-reclone.txt
+
+## À demander à l'utilisateur si absent
+Uniquement : la marque/produit, le chiffre preuve, les 2 bénéfices et la
+signature finale. Tout le reste est verrouillé par le format.

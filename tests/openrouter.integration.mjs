@@ -22,7 +22,7 @@ const env=globalThis.__openrouterTest.env;
 const who=await server.identity(new Request('https://braand.test/api/chat'));
 const now=Date.now();sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('fixture-credit',who.organization,'topup','fixture',1000000,1000000,now,now);
 const rate={model:'anthropic/claude-opus-5.5',input:5,output:25,cacheWrite:6.25,cacheRead:.5,usdXaf:600,overheadXaf:1,fundingFeeBps:300,verifiedAt:new Date().toISOString()};
-const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 10 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.toolDefinitions};
+const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 10 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.initialToolDefinitions(env)};
 const actualAgentInput=llm.estimateInputTokens(masterBody);
 const body={max_tokens:64,stream:true,system:'Help the user.',messages:[{role:'user',content:'Create an advertisement.'}],tools:[{name:'save_draft',description:'Save a draft',input_schema:{type:'object',properties:{title:{type:'string'}},required:['title']}}]};
 const signal=()=>new AbortController().signal;
@@ -198,6 +198,20 @@ await check('abandoned pre-run chat reservations are released but recent reserva
  await meter.reconcileOpenRouterUsage(who.organization,100);assert.equal(sql.prepare('SELECT actual FROM credit_holds WHERE id=?').get(h.id).actual,0);
 });
 await check('unavailable cost responses release their response bodies before another request',async()=>{reset();generationAvailable=false;const before=metadataCancelled;await assert.rejects(()=>llm.generationCost(generationId,rate),e=>e.code==='usage_unknown');assert.equal(metadataCancelled,before+1);generationAvailable=true;});
+await check('terminal conversation locks recover without unlocking recent or active responses',async()=>{
+ const old=Date.now()-360000;
+ const cancelled=await server.createResource(who.tenant,'conversation','Interrupted fixture',{},'streaming');
+ const active=await server.createResource(who.tenant,'conversation','Active fixture',{},'streaming');
+ const recent=await server.createResource(who.tenant,'conversation','Recent fixture',{},'streaming');
+ for(const [conversation,status] of [[cancelled,'cancelled'],[active,'streaming'],[recent,'completed']]){
+  sql.prepare('INSERT INTO runs(id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(),who.tenant,conversation.id,status,old,old);
+  if(conversation!==recent)sql.prepare('UPDATE resources SET updated_at=? WHERE id=?').run(old,conversation.id);
+ }
+ await meter.reconcileOpenRouterUsage(who.organization,100);
+ assert.equal((await server.getResource(who.tenant,cancelled.id)).status,'saved');
+ assert.equal((await server.getResource(who.tenant,active.id)).status,'streaming');
+ assert.equal((await server.getResource(who.tenant,recent.id)).status,'streaming');
+});
 await check('Usage records, ledger and surfaced errors never persist the API secret',async()=>{
  for(const table of ['provider_usage','credit_holds','credit_ledger','events','messages'])assert.equal(JSON.stringify(sql.prepare('SELECT * FROM '+table).all()).includes(secret),false);
  env.LLM_PROVIDER='unsupported';assert.throws(()=>llm.modelRequest(body,signal()),e=>!e.message.includes(secret));delete env.LLM_PROVIDER;

@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Post-correction de niveau d'un MP4 Livefoot : vise −14 LUFS intégré ±0,3
+et pic vrai ≤ −3,3 dBTP mesurés sur le fichier final AAC.
+Extraction wav → limiteur true-peak suréchantillonné (passes vérifiées une
+à une) → trim à la durée vidéo + fondu 60 ms (avec garde-fou transitoire)
+→ mux AAC → mesures finales. Usage : post_niveaux.py <fichier.mp4>"""
+import re
+import subprocess
+import sys
+
+import numpy as np
+
+PATH = sys.argv[1]
+
+
+def run(cmd, **kw):
+    subprocess.check_call(cmd, **kw)
+
+
+def measure(path):
+    out = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af",
+                          "loudnorm=print_format=json", "-f", "null", "-"],
+                         capture_output=True, text=True).stderr
+    m = re.search(r'"input_i"\s*:\s*"(-?[\d.]+)".*?"input_tp"\s*:\s*"(-?[\d.]+)"',
+                  out, re.S)
+    return float(m.group(1)), float(m.group(2))
+
+
+def sample_peak(path):
+    raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", path,
+                                   "-ac", "2", "-ar", "44100", "-f", "f32le", "-"])
+    x = np.frombuffer(raw, dtype=np.float32)
+    return 20 * np.log10(np.max(np.abs(x)))
+
+
+integ0, tp0 = measure(PATH)
+print(f"brut : {integ0:.2f} LUFS, TP {tp0:.2f}")
+work = "/tmp/post_work.wav"
+run(["ffmpeg", "-y", "-v", "error", "-i", PATH, "-map", "0:a:0",
+     "-ar", "44100", "-ac", "2", work])
+
+for it in range(4):
+    integ, tp = measure(work)
+    print(f"  passe {it} : {integ:.2f} LUFS, TP {tp:.2f}")
+    gain = -14.0 - integ
+    if abs(gain) < 0.05 and tp <= -4.0:
+        break
+    out = "/tmp/post_out.wav"
+    run(["ffmpeg", "-y", "-v", "error", "-i", work, "-af",
+         f"volume={gain:.2f}dB,aresample=176400,"
+         "alimiter=limit=0.63:attack=5:release=60:level=false,aresample=44100",
+         out])
+    run(["mv", out, work])
+
+dv = float(subprocess.check_output(
+    ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+     "stream=duration", "-of", "csv=p=0", PATH], text=True).strip())
+st = max(0.0, dv - 0.06)
+fin = "/tmp/post_fin.wav"
+run(["ffmpeg", "-y", "-v", "error", "-i", work, "-af",
+     f"atrim=0:{dv:.3f},asetpts=N/SR/TB,afade=t=out:st={st:.3f}:d=0.06,"
+     "aresample=44100", fin])
+x = np.frombuffer(subprocess.check_output(
+    ["ffmpeg", "-v", "error", "-i", fin, "-ac", "2", "-ar", "44100",
+     "-f", "f32le", "-"]), dtype=np.float32).reshape(-1, 2)
+pk = float(np.max(np.abs(x)))
+print(f"pic échantillon avant mux : {20 * np.log10(pk):.2f} dBFS")
+if pk > 0.68:
+    idx = int(np.argmax(np.max(np.abs(x), axis=1)))
+    half = int(0.018 * 44100)
+    lo, hi = max(0, idx - half), min(len(x), idx + half)
+    win = 0.55 + 0.45 * np.cos(np.linspace(0, np.pi, hi - lo)) ** 2
+    env = np.ones(len(x))
+    env[lo:hi] = win
+    x = (x * env[:, None]).astype(np.float32)
+    p = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "f32le", "-ar",
+                        "44100", "-ac", "2", "-i", "-", "-c:a", "pcm_s16le", fin],
+                       input=x.tobytes())
+    assert p.returncode == 0
+    print("atténuation douce appliquée sur le transitoire")
+
+tmp = PATH + ".post.mp4"
+run(["ffmpeg", "-y", "-v", "error", "-i", PATH, "-i", fin,
+     "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+     "-b:a", "192k", "-shortest", tmp])
+run(["mv", tmp, PATH])
+integ, tp = measure(PATH)
+print(f"FINAL {PATH.split('/')[-1]} : {integ:.2f} LUFS, TP {tp:.2f} dBTP, "
+      f"pic échantillon {sample_peak(PATH):.2f} dBFS")

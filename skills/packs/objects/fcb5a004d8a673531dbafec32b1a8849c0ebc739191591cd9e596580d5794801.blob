@@ -1,0 +1,52 @@
+---
+name: pptx
+description: Create, read, edit and restyle PowerPoint files (.pptx, .potx). Use whenever the user asks for a PowerPoint, a .pptx file, slides exported to PowerPoint, a pitch deck or presentation as a file, edits to an existing deck, extraction of text or speaker notes from slides, or work with a slide template. Trigger on any .pptx/.potx filename even if the goal is only to read it.
+---
+
+# PowerPoint (.pptx)
+
+## Tools
+
+- **python-docx's sibling `python-pptx`** for most work: slides, placeholders, text, tables, images, native charts, notes.
+- **`pptxgenjs`** (Node) if the user's environment already has it and the deck needs heavy custom drawing.
+- **LibreOffice** to render to PDF/PNG for checking (`scripts/render_preview.sh`).
+
+## Workflow
+
+1. **Understand the audience and the one message** of the deck before opening a tool. A deck for reading (sent by email) can be denser than a deck for presenting.
+2. **Outline first**: slide number, headline (a full sentence that states the takeaway), supporting element (chart, table, image, three bullets). Show the outline to the user when the deck is longer than ~8 slides.
+3. **Inspect** any existing file or template: `python scripts/pptx_dump.py deck.pptx` lists layouts, slides, titles, text, notes, images, charts.
+4. **Build from the template's layouts.** Use `prs.slide_layouts[...]` and fill placeholders. Do not draw text boxes over a blank layout when a layout with a placeholder exists: placeholders keep outline view, accessibility and reflow working.
+5. **Render and review** every slide as an image. Fix overflow, collisions, low contrast.
+6. Save to `/mnt/user-data/outputs/` and present.
+
+## Design rules that matter
+
+- One idea per slide. Headline = conclusion, not topic ("Churn fell 18% after onboarding changes", not "Churn").
+- Max ~30 words of body text for a presented slide; if more is needed, it is a document, not a slide.
+- Type scale: title 28-36 pt, body 18-24 pt, minimum 14 pt for footnotes. Never shrink text to make it fit; cut words.
+- Two fonts at most. Color: one dominant, one accent, neutrals. Check contrast >= 4.5:1.
+- Alignment: use a grid. Consistent margins (about 0.5 in on 13.33 x 7.5 in slides). Same title position on every slide.
+- Charts: native charts (`chart_data`) rather than pasted images so the user can edit them; label directly, remove gridline clutter, title with the insight.
+- Images: crop to fill, keep aspect ratio, never stretch. Add alt text.
+- Do not decorate with clip art, unrelated stock photos, or gradients behind text.
+
+## Speaker notes
+
+Put what the speaker says in `slide.notes_slide.notes_text_frame.text`. Keep slide text short and move detail to notes when the user plans to present.
+
+## Editing an existing deck
+
+- Change text inside the existing runs to keep formatting: set `run.text`, do not replace the whole `text_frame.text` (it resets run formatting).
+- To duplicate a slide, copy shapes and relationships carefully (python-pptx has no `duplicate_slide`); prefer building a new slide from the same layout and refilling it.
+- To delete a slide, remove it from `prs.slides._sldIdLst` and drop the relationship.
+- To reorder, move entries in `_sldIdLst`.
+- Never change the slide size on a deck that already has content unless asked; everything will be mispositioned.
+
+## Pitfalls
+
+- Fonts missing in the rendering environment make previews look different from PowerPoint; judge overflow with a margin of safety.
+- `shape.text_frame.fit_text()` needs font files; avoid it, size by hand.
+- Tables in python-pptx have no auto row height: estimate lines of text per cell and set row heights.
+- Autoshape text does not wrap unless `word_wrap = True`.
+- Always end with a render check; a deck that "ran without errors" is not a deck that looks right.

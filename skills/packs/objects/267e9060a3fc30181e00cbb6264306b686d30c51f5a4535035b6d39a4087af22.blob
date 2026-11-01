@@ -1,0 +1,66 @@
+# MOTION.md — Livefoot IA (fichier de style lu AVANT chaque production)
+
+> Équivalent du MOTION.md de Charlie Hills (@charliehills) : ce fichier est la
+> source unique de vérité visuelle. Toute production de Reel Livefoot IA le lit
+> en premier ; en cas de conflit avec un brief ponctuel, MOTION.md gagne sur le
+> style, le brief gagne sur le contenu. Moteur : `motion_v2.py` (PIL + FFmpeg,
+> 100 % local). Charte détaillée : `CHARTE-BEAU-MOTION.md`.
+
+## Format
+- 1080×1920 (9:16), 30 fps, H.264 crf 17-18 + AAC 160 kb/s.
+- Durée cible : 25-35 s (éditorial), 15-20 s (typo cinétique / réactif).
+- Aucun logo officiel, aucune photo protégée : graphisme 100 % original.
+
+## Palette (ne jamais dévier)
+- Fond : bleu nuit #0b1220 (dégradé vivant, respiration 9 s).
+- Vert marque / positif : #22c55e.
+- Jaune temps fort : #facc15 ; or trophées : #f5c542.
+- Texte principal : blanc cassé #f5f7fa ; secondaire : gris #a5b4c8.
+- Cartes : fond #112038, liseré #3e5c8c, coins arrondis r ≥ 24.
+
+## Typographies (Noto Sans, fichiers système)
+- Accroches et chiffres chocs : Noto Sans Black, taille adaptée par `fit_size`
+  (largeur max 960 px, jamais de texte touchant les bords).
+- Texte courant : Noto Sans Bold.
+- Micro-labels : capitales espacées (tracking 3-10), or ou gris, 25-42 px.
+
+## Timing & easing (règles d'audit, esprit « Apple motion rules »)
+- Transitions de scènes : 0,35 s par défaut, glissement vertical + fondu
+  enchaîné (`TRANS` dans motion_v2.py). Correction « transition plus fluide »
+  = porter `TRANS` à 0,6-0,65 s, jamais de coupe sèche hors punch délibéré.
+- Entrées : ease-out cubic (glissements 0,45-0,6 s), ease-back (pop-ins 0,45 s),
+  cascades décalées de 0,2 s entre éléments d'une même scène.
+- Chiffres chocs : zoom punch ease-out expo (1,35 → 1) + micro-shake décroissant ;
+  un seul punch par scène.
+- Compteurs : interpolation continue ease-out cubic sur 1-2 s, jamais de paliers.
+- Barres : remplissage ease-in-out, tête lumineuse.
+- Mouvement linéaire INTERDIT (exception : barre de lecture).
+- Rythme : un élément animé nouveau toutes les 2-4 s ; scènes de 3-6 s.
+
+## Composition & zones sûres
+- Contenu clé au-dessus de y = 1 550 ; sous-titres ASS incrustés en bas
+  (Noto Sans 54, blanc gras, contour noir, marge basse 150).
+- Habillage permanent : pastille + LIVEFOOT IA en haut (fondu 0,5 s), filets,
+  barre de lecture verte en bas, fondu global d'entrée/sortie 0,3 s.
+- Parallaxe : fond/halos lents, cartes en entrée, texte en pop ; flottement ±3 px.
+
+## Voix & sous-titres
+- Voix off française Aria via /opt/hatch/bin/tts, phrase par phrase ; durées
+  mesurées par ffprobe ; la voix commande les durées de scènes, jamais l'inverse.
+- Sous-titres calés sur les durées réelles des phrases (write_ass).
+
+## Boucle de correction en langage naturel (héritée des workflows Opus 5.5)
+Toute demande de correction se traduit en UN paramètre nommé, modifié seul,
+puis re-rendu — jamais de retouche globale floue :
+- « transition plus fluide » → `TRANS` 0,35 → 0,65 s.
+- « ralentis cette section » → durée de la scène ciblée +20 %.
+- « change les couleurs » → constantes palette de la scène (MOTION.md reste la
+  référence ; un écart ponctuel se note dans le brief, pas dans MOTION.md).
+- « punch plus fort » → facteur punch 1,35 → 1,5 sur la scène ciblée uniquement.
+- « texte plus gros » → tailles de la scène +10 % via `fit_size` recalculé.
+
+## Contrôle qualité (avant toute livraison)
+- Extraire ≥ 4 frames à des temps différents du MP4 FINAL et les lire :
+  aucun texte coupé/superposé, animations visibles, sous-titres nets et dans
+  la zone sûre. Tout défaut se corrige AVANT livraison.
+- Vérifier au ffprobe : 1080×1920, durée conforme au brief, H.264 + AAC.

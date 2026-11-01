@@ -1,0 +1,66 @@
+# Navigateur manipulable 100 % gratuit pour ton SaaS et tes agents
+
+Objectif : donner à chaque utilisateur de ton SaaS un vrai navigateur que tes agents peuvent piloter (naviguer, cliquer, remplir, se connecter, extraire), comme le navigateur intégré de Muse, sans payer Browserbase ni aucun service de navigateur cloud.
+
+Vérité des coûts, dès le départ : les logiciels ci-dessous sont 100 % gratuits et open source (licence 0 €, usage commercial et multi-utilisateurs autorisés). Le seul coût qui existe est le serveur qui fait tourner les navigateurs : ta machine de dev pour tester (0 €), puis un serveur unique pour démarrer en production. « 100 % gratuit » veut donc dire zéro licence et zéro abonnement navigateur, pas zéro électricité.
+
+## L'architecture en 4 couches
+
+1. **Le navigateur** : Chromium, le même moteur que Chrome, gratuit.
+2. **Le serveur de navigateurs** : Steel Browser (open source, Apache 2.0). Il lance un Chromium isolé par session, gère les cookies et le stockage par session, et expose une API. Une seule commande Docker le démarre.
+3. **Le pilote** : Playwright (open source, Microsoft) côté tes agents. L'agent se connecte à une session Steel par WebSocket CDP et pilote la page : `goto`, `click`, `fill`, `screenshot`, extraction de texte.
+4. **Le cerveau** : tes agents existants (dans Braand : ton runtime d'agents via OpenRouter). Ils décident des actions, le pilote les exécute, le résultat revient à l'agent.
+
+Option cerveau navigateur tout-en-un : Browser Use (open source, Python) ou Stagehand (open source, TypeScript) par-dessus Playwright, pour piloter en langage naturel (« clique sur le bouton de connexion ») au lieu de sélecteurs. Stagehand colle mieux à la stack TypeScript de Braand.
+
+## Où ça vit dans Braand
+
+Cloudflare Workers ne peut pas faire tourner Chromium. Le navigateur devient donc un **service séparé**, exactement comme ton service `media-render` actuel (Python/FFmpeg) :
+
+- `services/browser/` : nouveau service conteneurisé (Steel Browser + ton mini service de sessions).
+- Ton Worker Braand ne parle jamais à Steel directement depuis l'utilisateur : il passe par ton API interne, qui vérifie l'utilisateur, ses crédits et ses quotas avant d'ouvrir une session.
+- Braand a déjà un Durable Object nommé BrowserSession dans son architecture : utilise-le comme registre des sessions (qui possède quelle session, depuis quand, quel état), pendant que Steel fait tourner les vrais navigateurs.
+- Les captures d'écran et fichiers téléchargés par le navigateur partent dans R2, comme tes autres binaires.
+
+## Le service de sessions, ses 5 règles
+
+Ton mini service entre les agents et Steel doit garantir :
+
+1. **Isolation totale** : 1 session = 1 conteneur Chromium = 1 utilisateur. Jamais de cookies partagés entre utilisateurs. À la fin de la session, on peut soit détruire le profil, soit le sauvegarder chiffré au nom de l'utilisateur pour qu'il retrouve ses connexions.
+2. **Quotas avant ouverture** : vérifier les crédits et le nombre de sessions simultanées autorisées par le plan de l'utilisateur AVANT de lancer un Chromium. Un Chromium consomme environ 300 Mo à 1 Go de RAM : c'est la RAM du serveur qui fixe ton nombre d'utilisateurs simultanés, pas le logiciel.
+3. **Durée maximale et nettoyage** : chaque session a une durée de vie (par exemple 15 à 30 minutes), prolongeable tant qu'elle est active. Un job de nettoyage tue les sessions expirées, sinon des navigateurs zombies mangent tout le serveur.
+4. **Identifiants jamais dans le prompt** : les mots de passe de tes utilisateurs vivent dans un coffre (variables chiffrées côté serveur ou ton système de credentials existant) et sont injectés dans la page par le service, jamais écrits dans les instructions de l'agent ni dans les logs.
+5. **Trace par session** : journal des actions et captures à la demande, pour que l'utilisateur voie ce que l'agent a fait dans SON navigateur, et pour déboguer.
+
+## Plan de démarrage concret
+
+Étape 1, test local (0 €) :
+- Lancer le `docker-compose.yml` fourni avec ce guide.
+- Ouvrir l'interface de debug de Steel dans ton navigateur pour voir le Chromium tourner.
+- Connecter un script Playwright de test avec le squelette `session-service.ts` fourni, ouvrir un site, cliquer, faire une capture.
+
+Étape 2, intégration Braand (dev) :
+- Ajouter `services/browser/` au repo, sur le modèle de `services/media-render/`.
+- Brancher ton API : créer une session, donner l'URL CDP à l'agent, fermer la session.
+- Ajouter l'outil « navigateur » à tes agents, avec la description d'usage et les limites (durée, sites autorisés, actions interdites sans confirmation, comme payer ou envoyer).
+
+Étape 3, production (1 serveur) :
+- Mettre le service sur un serveur dédié aux navigateurs, séparé du reste.
+- Activer les quotas par plan : par exemple X sessions simultanées et Y minutes de navigateur par mois selon les crédits, pour que ton coût serveur reste prévisible.
+- Mesurer la RAM réelle par session pendant une semaine, puis fixer le nombre max de sessions simultanées du serveur à 70 % de sa RAM.
+
+Étape 4, montée en charge (plus tard, toujours gratuit côté logiciel) :
+- Plusieurs instances Steel derrière ton service de sessions, qui choisit l'instance la moins chargée.
+- Profils persistants chiffrés par utilisateur pour les connexions longues.
+- File d'attente quand toutes les sessions sont prises, plutôt que planter.
+
+## Ce que ça ne fait pas tout seul
+
+- Les CAPTCHA coriaces : Steel inclut des aides, mais certains sites bloqueront toujours des navigateurs automatisés. Prévois le mode « l'utilisateur prend la main » : afficher la session en direct à l'utilisateur pour qu'il passe le blocage, comme Muse le fait.
+- Les sites qui interdisent l'automatisation dans leurs conditions : c'est un choix produit à faire par type de tâche, pas un problème technique.
+- Le coût des modèles : tes agents consomment des tokens pour décider des clics. Ça passe par ton fournisseur actuel (OpenRouter chez Braand) et tes crédits existants, rien de nouveau.
+
+## Fichiers fournis avec ce guide
+
+- `docker-compose.yml` : démarre Steel Browser en local en une commande.
+- `session-service.ts` : squelette TypeScript du service de sessions (créer, connecter Playwright, capturer, fermer), à adapter aux conventions du repo Braand.

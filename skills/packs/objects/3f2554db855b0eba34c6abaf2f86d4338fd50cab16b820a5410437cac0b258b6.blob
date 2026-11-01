@@ -1,0 +1,34 @@
+# Stack technique vidéo et motion design
+
+La chaîne exacte utilisée pour produire les vidéos de référence. Tout est gratuit et open source, hors voix de synthèse et éventuel générateur vidéo.
+
+## Logiciels à installer
+
+- **Python 3** avec **Pillow** (dessin des frames : typographie, formes, stickers, tampons) : `pip install pillow`
+- **FFmpeg et ffprobe** (assemblage vidéo, mixage audio, mesures) : paquet système `ffmpeg`
+- **Polices** : une sans-serif grasse pour les titres (type Noto Sans Display Black ou Archivo Black), une serif italique pour les accents, et **Noto Color Emoji** pour les stickers emoji en couleur
+- **Un moteur de transcription** (Whisper ou l'outil de transcription de la plateforme) pour le contrôle qualité audio
+- **Une voix de synthèse** dans la langue du projet : API TTS de la plateforme de l'agent, ou un service TTS. Critère de choix : voix stable par série, génération en longs segments, débit réglable
+- Optionnel : un générateur vidéo (type Veo/Flow, Runway, Kling) pour la voie « vidéo vivante », seulement si le projet l'exige et si le service est accessible
+
+## Commandes types de la chaîne
+
+- Mesurer un fichier fini : `ffprobe -v error -show_format -show_streams video.mp4`
+- Mesurer les niveaux : `ffmpeg -i video.mp4 -af loudnorm=print_format=json -f null -`
+- Extraire des frames de contrôle : `ffmpeg -ss <temps> -i video.mp4 -frames:v 1 frame.jpg` (une par scène)
+- Extraire l'audio pour transcription : `ffmpeg -i video.mp4 -vn -ac 1 audio.wav`
+- Version légère d'upload : ré-encoder le master en crf 23 avec le même FFmpeg
+
+## Réglages de référence éprouvés
+
+- Master vertical : 1080x1920, 30 fps (60 fps si la charte du projet l'exige), H.264 crf 17 ou 18, AAC 160 kb/s
+- Version upload : même master en crf 23, environ 3 à 5 Mo pour 30 à 45 s
+- Mix : cible -14 LUFS intégrés, pic vrai au plus -3 dB. Attention : le loudnorm de FFmpeg peut sortir sous la cible, mesurer et corriger après le premier passage
+- Voix : vitesse légèrement au-dessus de la normale (équivalent 105 à 112 selon la voix), toujours en 1 à 3 longs segments
+- Rendu CPU : compter environ 4 à 5 minutes pour 30 s de motion design dense sur une machine ordinaire. Prévoir les productions en série en arrière-plan, jamais en bloquant une conversation
+
+## Organisation des fichiers par production
+
+- Un dossier par projet vidéo, avec : `specs/` (un fichier de spécification par vidéo), `voix/` (segments générés), `work/` (frames et mix intermédiaires), les masters et les versions upload à la racine du dossier de livraison
+- La charte du projet vit à côté des moteurs, relue avant chaque production, et c'est elle qui reçoit les améliorations prouvées (avec incrément de version)
+- Les moteurs sont génériques : un nouveau sujet crée une nouvelle spec, pas un nouveau moteur. Les moteurs ponctuels de démos restent à part et ne remplacent jamais le moteur de production

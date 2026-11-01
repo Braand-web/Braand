@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Print a structural overview of a .docx file.
+
+Usage: python docx_dump.py file.docx [--full]
+"""
+import re
+import sys
+import zipfile
+from collections import Counter
+
+from docx import Document
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    path = sys.argv[1]
+    full = "--full" in sys.argv
+    doc = Document(path)
+
+    print(f"FILE: {path}")
+    cp = doc.core_properties
+    print(f"title={cp.title!r} author={cp.author!r} modified={cp.modified}")
+
+    for i, s in enumerate(doc.sections):
+        w = s.page_width.cm if s.page_width else 0
+        h = s.page_height.cm if s.page_height else 0
+        print(f"section {i}: {w:.1f}x{h:.1f} cm, margins L{s.left_margin.cm:.1f} R{s.right_margin.cm:.1f} "
+              f"T{s.top_margin.cm:.1f} B{s.bottom_margin.cm:.1f}, orientation={s.orientation}")
+
+    styles = Counter(p.style.name for p in doc.paragraphs)
+    print("\nSTYLES IN USE:")
+    for name, n in styles.most_common():
+        print(f"  {n:4d}  {name}")
+
+    print("\nOUTLINE:")
+    for p in doc.paragraphs:
+        if p.style.name.lower().startswith(("heading", "title")):
+            print(f"  [{p.style.name}] {p.text.strip()[:90]}")
+
+    print(f"\nTABLES: {len(doc.tables)}")
+    for i, t in enumerate(doc.tables):
+        first = [c.text.strip()[:15] for c in t.rows[0].cells] if t.rows else []
+        print(f"  table {i}: {len(t.rows)} rows x {len(t.columns)} cols, header={first}")
+
+    print(f"\nINLINE IMAGES: {len(doc.inline_shapes)}")
+
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        xml = z.read("word/document.xml").decode("utf8", "ignore")
+        ins = len(re.findall(r"<w:ins ", xml))
+        dele = len(re.findall(r"<w:del ", xml))
+        fields = len(re.findall(r"<w:fldSimple|<w:instrText", xml))
+        comments = 0
+        if "word/comments.xml" in names:
+            comments = len(re.findall(r"<w:comment ", z.read("word/comments.xml").decode("utf8", "ignore")))
+        print(f"TRACKED CHANGES: {ins} insertions, {dele} deletions")
+        print(f"COMMENTS: {comments}")
+        print(f"FIELDS: {fields}")
+        print(f"HEADERS/FOOTERS: {sum(1 for n in names if re.match(r'word/(header|footer)\\d*\\.xml', n))}")
+
+    if full:
+        print("\nFULL TEXT:")
+        for p in doc.paragraphs:
+            if p.text.strip():
+                print(f"[{p.style.name}] {p.text}")
+    else:
+        words = sum(len(p.text.split()) for p in doc.paragraphs)
+        print(f"\nWORDS (body paragraphs): {words}   (use --full to print the text)")
+
+
+if __name__ == "__main__":
+    main()

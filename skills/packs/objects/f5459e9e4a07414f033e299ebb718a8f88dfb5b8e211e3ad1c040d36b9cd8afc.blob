@@ -1,0 +1,34 @@
+# Format officiel des Reels Sira Vérités — MOTION DESIGN V2
+Validé par l'utilisateur le 27 octobre 2026 (« applique ce format v2 aux prochains Reels Sira »).
+Remplace la méthode « photo animée + sous-titres » (rejetée) pour TOUS les nouveaux Reels.
+Démo de référence : demo-reel-motion-sira-v2.mp4 (script Jour 2). Pub de référence : « LE SIGNAL ».
+
+## Identité visuelle « LE SIGNAL »
+- Fonds : papier crème (246,241,231), encre noire (16,16,18), rouge signal (224,49,49), or (201,162,39).
+- Typographie géante Noto Sans Display Black/Condensed, vraie typographie rendue par PIL (jamais de texte généré dans une image, jamais d'image IA brute).
+- Grain animé léger, barre de progression rouge en haut, en-tête « SIRA VÉRITÉS ».
+- Aucun visage généré. Le personnage Sira apparaît uniquement en médaillon-sticker détouré depuis le portrait de référence (personnages/sira-profil.jpg, visage source unique) : accroche + signature.
+
+## Structure obligatoire (7 temps)
+1. ACCROCHE (papier) : titre-choc en 2-3 lignes géantes dès la 1re seconde + tampon rouge + sticker emoji + médaillon Sira.
+2. PROBLÈME (noir) : chiffre/mot géant + étiquettes qui glissent + stickers (📱 qui vibre, ❤️…).
+3. RETOURNEMENT (papier) : « EN RÉALITÉ… » + bandeau rouge plein largeur avec la phrase clé.
+4. PHRASE-CHOC (rouge plein écran) : la phrase partageable, ligne par ligne, stickers 🔥.
+5. LA RÈGLE (papier) : tampon « LA RÈGLE » + étiquettes numérotées 01/02/03 validées par ✅.
+6. SIGNATURE (papier ou noir) : la phrase « Un homme debout… » du script + 👑 + médaillon Sira.
+7. FIN (noir, ~3,4 s, sans voix) : question-débat « ET TOI ? X ou Y ? » + « RÉPONDS EN COMMENTAIRE » + badge « PARTAGE À UN FRÈRE 🔁 » + tampon SIRA VÉRITÉS. Les jours CTA uniquement : ligne guide « lien en bio ».
+
+Entre les temps 2 et 6, un temps « TEXTE » noir supplémentaire est permis si le script l'exige (décision/choix).
+
+## Rythme et son
+- Scènes de 2,5 à 7 s, un événement visuel toutes les 1-2 s, aucun écran vide.
+- À chaque coupe : micro-secousse + flash + impact/bip dans la musique (124 BPM synthétisée, duckée sous la voix, loudnorm −14 LUFS).
+- Voix off : Aria (avocado_v2:MAI_01), français, vitesse 108-112, UN seul long segment par Reel (jamais phrase par phrase), fluide et énergétique.
+- Sous-titres incrustés en bandeau bas (fond noir, liseré or), phrases découpées au prorata des mots, emoji en tête de certains bandeaux.
+- Stickers : emojis couleur (Noto Color Emoji) détourés bordure blanche + ombre, apparition « pop » avec rebond, pulsation légère, jamais sur un mot clé au point de le rendre illisible.
+
+## Technique
+- Moteur : reels-motion/build_reel_motion.py, piloté par un fichier spec JSON par Reel (segments parlés + paramètres de scènes). Durées de scènes calculées au prorata des mots de la voix réelle.
+- Sortie : master 1080×1920, 30 fps, crf 18 + version légère d'upload (crf 23, ~3-4 Mo).
+- Contrôle qualité obligatoire : frames extraites de chaque scène vérifiées visuellement avant programmation (texte tronqué, sticker sur mot clé, sous-titre coupé = refaire).
+- Garde-fous inchangés : contenu 100 % original, aucune fausse preuve, aucun prix dans les Reels, CTA vente doux uniquement les jours prévus (3, 6, 9, 12…), lien boutique uniquement s'il est réel.

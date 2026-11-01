@@ -1,0 +1,40 @@
+# 19 skills originaux
+
+Ces skills ont été écrits de zéro (instructions et scripts). Ils couvrent les mêmes besoins que les skills
+intégrés du même nom, mais ne reprennent ni leur texte ni leur structure, et ils ne se comportent pas
+à l'identique.
+
+| Skill | Contenu | Scripts testés |
+|---|---|---|
+| docx | Word : créer, éditer, révisions | docx_dump.py, render_preview.sh |
+| pdf | PDF : fusion, découpe, filigrane, chiffrement, formulaires | pdf_tools.py |
+| pptx | PowerPoint : création, édition, design | pptx_dump.py, render_preview.sh |
+| xlsx | Excel/CSV : modèles, nettoyage, audit des formules | xlsx_audit.py, recalc.sh |
+| file-reading | Routeur de lecture des fichiers téléversés | inventory.py |
+| pdf-reading | Lecture, tableaux, OCR de PDF | pdf_read.py |
+| artifact-emulator | Test d'une page HTML en navigateur headless | run_artifact.py |
+| built-in-browser | Navigateur headless du sandbox | browse.py |
+| chrome-browser | Pilotage du Chrome de l'utilisateur (règles et sécurité) | - |
+| computer-use | Pilotage d'une interface graphique par captures d'écran | - |
+| video-making | Vidéo avec ffmpeg, Pillow, Playwright | make_slideshow.py |
+| docs | Documents durables et partageables | - |
+| deep-research | Recherche multi-sources avec registre de sources | ledger_template.md |
+| doc-coauthoring | Rédaction collaborative en étapes | - |
+| google-workspace | Drive, Docs, Sheets, Slides, Gmail, Calendar | - |
+| import-memory | Import de mémoire depuis un autre assistant | - |
+| morning | Brief du matin (HTML ou récurrent) | - |
+| setup-writing-style | Capturer un style d'écriture | - |
+| product-self-knowledge | Vérifier les faits produits dans les sources officielles | - |
+
+## Installation
+- `skills/*.skill` : fichiers prêts à importer (un `.skill` est une archive zip du dossier du skill).
+- `sources/<nom>/` : dossiers modifiables.
+
+## Remarques
+- Les noms sont identiques à ceux des skills intégrés. Renommez-les (dossier + champ `name`) si vous
+  les installez à côté des originaux, pour éviter les conflits.
+- Les skills chrome-browser, computer-use, google-workspace, morning, import-memory et docs décrivent
+  une méthode générale : ils supposent que les outils correspondants (extension navigateur, connecteurs,
+  mémoire) existent dans votre environnement.
+- Les scripts ont été testés dans un environnement Ubuntu avec python-docx, openpyxl, python-pptx, pypdf,
+  pdfplumber, reportlab, Pillow, Playwright (Chromium), LibreOffice, poppler, tesseract et ffmpeg.

@@ -1,0 +1,116 @@
+---
+name: montage_video_complet
+description: "Monter une vidéo prête à publier à partir de n'importe quelles sources, rushes filmés, vidéos générées, captures ou photos, avec dérushage, rythme, habillage, mixage audio mesuré, exports par plateforme et triple contrôle avant livraison."
+---
+
+# Montage Vidéo Complet
+
+## Adapter à n'importe quel projet
+
+- Commencer par fixer les variables du projet, depuis la demande ou en demandant seulement celles qui manquent et changent le résultat.
+
+- Variables à fixer : le type de source (rushes filmés, vidéos générées, captures d'écran, photos, motion design existant), la plateforme et le format de sortie, la durée cible, la langue des voix et des sous-titres, l'objectif (vues, confiance, ventes), les éléments de marque à intégrer et la date de livraison.
+
+- Ne jamais appliquer un réglage d'un autre projet tel quel, toujours le vérifier contre la source réelle et la plateforme visée.
+
+## Préparer le montage
+
+- Inventorier toutes les sources avant de couper quoi que ce soit, avec pour chacune le format, la résolution, la durée, la présence ou non de son et un jugement rapide sur sa qualité.
+
+- Travailler toujours sur des copies et garder les sources originales intactes, dans un dossier séparé du dossier de montage.
+
+- Vérifier dès le départ le piège classique des sources générées ou réutilisées, une piste qui contient déjà une voix, un texte incrusté faux ou une musique avec des paroles, car le montage ne corrigera pas ces défauts, il les diffusera.
+
+- Définir le format de sortie avant le premier cut, le plus souvent vertical 1080 par 1920 pour les formats courts, et décider le traitement des sources d'un autre ratio (recadrage, fond flou ou fond de marque) au lieu de le découvrir à l'export.
+
+## Dérusher et structurer
+
+- Regarder ou faire transcrire chaque source en entier et noter les passages utilisables avec leurs temps, au lieu de monter à l'aveugle.
+
+- Construire la structure avant l'assemblage fin, accroche dans les 2 premières secondes, développement, moment fort, fin avec appel ou question selon l'objectif.
+
+- Garder un seul message par vidéo et couper tout passage qui ne sert ni l'histoire, ni la preuve, ni l'émotion, même s'il est bien filmé.
+
+- Respecter le script ou le message validé mot pour mot quand il existe, et signaler tout écart nécessaire au lieu de le glisser en silence.
+
+## Assembler et rythmer
+
+- Monter avec des coupes franches calées sur les mots, les gestes ou les temps de la musique, avec des plans de 1 à 4 secondes pour les formats courts dynamiques.
+
+- Supprimer les silences morts, les hésitations et les débuts et fins de plans inutiles, en gardant de courtes respirations avant les révélations importantes.
+
+- Alterner les valeurs de plans quand les sources le permettent (large, moyen, gros plan, produit ou écran) pour recréer du mouvement même avec peu de matière.
+
+- Recadrer les sources horizontales en vertical avec un recadrage centré sur le sujet, un zoom léger animé ou un fond assorti, et vérifier que ni visage ni texte essentiel ne sort du cadre.
+
+- Ajouter des transitions courtes et sobres seulement quand elles servent le rythme, et préférer la coupe franche à l'effet gratuit dans les formats éditoriaux et publicitaires.
+
+## Habiller la vidéo
+
+- Ajouter les titres et les textes en vraie typographie rendue au montage, jamais en gardant un texte généré dans une image quand il est faux, tronqué ou illisible en petit.
+
+- Créer les sous-titres depuis une transcription réelle de la piste montée, synchronisés sur les mots prononcés, en blocs courts lisibles sur mobile, et les relire entièrement car une erreur de sous-titre se voit plus qu'une erreur de voix.
+
+- Placer les éléments de marque sans couvrir le sujet : logo discret, couleurs et polices constantes, prix et appel à l'action en pleine lisibilité pour les publicités.
+
+- Vérifier chaque texte ajouté à l'image finale, car un prix, un nom ou un chiffre faux dans l'habillage invalide toute la vidéo.
+
+## Traiter et mixer l'audio
+
+- Nettoyer la voix d'abord : niveaux réguliers, égalisation légère pour la présence, suppression des bruits évidents, sans jamais rendre la voix artificielle.
+
+- Régler la musique sous la voix avec un ducking ou des baisses manuelles aux passages parlés, et choisir un lit instrumental sans paroles pour tout montage avec voix off ou dialogue.
+
+- Transcrire la piste musicale seule avant le mix si elle est réutilisée, et la rejeter si elle contient des mots, car baisser le volume ne supprime pas une voix cachée.
+
+- Mixer vers environ moins 14 LUFS intégrés avec des pics vrais au plus moins 3 dB pour les plateformes sociales, mesurer le fichier fini et corriger après le premier passage, car les normalisations automatiques sortent souvent sous la cible.
+
+- Réparer un pic ou un transitoire local par une atténuation douce à cet endroit plutôt que par un écrêtage global qui dégrade tout le mix.
+
+## Corriger l'image
+
+- Égaliser luminosité, contraste et balance des blancs entre les plans d'origines différentes pour que le montage paraisse tourné d'une seule pièce.
+
+- Redresser et stabiliser légèrement les plans qui bougent quand l'outil le permet, sans recadrage excessif.
+
+- Appliquer un rendu couleur cohérent avec la marque ou le sujet, et le garder identique sur toute une série.
+
+## Exporter pour chaque plateforme
+
+- Exporter un master haute qualité (par exemple 1080 par 1920, crf 17 ou 18, AAC 160 kb/s) qui sert d'archive et de source pour tous les autres exports.
+
+- Exporter une version légère d'upload (crf 23 environ) pour les plateformes qui recompressent, et nommer clairement master et version d'upload pour ne jamais publier le mauvais fichier.
+
+- Vérifier par ffprobe ou équivalent chaque export : dimensions, fréquence d'images, durée, codecs et poids, et comparer la durée à celle du montage attendu.
+
+- Adapter durée, ratio et habillage à chaque plateforme plutôt que publier partout le même fichier quand la plateforme a un format natif différent.
+
+## Contrôler avant livraison
+
+- Extraire des frames de chaque plan du fichier FINAL exporté et les inspecter une par une : texte tronqué, sous-titre coupé, visage hors cadre, plan noir ou figé égale reprise du montage.
+
+- Transcrire le mix final en entier et comparer au script ou au dialogue attendu : aucune phrase hors script, aucune deuxième voix, aucun reste d'une ancienne piste toléré.
+
+- Écouter ou mesurer le fichier du début à la fin pour attraper silence anormal, coupure de mot, pic ou musique qui couvre la voix.
+
+- Livrer seulement quand les 3 contrôles passent (image, transcription, mesures), avec les fichiers master et upload, la durée, le poids et le résultat des contrôles dit en langage simple.
+
+## Monter en série
+
+- Transformer un montage qui marche en modèle réutilisable : mêmes positions de titres, mêmes sous-titres, même traitement audio et mêmes exports, seuls les plans et les mots changent.
+
+- Garder un dossier par production avec les sources, le projet ou les commandes de montage, les exports et les notes de contrôle, pour pouvoir refaire une variante sans tout reconstruire.
+
+- Consigner chaque défaut trouvé en contrôle dans la charte du projet, pour que le contrôle suivant le cherche en premier.
+
+## Available connectors
+
+- Use `muse.connector_search` to find other connectors and `muse.skill_search` to find related skills.
+
+- If nothing here fits, look on the web for a maintained API or MCP server and set it up with Custom Connectors and MCPs, or build a custom connector.
+
+## Alternatives for better results
+
+- Monter une version courte de test (accroche et fin seulement) pour valider le style avant de monter toute une série.
+
+- Demander les rushes sans musique ni habillage quand c'est possible, car un montage propre part de sources propres.

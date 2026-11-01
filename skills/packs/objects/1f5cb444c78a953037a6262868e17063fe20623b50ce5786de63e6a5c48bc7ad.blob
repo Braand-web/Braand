@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Audit an .xlsx: sheets, ranges, formulas, error values, merged cells, empty cached values.
+
+Usage: python xlsx_audit.py book.xlsx
+Exit code 1 if any error value or uncomputed formula is found.
+"""
+import sys
+
+from openpyxl import load_workbook
+
+ERRORS = ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A", "#NUM!", "#NULL!")
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    path = sys.argv[1]
+    wf = load_workbook(path)                  # formulas
+    wv = load_workbook(path, data_only=True)  # cached values
+    problems = 0
+    for ws in wf.worksheets:
+        wsv = wv[ws.title]
+        formulas = 0
+        uncomputed = 0
+        errors = []
+        for row in ws.iter_rows():
+            for c in row:
+                v = c.value
+                if isinstance(v, str) and v.startswith("="):
+                    formulas += 1
+                    cached = wsv[c.coordinate].value
+                    if cached is None:
+                        uncomputed += 1
+                    elif isinstance(cached, str) and cached in ERRORS:
+                        errors.append((c.coordinate, cached, v[:50]))
+                elif isinstance(v, str) and v in ERRORS:
+                    errors.append((c.coordinate, v, "(literal)"))
+        print(f"sheet {ws.title!r} state={ws.sheet_state} range={ws.dimensions} "
+              f"formulas={formulas} merged={len(ws.merged_cells.ranges)} "
+              f"charts={len(getattr(ws, '_charts', []))} freeze={ws.freeze_panes}")
+        if uncomputed:
+            print(f"   ! {uncomputed} formulas have no cached value (run recalc.sh)")
+            problems += uncomputed
+        for coord, err, f in errors[:20]:
+            print(f"   ! {coord}: {err}   {f}")
+        problems += len(errors)
+    print("RESULT:", "OK" if not problems else f"{problems} problem(s)")
+    sys.exit(1 if problems else 0)
+
+
+if __name__ == "__main__":
+    main()

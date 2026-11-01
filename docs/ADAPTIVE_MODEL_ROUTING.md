@@ -93,3 +93,13 @@ Commercial checkout and all unrelated experimental gates remain disabled.
 Source verification and a minimal native streaming diagnostic succeeded;
 neither proves an authenticated end-to-end customer conversation or the quality
 of every tier. The prior 24-hour expiry guard remains enforced.
+
+## Video editing and motion design preference — 31 October 2026
+
+For substantive montage, storyboard production, animation code, targeted motion retouches and quality control, the principal model is instructed to choose advanced capacity with the bounded reason `video_motion` before doing the production work. This remains a semantic decision; no keyword scan of user text is added. A simple explanation about video can still answer immediately on light.
+
+The server then uses its `video_motion` task, mapped to the already allowlisted Opus 5.5 in both task-based and adaptive routing. An explicitly selected light/standard tier does not override that task. Under the existing OpenRouter transport the exact ID is `anthropic/claude-opus-5.5`, verified in its public catalog on 31 October 2026 with tools support. The production catalog already contains this entry; no key, tariff timestamp, activation flag or funding policy is changed.
+
+The request-local preference also applies to creative specialists delegated by that video work. Their tools and their contract budgets stay the same. Other specialist roles retain their normal routes. The next principal response starts fresh on light, with the same conversation history. Missing configuration, unverified rates or insufficient budget still stop a paid call before provider execution. Opus prepares and reasons about the work; the available renderer performs the actual media export.
+
+Regression tests cover the exact model route, unchanged generic creative routing, rejected missing Opus configuration, silent principal selection, creative delegation and reset on the following message. Provider responses are simulated; no paid generation is used for these tests.

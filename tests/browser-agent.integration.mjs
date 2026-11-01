@@ -6,7 +6,8 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 const root=path.resolve(import.meta.dirname,'..'),outfile=path.join(root,'.local-build/browser-agent-test.mjs');mkdirSync(path.dirname(outfile),{recursive:true});
 const fixture={history:[],calls:[],requests:[],stream:'',status:'running',frames:0};globalThis.__browserAgentFixture=fixture;
-await build({entryPoints:[path.join(root,'lib/browser-agent.ts')],outfile,bundle:true,platform:'node',format:'esm',plugins:[{name:'bounded-browser-agent',setup(b){
+await build({nodePaths:process.env.BRAAND_TOOLCHAIN?[process.env.BRAAND_TOOLCHAIN]:[],entryPoints:[path.join(root,'lib/browser-agent.ts')],outfile,bundle:true,platform:'node',format:'esm',plugins:[{name:'bounded-browser-agent',setup(b){
+ b.onResolve({filter:/^\.\/browser-vault$/},()=>({path:'vault',namespace:'vault'}));b.onLoad({filter:/.*/,namespace:'vault'},()=>({contents:'export async function vaultRequest(){return {credentials:[]};}'}));
  b.onResolve({filter:/^\.\/(browser|metering)$/},a=>({path:a.path,namespace:'fixture'}));
  b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='./metering'?`export async function meteredMessage(budget,role,body,_signal,routing){const f=globalThis.__browserAgentFixture;f.requests.push({budget,role,routing,body:structuredClone(body)});return new Response(f.stream);}`:`
  const f=globalThis.__browserAgentFixture;

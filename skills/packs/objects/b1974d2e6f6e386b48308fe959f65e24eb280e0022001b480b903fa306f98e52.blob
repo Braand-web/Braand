@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Small PDF toolbox built on pypdf and reportlab. Run without args for help."""
+import io
+import json
+import os
+import sys
+
+from pypdf import PdfReader, PdfWriter, Transformation
+
+
+def parse_ranges(spec, n):
+    pages = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            a = int(a) if a else 1
+            b = int(b) if b else n
+        else:
+            a = b = int(part)
+        if a < 1 or b > n or a > b:
+            sys.exit(f"range {part!r} outside 1..{n}")
+        pages.extend(range(a - 1, b))
+    return pages
+
+
+def cmd_info(path):
+    r = PdfReader(path)
+    print(f"encrypted: {r.is_encrypted}")
+    if r.is_encrypted:
+        return
+    print(f"pages: {len(r.pages)}")
+    box = r.pages[0].mediabox
+    print(f"first page size: {float(box.width):.0f} x {float(box.height):.0f} pt")
+    print(f"metadata: {dict(r.metadata or {})}")
+    fields = r.get_fields() or {}
+    print(f"form fields: {len(fields)}")
+
+
+def cmd_merge(out, *ins):
+    w = PdfWriter()
+    for p in ins:
+        for page in PdfReader(p).pages:
+            w.add_page(page)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"merged {len(ins)} files -> {out} ({len(w.pages)} pages)")
+
+
+def cmd_split(path, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    r = PdfReader(path)
+    for i, page in enumerate(r.pages, 1):
+        w = PdfWriter()
+        w.add_page(page)
+        with open(os.path.join(outdir, f"page_{i:03d}.pdf"), "wb") as f:
+            w.write(f)
+    print(f"wrote {len(r.pages)} files in {outdir}")
+
+
+def cmd_extract(path, out, spec):
+    r = PdfReader(path)
+    w = PdfWriter()
+    for i in parse_ranges(spec, len(r.pages)):
+        w.add_page(r.pages[i])
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"{len(w.pages)} pages -> {out}")
+
+
+def cmd_rotate(path, out, deg, spec=None):
+    r = PdfReader(path)
+    w = PdfWriter()
+    targets = set(parse_ranges(spec, len(r.pages))) if spec else set(range(len(r.pages)))
+    for i, page in enumerate(r.pages):
+        if i in targets:
+            page.rotate(int(deg))
+        w.add_page(page)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"rotated {len(targets)} pages -> {out}")
+
+
+def _overlay(page, draw):
+    from reportlab.pdfgen import canvas
+    width = float(page.mediabox.width)
+    height = float(page.mediabox.height)
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(width, height))
+    draw(c, width, height)
+    c.save()
+    buf.seek(0)
+    page.merge_page(PdfReader(buf).pages[0])
+
+
+def cmd_watermark(path, out, text):
+    r = PdfReader(path)
+    w = PdfWriter()
+
+    def draw(c, width, height):
+        c.saveState()
+        c.setFillGray(0.5, 0.25)
+        c.setFont("Helvetica-Bold", min(width, height) / 6)
+        c.translate(width / 2, height / 2)
+        c.rotate(45)
+        c.drawCentredString(0, 0, text)
+        c.restoreState()
+
+    for page in r.pages:
+        _overlay(page, draw)
+        w.add_page(page)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"watermarked -> {out}")
+
+
+def cmd_numbers(path, out):
+    r = PdfReader(path)
+    w = PdfWriter()
+    n = len(r.pages)
+    for i, page in enumerate(r.pages, 1):
+        def draw(c, width, height, i=i):
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(width / 2, 20, f"Page {i} / {n}")
+        _overlay(page, draw)
+        w.add_page(page)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"numbered -> {out}")
+
+
+def cmd_encrypt(path, out, user, owner=None):
+    r = PdfReader(path)
+    w = PdfWriter(clone_from=r)
+    w.encrypt(user_password=user, owner_password=owner or user, algorithm="AES-256")
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"encrypted -> {out}")
+
+
+def cmd_decrypt(path, out, password):
+    r = PdfReader(path)
+    if r.is_encrypted and not r.decrypt(password):
+        sys.exit("wrong password")
+    w = PdfWriter(clone_from=r)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"decrypted -> {out}")
+
+
+def cmd_fields(path):
+    fields = PdfReader(path).get_fields() or {}
+    if not fields:
+        print("no fillable fields (flat form: overlay text instead)")
+    for name, f in fields.items():
+        print(f"{name!r}: type={f.get('/FT')} value={f.get('/V')!r} states={f.get('/_States_', '')}")
+
+
+def cmd_fill(path, out, data_json):
+    data = json.load(open(data_json, encoding="utf8"))
+    r = PdfReader(path)
+    w = PdfWriter(clone_from=r)
+    for page in w.pages:
+        w.update_page_form_field_values(page, data, auto_regenerate=False)
+    w.set_need_appearances_writer(True)
+    with open(out, "wb") as f:
+        w.write(f)
+    print(f"filled {len(data)} fields -> {out}")
+
+
+COMMANDS = {
+    "info": cmd_info, "merge": cmd_merge, "split": cmd_split, "extract": cmd_extract,
+    "rotate": cmd_rotate, "watermark": cmd_watermark, "numbers": cmd_numbers,
+    "encrypt": cmd_encrypt, "decrypt": cmd_decrypt, "fields": cmd_fields, "fill": cmd_fill,
+}
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
+        sys.exit(__doc__ + "\ncommands: " + ", ".join(COMMANDS))
+    COMMANDS[sys.argv[1]](*sys.argv[2:])

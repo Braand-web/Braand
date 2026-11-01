@@ -4,6 +4,9 @@ declare namespace Cloudflare {
     APP_ORIGIN?: string;
     AUTH_ENABLED?: string;
     AUTH_HASH_SECRET?: string;
+    AUTH_GOOGLE_CLIENT_ID?: string;
+    AUTH_GOOGLE_CLIENT_SECRET?: string;
+    AUTH_GOOGLE_CONFIG?: string;
     DB?: D1Database;
     WORK_QUEUE?: Queue<{workId:string}>;
     WORK_SCHEDULER_VERIFIED?: string;
@@ -22,6 +25,11 @@ declare namespace Cloudflare {
     MEDIA_RENDER_VIDEO_EDIT_VERIFIED?: string;
     RESEARCH_ENABLED?: string;
     BROWSER?: Fetcher;
+    CREDENTIAL_VAULT?: Fetcher;
+    VAULT_ENABLED?: string;
+    VAULT_CALL_TOKEN?: string;
+    VAULT_BROWSER_TOKEN?: string;
+    BROWSER_LIVE_ENABLED?: string;
     BROWSER_SESSIONS?: DurableObjectNamespace;
     BROWSER_ENABLED?: string;
     BROWSER_AUTH_VERIFIED?: string;

@@ -81,4 +81,4 @@ Les captures se trouvent dans `.tmp/agent-ui-browser/design-*.png`, ignoré par 
 
 La prévisualisation complète utilise `PORT=4200 node scripts/dev-local.mjs` (PowerShell : `$env:PORT='4200'` puis `node scripts/dev-local.mjs`). Elle reste sur `127.0.0.1`, utilise l’authentification locale de développement et ne publie rien en production.
 
-Les compétences intégrées sont chargées comme métadonnées authentifiées dans les paramètres. Le catalogue de 146 entrées conserve une seule entrée par identifiant ; les variantes et ressources sont consultées progressivement par le serveur. Les cinq documents de contexte personnel importés restent séparés dans le seul espace propriétaire. Voir `docs/skill-packs.md`.
+Les compétences intégrées sont chargées comme métadonnées authentifiées dans les paramètres. Le catalogue de 166 entrées conserve une seule entrée par identifiant ; les variantes et ressources sont consultées progressivement par le serveur. Les cinq documents de contexte personnel importés restent séparés dans le seul espace propriétaire. Voir `docs/skill-packs.md`.

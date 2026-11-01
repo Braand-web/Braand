@@ -1,0 +1,64 @@
+---
+name: doc-coauthoring
+description: Guide a collaborative, iterative writing process to produce a substantial document together with the user - proposals, specs, strategy docs, PRDs, decision memos, long reports, announcements, grant applications. Use when the user wants to write something important with Claude as a partner (not a one-shot draft), when they have scattered notes to turn into a coherent document, or when they say "help me write", "let's draft", "co-write", or ask for feedback and revisions on a long text.
+---
+
+# Co-authoring a document
+
+A one-shot draft fails because the writer's knowledge is in the user's head, not in the prompt. This process pulls it out, then builds the document in stages that the user can steer.
+
+Adapt to the user: if they say "just draft it", compress the stages; if they want depth, go step by step.
+
+## Stage 1 — Gather context
+
+Ask for what you cannot invent, in one short batch (not an interrogation):
+
+- Purpose and desired outcome: what should happen after people read it?
+- Audience: who, what they already know, what they care about, how they will use it.
+- Constraints: length, format, deadline, tone, must-include and must-avoid points.
+- Raw material: notes, data, prior docs, examples of documents they like.
+- Stakes and politics: sensitivities, decisions already made, open disagreements.
+
+Let the user dump unstructured material. Then **reflect it back** in a few lines and confirm before moving on.
+
+## Stage 2 — Structure
+
+- Propose an outline: section titles with a one-line purpose for each, in reader order (conclusion/ask early).
+- Ask what is missing, what is out of place, what to cut. Agree on the outline before writing prose.
+- For each section note: key message, evidence needed, owner of missing facts.
+
+## Stage 3 — Draft section by section
+
+- Start with the section that is hardest or most important, not necessarily the first.
+- For each section: ask 2–4 targeted questions if facts are missing → write a full draft → show it → collect feedback → revise.
+- Keep a running list of **open items** (facts to verify, decisions pending, placeholders) and show it when asked or at the end.
+- Preserve the user's voice and wording where they already wrote something good. Edit, do not replace.
+- Make surgical edits when revising: change what the feedback concerns; do not silently rewrite the rest. Say what changed.
+
+## Stage 4 — Reader test
+
+Before calling it done, test the document against a reader who has no context:
+
+1. List the 5–8 questions the target reader will likely ask.
+2. Answer each using **only the document**. Gaps show where it fails.
+3. Check: can the reader state the main point after the first paragraph? Are acronyms defined? Are claims supported? Is the ask explicit? Any internal contradictions?
+4. Fix gaps; re-run on the changed parts.
+
+## Stage 5 — Finish
+
+- Consistency pass: terminology, numbers, names, dates, tense, heading style.
+- Tighten: cut throat-clearing, duplicate points, hedges that do not carry meaning.
+- Final format and export (see the docs skill for Word/PDF).
+- Hand over: summary of what the document says in 3 lines, the open items, and suggestions for who should review it.
+
+## Feedback style
+
+- Accept direction quickly. Do not argue about taste; flag real problems (factual risk, unclear audience, buried ask) once, with a suggestion.
+- When feedback conflicts with an earlier decision, point it out and ask which to keep.
+- Offer options for tone or structure with a recommendation, not a menu without a view.
+
+## Principles
+
+- The user owns the content and decisions; you own clarity, structure and craft.
+- Never invent facts, quotes or data to fill a gap; mark the gap.
+- Short, concrete, specific beats long and general.

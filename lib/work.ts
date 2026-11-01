@@ -40,6 +40,9 @@ type StepRow = {
     result: string | null;
 };
 const q = (sql: string, ...args: (string | number | null)[]) => db().prepare(sql).bind(...args);
+async function savedStepEvidence(workId:string,stepId:string,tenant:string){
+ return !!await q("SELECT 1 FROM agent_work_artifacts a JOIN resources r ON r.id=a.resource_id WHERE a.work_id=? AND a.step_id=? AND r.workspace_id=? AND r.status NOT IN ('deleted','failed','uncertain','needs_reconciliation','rejected') AND (r.kind!='deliverable' OR (json_type(r.data,'$.content')='text' AND length(trim(json_extract(r.data,'$.content')))>0)) AND (r.kind!='file' OR EXISTS(SELECT 1 FROM files f WHERE f.id=r.id AND f.workspace_id=r.workspace_id AND f.status='ready')) LIMIT 1",workId,stepId,tenant).first();
+}
 const terminal = new Set(['completed', 'cancelled', 'expired']);
 export function workReadiness() { const c = config(); return { enabled: c.WORK_ENABLED === 'true' && c.WORK_STAGING_VERIFIED === 'true' && !!c.SCHEDULER_SECRET && c.SCHEDULER_SECRET.length >= 32 && (!!c.WORK_QUEUE || c.WORK_SCHEDULER_VERIFIED === 'true'), reason: c.WORK_ENABLED !== 'true' ? 'activation_pending' : c.WORK_STAGING_VERIFIED !== 'true' ? 'verification_pending' : !c.SCHEDULER_SECRET || !c.WORK_QUEUE && c.WORK_SCHEDULER_VERIFIED !== 'true' ? 'scheduler_pending' : null }; }
 async function owned(tenant: string, id: string) { const row = await q('SELECT * FROM agent_work WHERE id=? AND workspace_id=?', id, tenant).first<WorkRow>(); if (!row)
@@ -269,7 +272,7 @@ export async function runWorkTick(runner?: Runner, workId?: string) {
                 const pending = await q("SELECT 1 FROM agent_work_tool_receipts WHERE work_id=? AND status IN ('pending','uncertain') UNION ALL SELECT 1 FROM resources r JOIN agent_work_artifacts a ON a.resource_id=r.id WHERE a.work_id=? AND r.status IN ('uncertain','needs_reconciliation') LIMIT 1",row.id,row.id).first();
                 const costs = await workCosts(row.id);
                 const delivery = settled && await q("SELECT 1 FROM events WHERE run_id=? AND ((type='text_delta' AND length(trim(COALESCE(json_extract(data,'$.text'),'')))>0) OR (type='tool_result' AND json_extract(data,'$.result.id') IN (SELECT resource_id FROM agent_work_artifacts WHERE work_id=? AND step_id=?))) LIMIT 1",settled.run_id,row.id,settled.id).first();
-                if (!settled || pending || costs.unresolved || costs.reserved || !delivery) continue;
+                if (!settled || pending || costs.unresolved || costs.reserved || !delivery || !await savedStepEvidence(row.id,settled.id,row.workspace_id)) continue;
                 const waiting = await q("SELECT r.status FROM resources r JOIN agent_work_artifacts a ON a.resource_id=r.id WHERE a.work_id=? AND a.step_id=? AND r.status IN ('awaiting_approval','generating','pending','executing','waiting_input') LIMIT 1",row.id,settled.id).first<{status:string}>();
                 const nextStep = waiting ? waiting.status==='waiting_input'?'waiting_input':['generating','executing'].includes(waiting.status)?'waiting_external':'waiting_approval' : 'completed';
                 const remaining = await q("SELECT 1 FROM agent_work_steps WHERE work_id=? AND id!=? AND status!='completed' LIMIT 1",row.id,settled.id).first();
@@ -376,7 +379,7 @@ export async function runWorkTick(runner?: Runner, workId?: string) {
             const execute = runner || (await import('./agent')).runAgent;
             await execute(row.workspace_id, row.conversation_id, runId, emit, AbortSignal.timeout(Math.min(180000, row.expires_at - Date.now())), budget, 'approved_mission');
             await guard();
-            if (!delivered)
+            if (!delivered || !await savedStepEvidence(row.id,step.id,row.workspace_id))
                 throw new AppError('Aucun résultat vérifiable n’a été obtenu.', 502, 'work_result_missing');
             await q("UPDATE runs SET status='completed',updated_at=? WHERE id=? AND status='streaming'", Date.now(), runId).run();
             await finishRunBudget(budget);
@@ -405,7 +408,7 @@ export async function runWorkTick(runner?: Runner, workId?: string) {
             const hold = budget ? await q('SELECT status FROM credit_holds WHERE id=?', budget.holdId).first<{
                 status: string;
             }>() : null, pending = await q("SELECT 1 FROM agent_work_tool_receipts WHERE work_id=? AND status IN ('pending','uncertain') LIMIT 1", row.id).first();
-            const safePartial = !budget || !pending && hold?.status === 'settled' && ['step_limit', 'work_budget_exhausted', 'budget_exhausted', 'work_stopped'].includes(code);
+            const safePartial = !budget || !pending && hold?.status === 'settled' && ['step_limit', 'work_budget_exhausted', 'budget_exhausted', 'work_stopped', 'work_result_missing'].includes(code);
             if (step)
                 await q("UPDATE agent_work_steps SET status=?,finished_at=? WHERE id=? AND status='running'", safePartial ? 'partial' : 'uncertain', Date.now(), step.id).run();
             if (!['paused', 'cancelled'].includes(current.status))

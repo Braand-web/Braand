@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Livefoot IA — Moteur de rendu « beau motion » v2 (PIL + FFmpeg, 100 % local).
+
+Bibliothèque réutilisable pour les Reels quotidiens. Principes v2 :
+  - fond animé en continu (dégradé qui respire, halos qui dérivent, particules) ;
+  - easings professionnels pour TOUTES les entrées (jamais de mouvement linéaire) ;
+  - transitions de scènes en glissement + fondu enchaîné (0,35 s) ;
+  - cartes avec ombre portée douce et liseré lumineux (glow) sur l'élément clé ;
+  - compteurs interpolés sur la durée réelle, barres à tête lumineuse ;
+  - zoom punch + shake contrôlé sur les chiffres chocs ;
+  - parallaxe légère (fond / cartes / texte à vitesses différentes) ;
+  - typographie hiérarchisée : accroche XXL, chiffres géants, micro-labels espacés ;
+  - fondu global d'entrée/sortie (0,3 s) et barre de progression de lecture.
+
+Usage minimal :
+    from motion_v2 import Reel, Scene, Background
+    reel = Reel([Scene(3.2, draw_hook), Scene(4.0, draw_podium)], audio="voix.mp3")
+    reel.render("sortie.mp4", ass="sous-titres.ass")
+
+Chaque fonction de scène reçoit (layer, t, dur, ctx) :
+  layer : image RGBA 1080x1920 transparente sur laquelle dessiner la scène ;
+  t     : temps local dans la scène (secondes) ;
+  dur   : durée de la scène ;
+  ctx   : dict {T: temps global, total: durée totale, W, H}.
+Les helpers d'animation (slide_in, rise, pop…) renvoient les paramètres à
+appliquer : alpha (0-255), dy (décalage vertical), scale (facteur de taille).
+"""
+import math
+import subprocess
+
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+# ---------------------------------------------------------------- constantes
+W, H, FPS = 1080, 1920, 30
+TRANS = 0.35          # durée des transitions entre scènes (s)
+FADE = 0.30           # fondu global entrée / sortie (s)
+
+NAVY_A = (8, 13, 26)      # haut du dégradé (phase basse)
+NAVY_B = (14, 24, 48)     # bas du dégradé (phase basse)
+NAVY_A2 = (13, 20, 38)    # phase haute (respiration)
+NAVY_B2 = (20, 34, 66)
+GREEN = (34, 197, 94)
+YELLOW = (250, 204, 21)
+GOLD = (245, 197, 66)
+WHITE = (245, 247, 250)
+GRAY = (165, 180, 200)
+DIM = (110, 128, 155)
+CARD = (17, 28, 52)
+CARD_EDGE = (62, 92, 140)
+INK = (6, 20, 12)         # texte sur pastille claire
+
+F_BLACK = "/usr/share/fonts/truetype/noto/NotoSans-Black.ttf"
+F_BOLD = "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
+F_MED = "/usr/share/fonts/truetype/noto/NotoSans-Medium.ttf"
+
+_font_cache = {}
+
+
+def font(path, size):
+    key = (path, int(size))
+    if key not in _font_cache:
+        _font_cache[key] = ImageFont.truetype(path, int(size))
+    return _font_cache[key]
+
+
+# ------------------------------------------------------------------- easings
+def clamp01(x):
+    return 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
+
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def ease_out_cubic(t):
+    t = clamp01(t)
+    return 1.0 - (1.0 - t) ** 3
+
+
+def ease_in_cubic(t):
+    t = clamp01(t)
+    return t ** 3
+
+
+def ease_in_out_cubic(t):
+    t = clamp01(t)
+    return 4 * t ** 3 if t < 0.5 else 1.0 - ((-2 * t + 2) ** 3) / 2.0
+
+
+def ease_out_expo(t):
+    t = clamp01(t)
+    return 1.0 if t >= 1.0 else 1.0 - 2.0 ** (-10.0 * t)
+
+
+def ease_back_out(t, s=1.70158):
+    """Pop-in avec léger dépassement puis stabilisation."""
+    t = clamp01(t)
+    u = t - 1.0
+    return 1.0 + (s + 1.0) * u ** 3 + s * u ** 2
+
+
+def ease_back_soft(t):
+    return ease_back_out(t, s=1.2)
+
+
+def phase(t, start, dur, fn=ease_out_cubic):
+    """Progression easing d'une animation locale : 0 avant start, 1 après start+dur."""
+    if dur <= 0:
+        return 1.0
+    return fn(clamp01((t - start) / dur))
+
+
+def raw_phase(t, start, dur):
+    if dur <= 0:
+        return 1.0
+    return clamp01((t - start) / dur)
+
+
+# ------------------------------------------------------- helpers d'animation
+def slide_in(t, start=0.0, dur=0.55, dist=70, fn=ease_out_cubic):
+    """Entrée par glissement vertical + fondu. Renvoie (alpha, dy)."""
+    p = phase(t, start, dur, fn)
+    return int(255 * p), int((1.0 - p) * dist)
+
+
+def rise(t, start=0.0, dur=0.6, dist=120):
+    """Montée franche (podium, cartes basses). Renvoie (alpha, dy)."""
+    return slide_in(t, start, dur, dist, ease_out_cubic)
+
+
+def pop(t, start=0.0, dur=0.45):
+    """Facteur d'échelle d'un pop-in (0 -> ~1.08 -> 1, ease-back)."""
+    return ease_back_out(raw_phase(t, start, dur))
+
+
+def punch(t, start, dur=0.5):
+    """Zoom punch sur chiffre choc : échelle 1.35 -> 1 avec ease-out expo + shake décroissant.
+    Renvoie (scale, shake_px)."""
+    p = raw_phase(t, start, dur)
+    scale = 1.0 + 0.35 * (1.0 - ease_out_expo(p))
+    shake = (1.0 - p) * 7.0 * math.sin((t - start) * 65.0) if p < 1.0 else 0.0
+    return scale, shake
+
+
+def pulse(t, period=1.6, amp=0.05):
+    """Pulsation douce (glow, élément clé) : facteur autour de 1."""
+    return 1.0 + amp * math.sin(t * 2.0 * math.pi / period)
+
+
+def drift(t, period, amp):
+    """Dérive sinusoïdale lente (halos, parallaxe)."""
+    return amp * math.sin(t * 2.0 * math.pi / period)
+
+
+def _paste_rgba(base, src, x, y):
+    """alpha_composite sûr : rogne la source si elle dépasse du cadre."""
+    sx0 = max(0, -int(x))
+    sy0 = max(0, -int(y))
+    dx = max(0, int(x))
+    dy = max(0, int(y))
+    w = min(src.width - sx0, base.width - dx)
+    h = min(src.height - sy0, base.height - dy)
+    if w <= 0 or h <= 0:
+        return
+    base.alpha_composite(src.crop((sx0, sy0, sx0 + w, sy0 + h)), (dx, dy))
+
+
+# --------------------------------------------------------------------- texte
+def _text_temp(text, fnt, fill, tracking=0):
+    """Rend un texte sur une image RGBA temporaire (permet alpha/scale/glow/shake)."""
+    tmp = Image.new("RGBA", (8, 8))
+    d = ImageDraw.Draw(tmp)
+    if tracking:
+        width = sum(d.textlength(ch, font=fnt) + tracking for ch in text) - tracking
+    else:
+        width = d.textlength(text, font=fnt)
+    asc, desc = fnt.getmetrics()
+    th = asc + desc
+    img = Image.new("RGBA", (int(width) + 8, th + 8), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    x = 4
+    if tracking:
+        for ch in text:
+            d.text((x, 4), ch, font=fnt, fill=fill + (255,))
+            x += d.textlength(ch, font=fnt) + tracking
+    else:
+        d.text((4, 4), text, font=fnt, fill=fill + (255,))
+    return img
+
+
+def fit_size(text, path, start, maxw, minimum=28, tracking=0):
+    """Réduit la taille de police jusqu'à tenir dans maxw."""
+    tmp = Image.new("RGBA", (8, 8))
+    d = ImageDraw.Draw(tmp)
+    s = start
+    while s > minimum:
+        f = font(path, s)
+        w = d.textlength(text, font=f) + (tracking * (len(text) - 1) if tracking else 0)
+        if w <= maxw:
+            break
+        s -= 4
+    return s
+
+
+def draw_text(img, text, cx, y, path, size, fill, alpha=255, scale=1.0,
+              glow=None, glow_alpha=120, glow_radius=16, shake_x=0.0, tracking=0):
+    """Texte centré horizontalement en cx, haut en y. Gère alpha, échelle, glow, shake."""
+    f = font(path, max(8, int(size * scale)))
+    tile = _text_temp(text, f, fill, tracking)
+    if alpha < 255:
+        a = tile.split()[3].point(lambda v: v * alpha // 255)
+        tile.putalpha(a)
+    if glow is not None and glow_alpha > 0:
+        mask = tile.split()[3]
+        g = Image.new("RGBA", tile.size, glow + (255,))
+        g.putalpha(mask.point(lambda v: v * glow_alpha // 255))
+        g = g.filter(ImageFilter.GaussianBlur(glow_radius))
+        _paste_rgba(img, g, int(cx - tile.width / 2 + shake_x), int(y))
+    _paste_rgba(img, tile, int(cx - tile.width / 2 + shake_x), int(y))
+    return tile.height
+
+
+def label(img, text, cx, y, size=30, fill=GRAY, alpha=255, tracking=7):
+    """Micro-label en capitales espacées."""
+    return draw_text(img, text.upper(), cx, y, F_BOLD, size, fill,
+                     alpha=alpha, tracking=tracking)
+
+
+def wrap(draw, text, fnt, maxw):
+    words, lines, cur = text.split(), [], ""
+    for w_ in words:
+        t = (cur + " " + w_).strip()
+        if draw.textlength(t, font=fnt) <= maxw or not cur:
+            cur = t
+        else:
+            lines.append(cur)
+            cur = w_
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+# -------------------------------------------------------------------- formes
+def _shape_layer(box, radius, draw_fn, pad):
+    x0, y0, x1, y1 = box
+    layer = Image.new("RGBA", (int(x1 - x0) + 2 * pad, int(y1 - y0) + 2 * pad), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    draw_fn(d, (pad, pad, pad + (x1 - x0), pad + (y1 - y0)))
+    return layer, (int(x0 - pad), int(y0 - pad))
+
+
+def card(img, box, radius=36, fill=CARD, alpha=238, outline=CARD_EDGE, outline_w=3,
+         shadow=True, shadow_alpha=115, shadow_blur=20, shadow_dy=16,
+         glow=None, glow_alpha=0, glow_blur=26):
+    """Carte à coins arrondis : ombre portée douce + glow optionnel + liseré."""
+    x0, y0, x1, y1 = [int(v) for v in box]
+    if glow is not None and glow_alpha > 0:
+        layer, pos = _shape_layer((x0, y0, x1, y1), radius,
+                                  lambda d, b: d.rounded_rectangle(b, radius=radius, fill=glow + (glow_alpha,)),
+                                  glow_blur * 2)
+        _paste_rgba(img, layer.filter(ImageFilter.GaussianBlur(glow_blur)), pos[0], pos[1])
+    if shadow:
+        layer, pos = _shape_layer((x0, y0 + shadow_dy, x1, y1 + shadow_dy), radius,
+                                  lambda d, b: d.rounded_rectangle(b, radius=radius, fill=(0, 0, 0, shadow_alpha)),
+                                  shadow_blur * 2)
+        _paste_rgba(img, layer.filter(ImageFilter.GaussianBlur(shadow_blur)), pos[0], pos[1])
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill + (alpha,),
+                        outline=outline + (255,) if outline else None, width=outline_w)
+
+
+def pill(img, text, cx, y, size=42, fill=GREEN, text_fill=INK, alpha=255, pad_x=46):
+    tmp = Image.new("RGBA", (8, 8))
+    d = ImageDraw.Draw(tmp)
+    f = font(F_BLACK, size)
+    w = d.textlength(text, font=f)
+    h = int(size * 1.95)
+    layer = Image.new("RGBA", (int(w + pad_x * 2) + 40, h + 40), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    ld.rounded_rectangle([20, 20, 20 + w + pad_x * 2, 20 + h], radius=h // 2, fill=fill + (alpha,))
+    _paste_rgba(img, layer, int(cx - layer.width / 2), int(y - 20))
+    draw_text(img, text, cx, y + int(size * 0.42), F_BLACK, size, text_fill, alpha=alpha)
+    return h
+
+
+def progress_bar(img, x0, y, x1, frac, color=GREEN, h=26, glow_head=True):
+    """Barre de progression easing : fond, remplissage, tête lumineuse."""
+    frac = clamp01(frac)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([x0, y, x1, y + h], radius=h // 2, fill=(22, 36, 64, 255))
+    if frac > 0:
+        xe = x0 + (x1 - x0) * frac
+        if xe - x0 >= h + 4:
+            d.rounded_rectangle([x0, y, xe, y + h], radius=h // 2, fill=color + (255,))
+        elif xe - x0 >= 3:
+            d.ellipse([x0, y, x0 + h, y + h], fill=color + (255,))
+        if glow_head and xe - x0 >= 3:
+            r = h * 0.95
+            glow = Image.new("RGBA", (int(r * 4), int(r * 4)), (0, 0, 0, 0))
+            gd = ImageDraw.Draw(glow)
+            gd.ellipse([r, r, r * 3, r * 3], fill=color + (160,))
+            glow = glow.filter(ImageFilter.GaussianBlur(r * 0.7))
+            _paste_rgba(img, glow, int(xe - r * 2), int(y + h / 2 - r * 2))
+            d.ellipse([xe - h * 0.32, y + h * 0.18, xe + h * 0.32, y + h * 0.82], fill=(255, 255, 255, 255))
+
+
+def counter_value(t, start, dur, target, fn=ease_out_cubic):
+    """Valeur de compteur interpolée en continu sur la durée réelle."""
+    return target * phase(t, start, dur, fn)
+
+
+def fmt_fr(n):
+    """1234567 -> '1 234 567' (espaces fines via espaces normales)."""
+    return f"{int(round(n)):,}".replace(",", " ")
+
+
+# ---------------------------------------------------------------------- fond
+def _gradient(top, bottom):
+    img = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(img)
+    for yy in range(H):
+        k = yy / H
+        d.line([(0, yy), (W, yy)], fill=tuple(int(lerp(top[i], bottom[i], k)) for i in range(3)))
+    return img
+
+
+def _halo_sprite(color, size=620, peak=90):
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    steps = 40
+    for i in range(steps, 0, -1):
+        r = size / 2 * i / steps
+        a = int(peak * (1 - i / steps) ** 2)
+        d.ellipse([size / 2 - r, size / 2 - r, size / 2 + r, size / 2 + r], fill=color + (a,))
+    return img.filter(ImageFilter.GaussianBlur(size * 0.08))
+
+
+def _dot_sprite(color, size=26, peak=200):
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([size * 0.22, size * 0.22, size * 0.78, size * 0.78], fill=color + (peak,))
+    return img.filter(ImageFilter.GaussianBlur(size * 0.16))
+
+
+class Background:
+    """Fond vivant : dégradé qui respire (cycle 9 s), grille subtile en dérive
+    lente, 3 halos colorés qui dérivent (parallaxe fond), 34 particules montantes."""
+
+    def __init__(self):
+        self.g_a = _gradient(NAVY_A, NAVY_B)
+        self.g_b = _gradient(NAVY_A2, NAVY_B2)
+        grid = Image.new("RGBA", (W, H + 80), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grid)
+        for gx in range(0, W + 1, 120):
+            gd.line([(gx, 0), (gx, H + 80)], fill=(120, 160, 220, 14), width=2)
+        for gy in range(0, H + 81, 120):
+            gd.line([(0, gy), (W, gy)], fill=(120, 160, 220, 14), width=2)
+        self.grid = grid
+        self.halos = [
+            (_halo_sprite(GREEN, 640, 62), 150, 340, 26.0, 90),
+            (_halo_sprite(GOLD, 720, 70), 760, 1180, 32.0, 120),
+            (_halo_sprite((64, 110, 220), 560, 52), 880, 170, 38.0, 70),
+        ]
+        self.dots = [_dot_sprite(GREEN), _dot_sprite(GOLD), _dot_sprite(WHITE, 26, 150)]
+        self.dots_small = [s.resize((18, 18)) for s in self.dots]
+        self.particles = []
+        for i in range(34):
+            seed = (i * 2654435761) % 10000 / 10000.0
+            seed2 = ((i + 7) * 40503) % 10000 / 10000.0
+            self.particles.append((seed * W, seed2, 14 + (i % 5) * 7, i % 3,
+                                   0.5 + 0.5 * math.sin(i * 2.7)))
+
+    def render(self, t):
+        k = 0.5 + 0.5 * math.sin(t * 2.0 * math.pi / 9.0)
+        img = Image.blend(self.g_a, self.g_b, 0.25 + 0.30 * k).convert("RGBA")
+        # grille : dérive verticale très lente (parallaxe lointaine)
+        off = int((t * 6) % 120)
+        _paste_rgba(img, self.grid.crop((0, 120 - off, W, 120 - off + H)), 0, 0)
+        # halos en dérive (parallaxe moyenne)
+        for sprite, bx, by, period, amp in self.halos:
+            x = int(bx - sprite.width / 2 + drift(t, period, amp))
+            y = int(by - sprite.height / 2 + drift(t * 0.9, period * 1.31, amp * 0.7))
+            _paste_rgba(img, sprite, x, y)
+        # particules montantes, scintillement doux
+        for px, seed2, speed, kind, tw in self.particles:
+            y = H - ((seed2 * H + t * speed) % (H + 60)) + 30
+            a = 0.55 + 0.45 * math.sin(t * 2.2 + seed2 * 40.0)
+            if a < 0.25:
+                continue
+            spr = self.dots[kind] if tw > 0.75 else self.dots_small[kind]
+            _paste_rgba(img, spr, int(px + drift(t, 7.0, 12)), int(y))
+        return img
+
+
+# ------------------------------------------------------------------ timeline
+class Scene:
+    def __init__(self, dur, draw):
+        self.dur = float(dur)
+        self.draw = draw  # fn(layer, t_local, dur, ctx)
+
+
+class Reel:
+    """Assemble les scènes (chevauchement TRANS), le fond animé, l'en-tête
+    de marque, la barre de lecture et les fondus globaux ; encode en MP4."""
+
+    def __init__(self, scenes, background=None, brand="LIVEFOOT IA",
+                 tagline="LE FOOT, EN DIRECT, EN FRANÇAIS"):
+        self.scenes = scenes
+        self.bg = background or Background()
+        self.brand = brand
+        self.tagline = tagline
+        starts, acc = [], 0.0
+        for s in scenes:
+            starts.append(acc)
+            acc += s.dur - TRANS
+        self.starts = starts
+        self.total = acc + TRANS
+
+    # -- éléments globaux ----------------------------------------------------
+    def _chrome(self, img, T):
+        d = ImageDraw.Draw(img)
+        a_in = phase(T, 0.0, 0.5)
+        # pastille de marque
+        d.ellipse([60, 62, 102, 104], fill=GREEN + (int(255 * a_in),))
+        tile = _text_temp(self.brand, font(F_BLACK, 46), WHITE)
+        if a_in < 1:
+            tile.putalpha(tile.split()[3].point(lambda v: int(v * a_in)))
+        _paste_rgba(img, tile, 118, 52)
+        sub = _text_temp(self.tagline, font(F_BOLD, 26), GRAY, tracking=2)
+        if a_in < 1:
+            sub.putalpha(sub.split()[3].point(lambda v: int(v * a_in)))
+        _paste_rgba(img, sub, 62, 116)
+        d.line([(60, 162), (1020, 162)], fill=(44, 66, 105, int(255 * a_in)), width=3)
+        # barre de lecture (remplissage continu sur la durée réelle)
+        progress_bar(img, 0, H - 14, W, T / self.total, GREEN, h=14, glow_head=False)
+
+    # -- frame ---------------------------------------------------------------
+    def frame_at(self, T):
+        img = self.bg.render(T)
+        ctx = {"T": T, "total": self.total, "W": W, "H": H}
+        active = []
+        for i, s in enumerate(self.scenes):
+            lt = T - self.starts[i]
+            if -TRANS <= lt <= s.dur:
+                active.append((i, s, lt))
+        for i, s, lt in active:
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            s.draw(layer, max(0.0, lt), s.dur, ctx)
+            alpha, dy = 255, int(math.sin(T * 0.8 + i * 1.7) * 3)  # flottement parallaxe
+            if lt < 0:  # scène entrante pendant la transition
+                e = ease_in_out_cubic(clamp01(1.0 + lt / TRANS))
+                alpha, dy = int(255 * e), dy + int((1 - e) * 46)
+            elif lt > s.dur - TRANS and i < len(self.scenes) - 1:  # sortante
+                e = ease_in_out_cubic(clamp01((lt - (s.dur - TRANS)) / TRANS))
+                alpha, dy = int(255 * (1 - e)), dy - int(e * 26)
+            if alpha < 255:
+                layer.putalpha(layer.split()[3].point(lambda v: v * alpha // 255))
+            _paste_rgba(img, layer, 0, dy)
+        self._chrome(img, T)
+        # fondus globaux
+        f = 1.0
+        if T < FADE:
+            f = T / FADE
+        elif T > self.total - FADE:
+            f = max(0.0, (self.total - T) / FADE)
+        if f < 1.0:
+            black = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+            img = Image.blend(black, img, f)
+        return img.convert("RGB")
+
+    # -- rendu ---------------------------------------------------------------
+    def render(self, out_path, audio=None, ass=None, crf=18):
+        frames = int(round(self.total * FPS))
+        if audio:
+            cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                   "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-i", audio,
+                   "-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-b:a", "160k", "-shortest", out_path]
+        else:
+            cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                   "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-an",
+                   "-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p", out_path]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        for f in range(frames):
+            proc.stdin.write(self.frame_at(f / FPS).tobytes())
+        proc.stdin.close()
+        proc.wait()
+        assert proc.returncode == 0, "ffmpeg render failed"
+        if ass:
+            tmp = out_path + ".tmp.mp4"
+            subprocess.check_call(["ffmpeg", "-y", "-v", "error", "-i", out_path,
+                                   "-vf", f"ass={ass}", "-c:v", "libx264", "-crf", str(crf),
+                                   "-c:a", "copy", tmp])
+            subprocess.check_call(["mv", tmp, out_path])
+        return out_path
+
+
+# ------------------------------------------------------------- sous-titres
+def ass_time(sec):
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = sec % 60
+    return f"{h}:{m:02d}:{s:05.2f}"
+
+
+def write_ass(path, cues, size=54):
+    """cues : liste (start, end, texte). Sous-titres blanc gras, contour noir, bas d'écran."""
+    head = ("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n\n"
+            "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, "
+            "Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            f"Style: Default,Noto Sans,{size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,"
+            "100,100,0,0,1,4,0,2,60,60,150,1\n\n"
+            "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+    body = "".join(f"Dialogue: 0,{ass_time(a)},{ass_time(b)},Default,,0,0,0,,{txt}\n"
+                   for a, b, txt in cues)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(head + body)
+    return path
+
+
+def dur_of(path):
+    out = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                   "-of", "csv=p=0", path], text=True)
+    return float(out.strip())

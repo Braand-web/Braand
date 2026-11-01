@@ -1,0 +1,19 @@
+# Charte « Beau Motion » v2 — Livefoot IA
+
+Moteur : `motion_v2.py` (PIL + FFmpeg, 100 % local, 1080×1920, 30 fps, H.264 crf 17-18 + AAC). Toute production quotidienne utilise ce moteur ; aucun fond statique, aucun mouvement linéaire.
+
+1. **Fond vivant, toujours** : dégradé bleu nuit (#0b1220) qui « respire » en 9 s, grille subtile en dérive lente, 3 halos colorés (vert/or/bleu) qui dérivent, ~34 particules montantes scintillantes. Jamais un fond mort ou figé.
+2. **Easings obligatoires** : ease-out cubic pour les entrées, ease-back pour les pop-ins, ease-in-out pour les transitions et les barres. Le linéaire est interdit, sauf la barre de lecture.
+3. **Transitions de scènes** : glissement vertical + fondu enchaîné de 0,35 s, scènes qui se chevauchent. Coupe sèche uniquement en punch délibéré.
+4. **Entrées d'éléments** : tout élément entre en glissant (slide/rise 0,45-0,6 s) ou en pop (ease-back), jamais d'apparition instantanée ; entrées en cascade décalées de 0,2 s.
+5. **Cartes** : coins arrondis (r ≥ 24), ombre portée douce (flou 20, décalage 16), liseré #3e5c8c ; l'élément clé reçoit en plus un glow coloré pulsant lentement.
+6. **Chiffres chocs** : zoom punch (échelle 1,35 → 1 en ease-out expo) + micro-shake décroissant + glow assorti. Un seul punch par scène.
+7. **Compteurs** : interpolation continue sur la durée réelle de l'animation (1-2 s, ease-out cubic), jamais de paliers ni de sauts d'images.
+8. **Barres de progression** : remplissage en ease-in-out, tête lumineuse blanche sur halo coloré ; jauge de confiance et frise chronologique utilisent ce composant.
+9. **Parallaxe** : 3 vitesses — fond/halos (lent), cartes (entrées), texte (pop) — plus un flottement vertical de ±3 px des scènes. Subtil, jamais distrayant.
+10. **Typographie** : Noto Sans Black pour l'accroche XXL et les chiffres géants, Bold pour le courant, micro-labels en capitales espacées (tracking) en or/gris ; largeurs contrôlées par `fit_size` (max 960 px), aucun texte ne touche les bords.
+11. **Palette** : fond bleu nuit, vert #22c55e (marque + positif), jaune #facc15 / or #f5c542 (temps forts, trophées), blanc cassé #f5f7fa, gris #a5b4c8 pour le secondaire.
+12. **Habillage permanent** : en-tête LIVEFOOT IA en fondu d'entrée, barre de progression de lecture verte en bas, fondu global d'entrée et de sortie de 0,3 s.
+13. **Zone sûre sous-titres** : le contenu clé reste au-dessus de y = 1 550 ; sous-titres ASS incrustés (Noto Sans 54, blanc gras, contour noir) calés sur les durées réelles de la voix, phrase par phrase.
+14. **Rythme** : un élément animé nouveau toutes les 2-4 s, scènes de 3-6 s, Reel total 25-35 s ; la voix (Aria, phrase par phrase) commande les durées, jamais l'inverse.
+15. **Contrôle qualité** : avant livraison, extraire ≥ 4 frames à des temps différents et les lire — aucun texte coupé ou superposé, animations visibles, sous-titres nets. Corriger avant de publier, jamais après.

@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""PDF reading toolbox. Run with no args for the command list."""
+import os
+import shutil
+import subprocess
+import sys
+
+
+def parse_pages(spec, n):
+    if not spec or spec == "all":
+        return list(range(1, n + 1))
+    out = []
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.extend(range(int(a or 1), int(b or n) + 1))
+        elif part:
+            out.append(int(part))
+    return [p for p in out if 1 <= p <= n]
+
+
+def cmd_probe(path):
+    from pypdf import PdfReader
+    r = PdfReader(path)
+    print(f"file: {path}  size: {os.path.getsize(path)/1024:.0f} KB")
+    print(f"encrypted: {r.is_encrypted}")
+    if r.is_encrypted:
+        print("ask the user for the password")
+        return
+    n = len(r.pages)
+    meta = r.metadata or {}
+    print(f"pages: {n}  title={meta.get('/Title')!r} author={meta.get('/Author')!r}")
+    chars, imgs = [], []
+    for p in r.pages:
+        try:
+            chars.append(len((p.extract_text() or "").strip()))
+        except Exception:
+            chars.append(0)
+        try:
+            imgs.append(len(p.images))
+        except Exception:
+            imgs.append(0)
+    print("chars/page (first 30):", chars[:30])
+    print("images/page (first 30):", imgs[:30])
+    fields = r.get_fields() or {}
+    print(f"form fields: {len(fields)}")
+    sample = chars[: min(n, 10)]
+    avg = sum(chars) / n
+    box = r.pages[0].mediabox
+    landscape = float(box.width) > float(box.height)
+    pages_with_img = sum(1 for i in imgs if i > 0)
+    if avg < 40 and pages_with_img >= max(1, n // 2):
+        guess = "SCANNED (page images, no text layer) -> use ocr"
+    elif avg < 40:
+        guess = "VERY LITTLE TEXT (no page images either) -> raster a page and look; may be vector drawings or an empty file"
+    elif fields:
+        guess = "FORM -> fields + text"
+    elif landscape and avg < 900:
+        guess = "SLIDE-DECK-LIKE -> text per page + raster key pages"
+    elif sum(imgs) > n:
+        guess = "MIXED (figures) -> text + images/raster"
+    else:
+        guess = "TEXT-HEAVY -> text by page range"
+    print("type guess:", guess)
+
+
+def cmd_text(path, pages=None):
+    from pypdf import PdfReader
+    r = PdfReader(path)
+    sel = parse_pages(pages, len(r.pages))
+    if shutil.which("pdftotext"):
+        for p in sel:
+            out = subprocess.run(["pdftotext", "-layout", "-f", str(p), "-l", str(p), path, "-"],
+                                 capture_output=True, text=True).stdout
+            print(f"\n=== page {p} ===\n{out}")
+    else:
+        for p in sel:
+            print(f"\n=== page {p} ===\n{r.pages[p-1].extract_text() or ''}")
+
+
+def cmd_tables(path, pages=None, outdir=None):
+    import csv
+    import pdfplumber
+    with pdfplumber.open(path) as pdf:
+        sel = parse_pages(pages, len(pdf.pages))
+        count = 0
+        for p in sel:
+            for ti, table in enumerate(pdf.pages[p - 1].extract_tables(), 1):
+                count += 1
+                print(f"\n=== page {p}, table {ti}: {len(table)} rows x {len(table[0]) if table else 0} cols ===")
+                for row in table[:8]:
+                    print(row)
+                if outdir:
+                    os.makedirs(outdir, exist_ok=True)
+                    with open(os.path.join(outdir, f"p{p}_t{ti}.csv"), "w", newline="", encoding="utf-8") as f:
+                        csv.writer(f).writerows(table)
+        print(f"\n{count} table(s) found" + (f", CSV written to {outdir}" if outdir and count else ""))
+
+
+def cmd_images(path, outdir, pages=None):
+    os.makedirs(outdir, exist_ok=True)
+    if shutil.which("pdfimages"):
+        args = ["pdfimages", "-png"]
+        if pages:
+            a = parse_pages(pages, 10**6)
+            args += ["-f", str(min(a)), "-l", str(max(a))]
+        subprocess.run(args + [path, os.path.join(outdir, "img")], check=True)
+        print("extracted to", outdir)
+        return
+    from pypdf import PdfReader
+    r = PdfReader(path)
+    for p in parse_pages(pages, len(r.pages)):
+        for i, im in enumerate(r.pages[p - 1].images):
+            with open(os.path.join(outdir, f"p{p}_{i}_{im.name}"), "wb") as f:
+                f.write(im.data)
+    print("extracted to", outdir)
+
+
+def cmd_raster(path, outdir, pages=None, dpi="80"):
+    os.makedirs(outdir, exist_ok=True)
+    from pypdf import PdfReader
+    n = len(PdfReader(path).pages)
+    for p in parse_pages(pages, n):
+        subprocess.run(["pdftoppm", "-png", "-r", str(dpi), "-f", str(p), "-l", str(p), path,
+                        os.path.join(outdir, f"page{p:03d}")], check=True)
+    print("PNG files in", outdir)
+
+
+def cmd_ocr(path, pages=None, lang="eng"):
+    import tempfile
+    from pypdf import PdfReader
+    n = len(PdfReader(path).pages)
+    with tempfile.TemporaryDirectory() as tmp:
+        for p in parse_pages(pages, n):
+            base = os.path.join(tmp, f"p{p}")
+            subprocess.run(["pdftoppm", "-png", "-r", "200", "-f", str(p), "-l", str(p), path, base], check=True)
+            png = [f for f in os.listdir(tmp) if f.startswith(f"p{p}") and f.endswith(".png")][0]
+            out = subprocess.run(["tesseract", os.path.join(tmp, png), "-", "-l", lang],
+                                 capture_output=True, text=True).stdout
+            print(f"\n=== page {p} (OCR, {lang}) ===\n{out}")
+            os.remove(os.path.join(tmp, png))
+
+
+def cmd_fields(path):
+    from pypdf import PdfReader
+    fields = PdfReader(path).get_fields() or {}
+    if not fields:
+        print("no fillable fields")
+    for k, v in fields.items():
+        print(f"{k!r}: type={v.get('/FT')} value={v.get('/V')!r}")
+
+
+COMMANDS = {"probe": cmd_probe, "text": cmd_text, "tables": cmd_tables, "images": cmd_images,
+            "raster": cmd_raster, "ocr": cmd_ocr, "fields": cmd_fields}
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
+        sys.exit(__doc__ + "\ncommands: " + ", ".join(COMMANDS))
+    COMMANDS[sys.argv[1]](*sys.argv[2:])

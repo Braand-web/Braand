@@ -4,7 +4,7 @@ import {modelRateEnvironment} from './model-rate-refresh';
 import {AppError} from './core.mjs';
 import {modelRateSchema,type ModelRate} from './model-protocol';
 
-export const MODEL_TASKS=['conversation','orchestration','creative','campaigns','extraction','analysis','review','browser'] as const;
+export const MODEL_TASKS=['conversation','orchestration','creative','campaigns','extraction','analysis','review','browser','video_motion'] as const;
 export type ModelTask=typeof MODEL_TASKS[number];
 export const MODEL_TIERS=['light','standard','advanced'] as const;
 export type ModelTier=typeof MODEL_TIERS[number];
@@ -17,8 +17,8 @@ export const REASONING_MODELS={
  opus:{provider:'anthropic',model:'claude-opus-5-5'},
 } as const;
 type ModelKey=keyof typeof REASONING_MODELS;
-const taskModel:Record<ModelTask,ModelKey>={conversation:'sol',orchestration:'sol',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'astra',review:'opus',browser:'sonnet'};
-const adaptiveTaskModel:Record<ModelTask,ModelKey>={conversation:'haiku',orchestration:'sonnet',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'opus',review:'opus',browser:'sonnet'};
+const taskModel:Record<ModelTask,ModelKey>={conversation:'sol',orchestration:'sol',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'astra',review:'opus',browser:'sonnet',video_motion:'opus'};
+const adaptiveTaskModel:Record<ModelTask,ModelKey>={conversation:'haiku',orchestration:'sonnet',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'opus',review:'opus',browser:'sonnet',video_motion:'opus'};
 const tierModel:Record<ModelTier,ModelKey>={light:'haiku',standard:'sonnet',advanced:'opus'};
 const openRouterModels:Partial<Record<ModelKey,string>>={haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5'};
 const routingSchema=z.object({task:z.enum(MODEL_TASKS),tier:z.enum(MODEL_TIERS).optional(),escalation:z.object({reason:z.enum(['validation_failed','contradictory_evidence','incomplete_result']),attempt:z.literal(1)}).strict().optional()}).strict();
@@ -37,7 +37,7 @@ export function routedModel(env:Record<string,string|undefined>,request:RoutingR
  env=modelRateEnvironment(env,now);
  const decision=routingSchema.safeParse(request);if(!decision.success)throw new AppError('Contexte de routage invalide.',400,'model_route_invalid');
  const adaptive=env.MODEL_ROUTING_POLICY==='adaptive';
- const {task,tier,escalation}=decision.data;let key=adaptive&&tier?tierModel[tier]:(adaptive?adaptiveTaskModel:taskModel)[task];
+ const {task,tier,escalation}=decision.data;let key=task==='video_motion'?'opus':adaptive&&tier?tierModel[tier]:(adaptive?adaptiveTaskModel:taskModel)[task];
  if(escalation){if(key==='astra'||key==='opus')throw new AppError('La limite de montée en gamme est atteinte.',409,'model_escalation_limit');key=adaptive?(key==='haiku'?'sonnet':'opus'):'astra';}
  let catalog:unknown;try{catalog=JSON.parse(env.MODEL_ROUTING_CATALOG_JSON||'{}');}catch{throw new AppError('Catalogue IA invalide.',503,'model_not_configured');}
  const entries=z.record(z.unknown()).safeParse(catalog),parsed=entrySchema.safeParse(entries.success?entries.data[key]:undefined);

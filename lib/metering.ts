@@ -9,7 +9,7 @@ import {routedRequest,normalizedResponses,anthropicBody} from './model-client';
 import {ensureModelPricing,currentPricingRate} from './model-pricing';
 import {toolUsage} from './tool-usage';
 export type {ModelRate} from './model-protocol';
-export type RunBudget={who:BillingIdentity;holdId:string;limit:number;runId:string;rate:ModelRate;workId?:string;workStepId?:string;workContext?:string;beforeTool?:()=>Promise<void>;beforeModel?:()=>Promise<void>};
+export type RunBudget={who:BillingIdentity;holdId:string;limit:number;runId:string;rate:ModelRate;videoMotionPreferred?:boolean;workId?:string;workStepId?:string;workContext?:string;beforeTool?:()=>Promise<void>;beforeModel?:()=>Promise<void>};
 export type RunSettlementBudget=Pick<RunBudget,'runId'|'holdId'>&{rate?:ModelRate};
 type ReconciliationUsage=ModelCostRow&{id:string;rate:string;request_id:string;run_id:string;hold_id:string};
 type ModelRateIssue='missing_rate'|'invalid_rate'|'invalid_verified_at'|'future_rate'|'stale_rate'|'model_mismatch'|'funding_fee_unverified';
@@ -88,6 +88,9 @@ export async function reconcileOpenRouterUsage(organization?:string,limit=10){
  // independently of whether a provider receipt still needs reconciliation.
  const stranded=await db().prepare("SELECT h.id,h.reference FROM credit_holds h LEFT JOIN runs r ON h.reference='chat:'||r.id WHERE h.reference LIKE 'chat:%' AND h.status IN ('reserved','needs_reconciliation') AND ((r.status IN ('failed','partial','cancelled','completed') AND r.updated_at<?) OR (r.id IS NULL AND h.created_at<?))"+(organization?' AND h.organization_id=?':'')+' ORDER BY h.created_at LIMIT ?').bind(...(organization?[Date.now()-30000,Date.now()-300000,organization,limit]:[Date.now()-30000,Date.now()-300000,limit])).all<{id:string;reference:string}>();
  for(const hold of stranded.results)try{await finishRunBudget({runId:hold.reference.slice(5),holdId:hold.id});}catch{/* Keep an unconfirmed cost reserved; the next tick retries without rerunning the agent. */}
+ // A cancelled stream can outlive its finally block. Repair only old locks
+ // with terminal runs; an active/new request must never be unlocked here.
+ await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id IN (SELECT c.id FROM resources c WHERE c.kind='conversation' AND c.status='streaming' AND c.updated_at<? AND EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status IN ('completed','failed','partial','cancelled')) AND NOT EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status='streaming') LIMIT 50)").bind(Date.now(),Date.now()-300000).run();
  return {checked:rows.results.length};
 }
 export async function meteredModel(b:RunBudget,role:string,url:string,init:RequestInit,selected?:RoutedModel,originalBody?:Record<string,unknown>){

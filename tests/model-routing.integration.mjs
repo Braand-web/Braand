@@ -53,10 +53,14 @@ async function budget(credits=500){sql.prepare("UPDATE runs SET status='partial'
 const rows=b=>sql.prepare('SELECT * FROM provider_usage WHERE hold_id=? ORDER BY rowid').all(b.holdId);
 const check=async(name,fn)=>{await fn();console.log('PASS '+name);};
 await check('server-owned task routing selects all requested exact models and rejects invented routing inputs',async()=>{
- const expected={conversation:'sol',orchestration:'sol',extraction:'haiku',creative:'sonnet',campaigns:'sonnet',analysis:'astra',review:'opus',browser:'sonnet'};
+ const expected={conversation:'sol',orchestration:'sol',extraction:'haiku',creative:'sonnet',campaigns:'sonnet',analysis:'astra',review:'opus',browser:'sonnet',video_motion:'opus'};
  for(const [task,key] of Object.entries(expected))assert.equal(router.routedModel(env,{task}).key,key);
  assert.equal(router.routedModel(env,{task:'conversation',escalation:{reason:'validation_failed',attempt:1}}).key,'astra');
  for(const input of [{task:'user asks Opus'},{task:'conversation',model:'claude-opus-5-5'},{task:'conversation',escalation:{reason:'slow',attempt:1}},{task:'conversation',escalation:{reason:'validation_failed',attempt:2}},{task:'analysis',escalation:{reason:'validation_failed',attempt:1}}])assert.throws(()=>router.routedModel(env,input));
+});
+await check('video motion uses the configured Opus 5.5 with its own verified rate without changing generic creative tasks',async()=>{
+ assert.equal(router.routedModel(env,{task:'video_motion',tier:'light'}).key,'opus');assert.equal(router.routedModel(env,{task:'creative'}).key,'sonnet');
+ const saved=env.MODEL_ROUTING_CATALOG_JSON;try{const changed=catalog();delete changed.opus;env.MODEL_ROUTING_CATALOG_JSON=JSON.stringify(changed);assert.throws(()=>router.routedModel(env,{task:'video_motion'}));}finally{env.MODEL_ROUTING_CATALOG_JSON=saved;}
 });
 await check('unverified per-model rates, long-context price assumptions and absent keys fail closed',async()=>{
  for(const patch of [{enabled:false},{maxInputTokens:100001},{rate:{...catalog().sol.rate,model:'foreign'}},{rate:{...catalog().sol.rate,provider:'anthropic'}},{rate:{...catalog().sol.rate,verifiedAt:'invalid'}},{rate:{...catalog().sol.rate,verifiedAt:new Date(Date.now()-90000000).toISOString()}}]){env.MODEL_ROUTING_CATALOG_JSON=JSON.stringify({...catalog(),sol:{...catalog().sol,...patch}});assert.throws(()=>router.routedModel(env));}
@@ -96,7 +100,7 @@ env.MODEL_ROUTING_POLICY='adaptive';env.OPENROUTER_API_KEY=secret;
 const adaptiveCatalog=Object.fromEntries(['haiku','sonnet','opus'].map((key,index)=>[key,{enabled:true,transport:'openrouter',maxInputTokens:90000,maxOutputTokens:8192,rate:{model:`anthropic/claude-${key}-5.5`,provider:'openrouter',input:index+1,output:(index+1)*5,cacheWrite:(index+1)*1.25,cacheRead:(index+1)*.1,usdXaf:600,overheadXaf:0,fundingFeeBps:0,verifiedAt:new Date().toISOString()}}]));
 env.MODEL_ROUTING_CATALOG_JSON=JSON.stringify(adaptiveCatalog);
 await check('production adaptive catalogue selects only explicitly configured models and transport',async()=>{
- assert.equal(router.routedModel(env).key,'haiku');assert.equal(router.routedModel(env,{task:'orchestration'}).key,'sonnet');assert.equal(router.routedModel(env,{task:'analysis'}).key,'opus');
+ assert.equal(router.routedModel(env).key,'haiku');assert.equal(router.routedModel(env,{task:'orchestration'}).key,'sonnet');assert.equal(router.routedModel(env,{task:'analysis'}).key,'opus');assert.equal(router.routedModel(env,{task:'video_motion',tier:'light'}).model,'anthropic/claude-opus-5.5');
  assert.equal(router.routedModel(env,{task:'conversation',escalation:{reason:'validation_failed',attempt:1}}).key,'sonnet');
  const selected=router.routedModel(env);assert.equal(selected.provider,'openrouter');assert.equal(selected.url,'https://openrouter.ai/api/v1/messages');
  const wire=JSON.parse(client.routedRequest(selected,body,new AbortController().signal).init.body);assert.deepEqual(wire.provider,{require_parameters:true,allow_fallbacks:false});assert.equal(wire.model,adaptiveCatalog.haiku.rate.model);

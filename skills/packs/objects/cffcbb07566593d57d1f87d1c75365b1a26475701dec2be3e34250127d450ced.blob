@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Render an Office file (docx/pptx/xlsx) to PDF, then to PNG pages for visual checking.
+# Usage: render_preview.sh file.docx [outdir] [dpi]
+set -euo pipefail
+f="${1:?file required}"
+out="${2:-/tmp/preview}"
+dpi="${3:-60}"
+mkdir -p "$out"
+soffice --headless --convert-to pdf --outdir "$out" "$f" >/dev/null 2>&1
+pdf="$out/$(basename "${f%.*}").pdf"
+pdftoppm -png -r "$dpi" "$pdf" "$out/page"
+echo "PDF: $pdf"
+ls "$out"/page*.png

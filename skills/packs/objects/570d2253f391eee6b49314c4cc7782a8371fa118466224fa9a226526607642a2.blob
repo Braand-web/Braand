@@ -1,0 +1,90 @@
+/**
+ * Squelette du service de sessions navigateur pour un SaaS multi-utilisateurs.
+ * A adapter aux conventions du projet (auth, credits, logs, stockage).
+ *
+ * Principe : le backend cree une session Steel par utilisateur et par tache,
+ * donne l'URL CDP au pilote Playwright de l'agent, puis ferme la session.
+ * Les identifiants utilisateur ne passent jamais par ce fichier en clair :
+ * ils sont injectes par ton systeme de credentials au moment du besoin.
+ */
+
+import { chromium, type Browser, type Page } from "playwright-core";
+
+const STEEL_BASE_URL = process.env.STEEL_BASE_URL ?? "http://localhost:3000";
+const STEEL_API_KEY = process.env.STEEL_API_KEY ?? "";
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes, a aligner sur tes quotas
+
+type SessionInfo = {
+  sessionId: string;
+  cdpUrl: string;
+  userId: string;
+  createdAt: number;
+};
+
+/** Cree une session isolee pour un utilisateur. Verifie les quotas AVANT d'appeler cette fonction. */
+export async function createSession(userId: string): Promise<SessionInfo> {
+  const res = await fetch(`${STEEL_BASE_URL}/v1/sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Steel-Api-Key": STEEL_API_KEY,
+    },
+    body: JSON.stringify({
+      // Persistance des cookies pendant la session uniquement.
+      // Pour retrouver les connexions entre sessions, sauvegarde le profil
+      // cote serveur, chiffre, au nom de l'utilisateur.
+      sessionContext: {},
+      timeout: SESSION_TIMEOUT_MS,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Steel session creation failed: ${res.status}`);
+  }
+  const data = (await res.json()) as { id: string; websocketUrl: string };
+  return {
+    sessionId: data.id,
+    cdpUrl: data.websocketUrl,
+    userId,
+    createdAt: Date.now(),
+  };
+}
+
+/** Connecte Playwright a la session et renvoie une page prete a piloter. */
+export async function connectPage(session: SessionInfo): Promise<{ browser: Browser; page: Page }> {
+  const browser = await chromium.connectOverCDP(session.cdpUrl);
+  const context = browser.contexts()[0];
+  const page = context.pages()[0] ?? (await context.newPage());
+  return { browser, page };
+}
+
+/** Exemple minimal d'action agent : naviguer, extraire le texte, capturer. */
+export async function demoRun(session: SessionInfo, url: string) {
+  const { browser, page } = await connectPage(session);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    const title = await page.title();
+    const text = await page.locator("body").innerText();
+    const screenshot = await page.screenshot({ type: "png" });
+    // screenshot : Buffer a envoyer dans ton stockage objet (R2, S3...)
+    return { title, text: text.slice(0, 5000), screenshotBytes: screenshot.length };
+  } finally {
+    await browser.close();
+  }
+}
+
+/** Ferme et detruit la session. A appeler dans tous les cas, meme apres erreur. */
+export async function releaseSession(session: SessionInfo): Promise<void> {
+  await fetch(`${STEEL_BASE_URL}/v1/sessions/${session.sessionId}/release`, {
+    method: "POST",
+    headers: { "Steel-Api-Key": STEEL_API_KEY },
+  }).catch(() => {
+    // La session expire d'elle-meme apres le timeout si l'appel echoue.
+  });
+}
+
+// TODO a brancher dans ton SaaS :
+// 1. Registre des sessions par utilisateur (base ou objet durable) : proprietaire, etat, expiration.
+// 2. Verification credits et sessions simultanees par plan AVANT createSession.
+// 3. Job de nettoyage periodique des sessions expirees.
+// 4. Journal d'actions par session, visible par l'utilisateur proprietaire.
+// 5. Mode reprise manuelle : exposer la vue live de la session a l'utilisateur en cas de blocage (CAPTCHA, 2FA).

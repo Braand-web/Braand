@@ -1,0 +1,45 @@
+---
+name: artifact-emulator
+description: Test and debug a self-contained HTML page or small web app in a headless browser before delivering or publishing it. Use whenever you have built an HTML/JS/CSS artifact (app, game, dashboard, calculator, landing page, visualization) and need to confirm it loads, has no console errors, renders on phone and desktop, works in dark mode, survives blocked network access, and handles empty browser storage. Also use when the user reports a blank page, a broken widget or a layout bug in an HTML file.
+---
+
+# Emulating an HTML artifact before shipping it
+
+A page that "looks right in the source" often fails in a sandbox: a CDN script is blocked, storage throws, a script runs before the DOM exists, a layout breaks at 375 px. Run it first.
+
+## Run
+
+```
+python scripts/run_artifact.py page.html [--out /tmp/artifact] [--allow cdnjs.cloudflare.com,cdn.jsdelivr.net,fonts.googleapis.com,fonts.gstatic.com]
+```
+
+What it does:
+
+1. Opens the file in headless Chromium at **desktop (1280x800)** and **phone (375x800)** sizes, in **light** and **dark** color schemes (4 screenshots).
+2. Collects **console errors/warnings**, **uncaught exceptions**, **failed requests**, and **requests to hosts outside the allow-list** (those are aborted, mimicking a strict content-security policy).
+3. Stubs `window.storage` (in-memory key/value, async) and makes `localStorage` throw on request with `--storage-fail`, to prove the page copes with unavailable storage.
+4. Reports horizontal overflow (page wider than viewport), elements with zero size that should be visible, images that failed to load, and basic accessibility hints (images without alt, buttons without a name, inputs without a label).
+5. Exits non-zero if there are errors, so you can loop: fix, rerun.
+
+Then **look at the screenshots** with the image viewer. Automated checks do not catch ugly.
+
+## Interpreting results
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Blank page, `X is not defined` | Library failed to load (host blocked, wrong URL, `type="module"` import from a non-allowed host) | Use a UMD build from an allowed host at a pinned version, or inline the code |
+| `Cannot read properties of null` at start | Script ran before the element existed | Move script to the end of body, or wait for `DOMContentLoaded` |
+| `SecurityError` on storage | Storage is disabled or blocked | Wrap every read/write in try/catch and fall back to in-memory state |
+| Request to an external API fails | Network is blocked in the sandbox | Embed the data as a snapshot, or let the user provide it |
+| Horizontal scroll at 375 px | Fixed widths, wide table or code block | Use `max-width:100%`, put wide content in an `overflow-x:auto` container |
+| Dark mode unreadable | Hard-coded colors | Define colors as CSS variables with a dark override under `prefers-color-scheme` |
+
+## Checklist before shipping
+
+- No console errors in either theme and both sizes.
+- Works with empty storage and with storage throwing.
+- No reliance on blocked hosts; all libraries pinned to exact versions.
+- Tap targets >= 44 px on the phone layout; text >= 16 px for inputs (prevents mobile zoom).
+- Interactive controls reachable with the keyboard; visible focus.
+- File size reasonable (embedded images/data counted).
+- Page has a `<title>` and `lang` attribute.

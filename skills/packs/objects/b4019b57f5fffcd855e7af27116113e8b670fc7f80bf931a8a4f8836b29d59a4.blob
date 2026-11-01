@@ -1,0 +1,53 @@
+---
+name: product-self-knowledge
+description: Answer questions about Anthropic's products accurately by verifying against current official sources instead of memory. Use whenever a response would state specific facts about Claude apps, plans and limits, Claude Code (install, platforms, configuration, MCP), the Claude API (models, model names, pricing, rate limits, tool use, batch, streaming, SDKs), or feature availability - including coding tasks that use the Anthropic SDK and comparisons with other LLM providers.
+---
+
+# Product facts: verify, don't recall
+
+Product details change often: model names, prices, limits, plan features, supported platforms, SDK signatures, beta flags. Memory of them is likely stale. Treat any such fact as **unverified until checked** against an official source in this session.
+
+## Procedure
+
+1. **Identify the factual claims** your answer would contain (names, numbers, availability, commands, parameters).
+2. **Sort them**:
+   - *Stable concepts* (what an API is, what "tool use" means, how prompting works in general): answer directly.
+   - *Volatile specifics* (anything below): verify first.
+3. **Verify** with web search and page fetch on official domains (Anthropic's documentation site, the support/help center, the pricing page, the API reference, the news/announcements pages, official SDK repositories and release notes). Prefer the page that is the source of truth for that fact; open it rather than relying on a snippet.
+4. **Answer from what you found**, mention the source page, and say the date of the page or that it is current as of today's check when you can see it.
+5. **If you cannot verify** (no network, page not found, conflicting sources): say so, give your best understanding labeled as unverified, and point to the page where the user can confirm.
+
+## Volatile facts (always verify)
+
+- Model names and identifiers, versions, context windows, output limits, knowledge cutoffs, deprecation dates
+- Pricing (per-token, per-plan, tool and feature surcharges), free-tier rules, discounts, billing behavior
+- Rate limits, usage limits, quotas, message caps per plan
+- Plan names and what each includes (individual, team, enterprise, education)
+- Feature availability by product, platform, country, or plan; beta or preview status
+- Claude Code: installation requirements, supported OS/shells, runtime versions, commands, config file locations and keys, permission modes, MCP setup
+- API: endpoint paths, header names and versions, request/response fields, SDK method names, streaming and batching behavior, tool/function-calling parameters, beta headers
+- Data retention, privacy and compliance claims (quote precisely; do not paraphrase loosely)
+- Integrations and connectors, availability of apps and extensions
+
+## When writing code against the API or SDKs
+
+- Pull the **current** parameter names and model identifiers from the docs or the SDK's own reference before writing the code.
+- Pin SDK versions in the instructions you give, and tell the user where to confirm them.
+- Do not guess a model string. Use the one shown on the official models page, or make it a clearly named variable the user can change.
+- Handle errors and rate limits generally (retries with backoff) without asserting specific numbers you have not verified.
+
+## Comparisons with other providers
+
+- Compare only facts you verified for **each** provider on the same date; say that competitor facts also change.
+- Keep claims neutral and sourced; avoid marketing language. If a user asks which is "better", explain tradeoffs for their use case.
+
+## What not to do
+
+- Do not state prices, limits or model lineups from memory.
+- Do not invent plan names, feature flags, CLI options or config keys.
+- Do not speculate about unreleased products or internal details; say you have no verified information.
+- Do not present a forum post or third-party blog as official.
+
+## Answer pattern
+
+Short answer first → the verified details → source link or page name → caveat if something could not be confirmed ("pricing pages change; check the page for the current figure").

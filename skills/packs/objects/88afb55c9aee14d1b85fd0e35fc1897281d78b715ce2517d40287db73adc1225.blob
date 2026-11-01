@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Inventory files: real type, size, quick facts, and a reading recommendation.
+
+Usage: python inventory.py PATH [PATH ...]   (directories are walked)
+"""
+import csv
+import json
+import os
+import subprocess
+import sys
+import zipfile
+
+MAGIC = [
+    (b"%PDF", "pdf"), (b"PK\x03\x04", "zip"), (b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpeg"),
+    (b"GIF8", "gif"), (b"RIFF", "riff"), (b"\x1f\x8b", "gzip"), (b"7z\xbc\xaf", "7z"),
+    (b"\xd0\xcf\x11\xe0", "ole"),
+]
+
+
+def sniff(path):
+    with open(path, "rb") as f:
+        head = f.read(16)
+    for sig, kind in MAGIC:
+        if head.startswith(sig):
+            if kind == "zip":
+                try:
+                    names = zipfile.ZipFile(path).namelist()
+                except Exception:
+                    return "zip"
+                if any(n.startswith("word/") for n in names):
+                    return "docx"
+                if any(n.startswith("xl/") for n in names):
+                    return "xlsx"
+                if any(n.startswith("ppt/") for n in names):
+                    return "pptx"
+                if "mimetype" in names:
+                    return "epub/odf"
+            if kind == "riff":
+                return "webp/wav/avi"
+            return kind
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    return ext or "unknown"
+
+
+def human(n):
+    for u in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.0f} {u}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def facts(path, kind):
+    try:
+        if kind == "pdf":
+            from pypdf import PdfReader
+            r = PdfReader(path)
+            if r.is_encrypted:
+                return "encrypted", "ask the user for the password"
+            head = r.pages[:5]
+            txt = sum(len((p.extract_text() or "").strip()) for p in head)
+            with_img = sum(1 for p in head if len(p.images) > 0)
+            scanned = txt < 50 * len(head) and with_img >= max(1, len(head) // 2)
+            return f"{len(r.pages)} pages" + (", looks scanned (no text layer)" if scanned else ""), \
+                "pdf-reading skill: probe, then text by page range" + ("; use OCR" if scanned else "")
+        if kind == "docx":
+            from docx import Document
+            d = Document(path)
+            return f"{len(d.paragraphs)} paragraphs, {len(d.tables)} tables", "python-docx: outline then sections"
+        if kind == "xlsx":
+            from openpyxl import load_workbook
+            wb = load_workbook(path, read_only=True)
+            return "sheets: " + ", ".join(f"{s.title}({s.max_row}x{s.max_column})" for s in wb.worksheets), \
+                "pandas/openpyxl, one sheet at a time"
+        if kind == "pptx":
+            from pptx import Presentation
+            return f"{len(Presentation(path).slides)} slides", "python-pptx: read all slides"
+        if kind in ("csv", "tsv", "txt") and os.path.getsize(path) > 0:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                sample = f.read(20000)
+            try:
+                dialect = csv.Sniffer().sniff(sample.split("\n", 1)[0] if sample else ",")
+                if kind != "txt":
+                    rows = sum(1 for _ in open(path, "rb"))
+                    return f"~{rows} lines, delimiter {dialect.delimiter!r}", "pandas: shape, dtypes, head"
+            except Exception:
+                pass
+            lines = sum(1 for _ in open(path, "rb"))
+            return f"{lines} lines", "view whole file if small, else head/tail/grep"
+        if kind in ("json", "jsonl"):
+            if kind == "json" and os.path.getsize(path) < 50_000_000:
+                data = json.load(open(path, encoding="utf-8"))
+                if isinstance(data, dict):
+                    return f"object with keys: {list(data)[:12]}", "inspect schema, then values"
+                if isinstance(data, list):
+                    return f"array of {len(data)} items", "show one sample item, then schema"
+            return "json lines or large file", "head -n 3, then pandas read_json(lines=True)"
+        if kind in ("png", "jpeg", "gif", "webp/wav/avi", "jpg", "webp"):
+            from PIL import Image
+            im = Image.open(path)
+            return f"{im.size[0]}x{im.size[1]} {im.mode}", "view it; tesseract OCR if text matters"
+        if kind in ("zip", "epub/odf"):
+            names = zipfile.ZipFile(path).namelist()
+            return f"{len(names)} members", "list members, extract only what is needed"
+    except Exception as e:
+        return f"(could not inspect: {type(e).__name__}: {e})", "try `file` and `strings | head`"
+    out = subprocess.run(["file", "-b", path], capture_output=True, text=True).stdout.strip()
+    return out[:80], "view if text, otherwise identify first"
+
+
+def walk(paths):
+    for p in paths:
+        if os.path.isdir(p):
+            for root, _, files in os.walk(p):
+                for name in sorted(files):
+                    yield os.path.join(root, name)
+        else:
+            yield p
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    for path in walk(sys.argv[1:]):
+        kind = sniff(path)
+        f, how = facts(path, kind)
+        print(f"{path}\n   type={kind} size={human(os.path.getsize(path))} | {f}\n   -> {how}")
+
+
+if __name__ == "__main__":
+    main()

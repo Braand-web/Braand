@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Build a captioned slideshow video with cross-fades from a JSON storyboard.
+
+Usage: python make_slideshow.py storyboard.json out.mp4
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from PIL import Image, ImageDraw, ImageFont
+
+
+def load_font(size):
+    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                 "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"):
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+def wrap(draw, text, font, max_w):
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if draw.textlength(trial, font=font) <= max_w:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+def make_card(scene, size, bg, font):
+    w, h = size
+    if scene.get("image"):
+        src = Image.open(scene["image"]).convert("RGB")
+        scale = min(w / src.width, h / src.height)
+        src = src.resize((max(2, int(src.width * scale)), max(2, int(src.height * scale))))
+        img = Image.new("RGB", size, bg)
+        img.paste(src, ((w - src.width) // 2, (h - src.height) // 2))
+    else:
+        img = Image.new("RGB", size, scene.get("background", bg))
+    text = scene.get("text")
+    if text:
+        d = ImageDraw.Draw(img, "RGBA")
+        margin = int(w * 0.07)
+        lines = wrap(d, text, font, w - 2 * margin)
+        lh = int(font.size * 1.25)
+        block_h = lh * len(lines)
+        if scene.get("image"):
+            y0 = h - margin - block_h
+            d.rectangle([0, y0 - 20, w, h], fill=(0, 0, 0, 150))
+        else:
+            y0 = (h - block_h) // 2
+        for i, line in enumerate(lines):
+            tw = d.textlength(line, font=font)
+            d.text(((w - tw) / 2, y0 + i * lh), line, font=font, fill="white")
+    return img
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit(__doc__)
+    cfg = json.load(open(sys.argv[1], encoding="utf-8"))
+    out = sys.argv[2]
+    w, h = cfg.get("size", [1280, 720])
+    w, h = w - w % 2, h - h % 2
+    fps = cfg.get("fps", 30)
+    bg = cfg.get("background", "#101820")
+    font = load_font(cfg.get("font_size", 54))
+    fade = int(cfg.get("fade_seconds", 0.5) * fps)
+
+    tmp = tempfile.mkdtemp()
+    n = 0
+    prev = None
+    try:
+        for scene in cfg["scenes"]:
+            card = make_card(scene, (w, h), bg, font)
+            frames = int(scene.get("seconds", 3) * fps)
+            if prev is not None and fade > 0:
+                for i in range(fade):
+                    Image.blend(prev, card, (i + 1) / fade).save(os.path.join(tmp, f"f{n:06d}.png"))
+                    n += 1
+                frames = max(0, frames - fade)
+            for _ in range(frames):
+                card.save(os.path.join(tmp, f"f{n:06d}.png"))
+                n += 1
+            prev = card
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps), "-i", os.path.join(tmp, "f%06d.png")]
+        if cfg.get("audio"):
+            cmd += ["-i", cfg["audio"], "-c:a", "aac", "-shortest"]
+        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out]
+        subprocess.run(cmd, check=True)
+        print(f"wrote {out}: {n} frames, {n / fps:.1f} s")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

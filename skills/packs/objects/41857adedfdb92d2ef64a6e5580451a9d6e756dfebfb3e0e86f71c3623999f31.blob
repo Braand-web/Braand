@@ -1,0 +1,37 @@
+# KIT AGENT COMPLET — « Se comporter comme Muse »
+
+Tout le nécessaire pour donner à n'importe quel agent les moyens de travailler comme Muse : le prompt de comportement, les skills, les spécifications d'outils, le navigateur gratuit et le système de mémoire. Conçu pour n'importe quel projet : chaque méthode est universelle ou paramétrée par des variables de projet.
+
+## Contenu
+
+### 01-PROMPT — le comportement
+- `prompt-agent-maitre.md` : LE prompt principal. Identité d'agent personnel dédié, exécution de bout en bout, mémoire entre sessions, création et installation de skills, usage des outils et du navigateur, rigueur anti-invention, autorisations, suivi proactif, règles de livraison. À placer en prompt système ou en instructions principales de l'agent cible.
+- `prompt-implementation-skills-sessions.md` : le prompt spécialisé qui donne à un agent la seule fonctionnalité « créer et installer des skills à partir de ses sessions », si tu veux l'ajouter à un agent qui a déjà son prompt.
+
+### 02-SKILLS — 45 skills en texte complet
+- `universels-premium/` : les 8 skills nés de sessions réelles, en édition universelle (produit digital gagnant, reels viraux en motion design, publicité Meta rentable, page de vente qui convertit, analyses et prédictions fiables, vidéo Monolithe, contrôle vidéo par transcription, connexion par code d'authentificateur).
+- `pack-portable-37/` : les 37 skills portables (codage, productivité, rédaction, projet, apprentissage, finances, contenu, marketing social, bibliothèques publicitaires, les 5 skills d'exécution, agent marketing complet, campagnes pub en temps réel).
+
+### 03-OUTILS — les spécifications
+- `spec-outils.md` : les 12 familles d'outils à implémenter ou brancher pour équiper l'agent, avec le rôle de chacune et les règles transverses (états vérifiables, secrets jamais en clair, approbations).
+- `inventaire-outils-muse.md` : l'inventaire réel des outils de Muse, comme référence de ce qui existe.
+- `01-CATALOGUE-SKILLS-SYSTEME.md` : le catalogue des 56 skills système de Muse (nom, titre, catégorie). Le texte interne de ces skills système est une instruction produit Meta non exportable ; les dossiers 02 fournissent les équivalents portables complets.
+
+### 04-NAVIGATEUR — le navigateur manipulable gratuit
+Le guide complet pour un navigateur 100 % open source multi-utilisateurs (Steel Browser + Playwright), avec `docker-compose.yml` de démarrage et le squelette TypeScript du service de sessions. Coût logiciel : 0 €. Seul coût réel : le serveur.
+
+### 05-MEMOIRE-ET-CONTEXTE — les 5 fichiers modèles
+Les structures vides de `MEMORY.md`, `USER.md`, `SOUL.md`, `AGENTS.md` et `IDENTITY.md`, les 5 fichiers qui personnalisent durablement un agent pour son utilisateur, comme chez Muse.
+
+### 06-INSTALLATION — le mode d'emploi par plateforme
+`INSTALL.md` : Claude Code, Cursor/Windsurf, ChatGPT/Gemini (avec leurs limites honnêtes) et agent maison (API, LangChain, etc.), plus les 3 tests de vérification finale.
+
+## Ordre d'installation recommandé
+
+1. Le prompt maître (01).
+2. Les 5 fichiers de contexte remplis (05).
+3. Les skills (02), au minimum les 5 skills d'exécution du pack 37 et les 8 universels.
+4. Les outils (03) selon ta plateforme.
+5. Le navigateur (04) si l'agent doit agir sur le web.
+
+Version 1.0 — Octobre 2026

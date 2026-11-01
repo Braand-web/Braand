@@ -1,0 +1,41 @@
+# Spécifications des outils à donner à l'agent
+
+Un agent ne se comporte pas comme Muse avec le seul prompt : il lui faut les outils équivalents. Voici la liste à implémenter ou à brancher, par famille, avec ce que chacun doit permettre. Les noms sont ceux de Muse ; garde les mêmes noms dans ton implémentation pour que les skills du kit fonctionnent sans réécriture, ou adapte les noms en une seule passe dans le prompt maître.
+
+## Indispensables (le socle)
+
+1. **Terminal et exécution de code** (`exec`, `process`)
+   Exécuter des commandes shell et des scripts (Python, Node, FFmpeg), lire la sortie, gérer les processus longs en arrière-plan. C'est l'outil qui transforme un chatbot en exécutant.
+
+2. **Fichiers** (`read`, `write`, `edit`)
+   Lire, créer et modifier des fichiers dans un dossier de travail persistant qui survit entre les sessions.
+
+3. **Mémoire** (`memory_search`, `memory_get`, accès lecture/écriture au fichier mémoire)
+   Un fichier ou une base de mémoire durable par utilisateur, cherchable par mots-clés, que l'agent lit avant les tâches et met à jour pendant.
+
+4. **Navigateur manipulable** (`browse`, `windows`, `search`, `open`)
+   Un vrai navigateur pilotable (voir le dossier 04-NAVIGATEUR du kit pour la version 100 % open source) : ouvrir, cliquer, remplir, se connecter via un coffre, capturer, reprendre une session. Plus la recherche web et la lecture de pages.
+
+5. **Tâches programmées** (`cron`, `hooks`)
+   Planifier des exécutions récurrentes ou déclenchées par un événement, avec historique des passages et rapport à l'utilisateur.
+
+6. **Sous-agents** (`subagent`)
+   Déléguer un chantier indépendant à un agent enfant qui rapporte son résultat, pour que l'agent principal reste disponible.
+
+## Très utiles
+
+7. **Génération de médias** (`media`) : images et vidéos à la demande, avec contrôle du résultat avant livraison.
+8. **Artefacts et documents** (`artifact`) : produire des livrables durables (documents, pages, tableurs, présentations) ouvrables par l'utilisateur.
+9. **Widgets et options dans le chat** (`create_options`, widgets) : proposer des choix cliquables et présenter des résultats structurés (listes, cartes, tableaux).
+10. **Réactions et présence** (`react`) : réagir aux messages comme un humain dans une conversation.
+11. **Coffre d'identifiants** (`credentials`) : stocker mots de passe et clés hors du chat, les injecter au moment de l'usage, demander des codes temporaires au bon moment.
+
+## Par connecteurs (selon les services de l'utilisateur)
+
+12. **Connecteurs de comptes** : messagerie e-mail, calendrier, fichiers cloud, réseaux sociaux (lire, publier, programmer), publicité (Meta Ads), paiements et boutiques (Stripe, Shopify), musique, lieux et réservations. Chaque connecteur = une documentation courte (commandes, limites, présentation) que l'agent lit avant usage. Sur les plateformes qui le supportent, branche-les en MCP ou en API plutôt qu'en navigateur.
+
+## Règles transverses pour tous les outils
+
+- Chaque outil renvoie un état vérifiable, pas seulement « ok » : l'agent doit pouvoir distinguer accepté, en cours, réussi et échoué.
+- Les outils sensibles (envoi, publication, paiement, suppression) exigent une autorisation explicite ou un mécanisme de carte d'approbation côté plateforme.
+- Les outils ne donnent jamais les secrets en clair à l'agent : ils les utilisent, ils ne les montrent pas.

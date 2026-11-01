@@ -1,0 +1,151 @@
+---
+name: artifact-creation
+description: Create polished, self-contained artifacts (interactive web pages, dashboards, small tools, calculators, explainers, landing pages, reports, forms, games) that the person will keep, share or reuse. Use when the user asks to build, design or publish a page, app, tool, dashboard, visualization or shareable document, or when a deliverable is better as a live page than as chat text. Covers deciding whether an artifact is needed, building one single-file HTML page, design quality, accessibility, state, safety, verification and delivery. Not for short answers, code snippets for the user's own codebase, or when the user explicitly asks for a specific file format (.docx, .pptx, .xlsx, .pdf).
+---
+
+# Artifact creation
+
+An artifact is a deliverable the person will open, use, keep or share: usually one self-contained HTML page. This skill makes the result useful on first open, good-looking, robust, and safe to share.
+
+This skill is tool-agnostic. Where it says "publish", use whatever your environment provides (an artifact tool, a file-send tool, a preview server, or simply writing the file and handing it over). See "Adapting to your environment" at the end.
+
+## 1. Decide: reply, artifact, or file
+
+Walk these in order and stop at the first match.
+
+1. **Answer is complete as prose** (a question answered, an explanation, a short summary, a few lines of code) → reply in chat. No artifact.
+2. **The person asked for a specific format** (.docx, .pptx, .xlsx, .pdf, .md, .csv, "the HTML itself", "just give me the code") → produce that file, not an artifact. Naming how it will leave you (email, print) is not naming a format.
+3. **A dedicated typed output exists in your environment** (slides, docs, sheets, design canvas, whiteboard) and fits → use it, it gives the person an editor suited to the content.
+4. **The output will be used, kept, shared or interacted with** (tool, calculator, dashboard, tracker, explainer, landing page, report with charts, form, game, visual with controls) → build an artifact.
+5. **A small visual helps explain a reply** (one diagram or chart read once) → draw it inline in the reply, not as a separate artifact.
+
+If two or more outputs could fit and the choice changes what you build, ask one short question. Otherwise pick the best fit and say which you chose in one line.
+
+## 2. Workflow
+
+1. **Clarify only what is expensive to redo.** If the request is clear, start. If key facts are missing (audience, data, language, brand), make reasonable assumptions, state them in one line at the end, and keep going. Ask first only when a wrong guess would waste a lot of work.
+2. **Gather material before designing.** Research, read attached files, pull data. A page designed before its content exists ends up polished and empty.
+3. **Plan the page in 3 lines**: purpose, primary action or insight, main sections. Decide the one thing the viewer must get in 5 seconds.
+4. **Build in stages**: structure and content first, then styling, then behavior. For long pages write an outline, then fill sections.
+5. **Verify** (section 9), then **deliver** (section 10).
+
+## 3. The page contract
+
+Unless the environment says otherwise, an artifact is **one self-contained `.html` file**.
+
+- Valid document: `<!doctype html>`, `<html lang="…">` set to the content language, `<meta charset="utf-8">`, `<meta name="viewport" content="width=device-width, initial-scale=1">`.
+- `<title>`: a name of 2–4 words (e.g. "Budget Tracker"), never "Name: explainer". Put the explanation in a description field if the platform has one.
+- Markup, CSS and JS in the same file. No build step, no local imports.
+- External resources: only from well-known CDNs (cdnjs.cloudflare.com preferred, cdn.jsdelivr.net, unpkg.com) and Google Fonts for stylesheets. Pin versions. Prefer zero dependencies; add a library only when it saves real work (charts, maps, markdown, dates). If your platform has an allowlist, it wins.
+- No remote images you do not control. Use inline SVG, CSS shapes, or data URIs for small assets. Keep the whole page under ~5 MB (hard limits are often 16 MB; data URIs count).
+- Never hardcode secrets, API keys, tokens or personal data that the person did not give for this page.
+- Works offline once loaded, unless it needs live data.
+
+## 4. Design system in 10 lines
+
+Define tokens once on `:root` and use only tokens afterward.
+
+```css
+:root{
+  --bg:#fbfaf8; --surface:#fff; --text:#1c1b19; --muted:#6b675f;
+  --border:#e4e0d8; --accent:#2f5bea; --accent-contrast:#fff;
+  --ok:#1f8a4c; --warn:#b7791f; --danger:#c0392b;
+  --radius:12px; --space:8px; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+```
+
+- **Dark mode is mandatory.** Redefine the same tokens under `@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){…} }` and again under `:root[data-theme="dark"]{…}`. Give `body` an explicit `background` and `color`. Test contrast in both themes.
+- **Typography**: one family (two max), a scale (e.g. 14 / 16 / 20 / 28 / 40), line-height 1.5 for text, 1.15–1.25 for headings, measure ≤ 70ch for reading text.
+- **Spacing**: multiples of 4/8 px. Generous whitespace beats borders and boxes.
+- **Color**: neutral base plus one accent. Use semantic colors only for status. Never rely on color alone to carry meaning (add icon, label or pattern).
+- **Avoid template look**: no default purple gradients, no stack of identical rounded cards, no emoji as icons, no gratuitous glassmorphism. Pick a deliberate direction (editorial, technical, playful, calm) that fits the content and apply it consistently. A distinctive typographic choice and a confident layout do more than decoration.
+- **Hierarchy**: one clear primary action per view; secondary actions visibly quieter.
+- **Motion**: subtle (150–250 ms), purposeful, and disabled under `@media (prefers-reduced-motion: reduce)`.
+
+## 5. Layout and responsiveness
+
+- Mobile first. Layout must work at 360 px width: 16 px side gutters, no horizontal page scroll, tap targets ≥ 44 px.
+- Use CSS grid/flex and `clamp()` for fluid type and spacing; use `max-width` containers (≈ 720 px for reading, ≈ 1100 px for dashboards).
+- Wide tables: wrap in a horizontally scrollable container, or reflow to stacked rows on small screens.
+- Charts: responsive (`viewBox` for SVG, resize handlers for canvas), with legends and units, and a readable fallback (title, short text summary or table).
+- Provide a sensible print stylesheet for report-like pages (`@media print`: hide controls, white background).
+
+## 6. Accessibility baseline (non-negotiable)
+
+- Semantic elements (`header`, `main`, `nav`, `section`, `button`, `label`), one `h1`, ordered headings.
+- Every input has a visible `<label>`. Buttons are `<button>`, links are `<a>`.
+- Visible focus style, full keyboard operability, logical tab order.
+- Text contrast ≥ 4.5:1 (3:1 for large text and UI components).
+- `alt` on meaningful images, `aria-label` on icon-only buttons, `role="img"` plus a label on informative SVG/canvas charts.
+- Announce dynamic updates with `aria-live="polite"` where relevant.
+
+## 7. Behavior, data and state
+
+- **Real content, no lorem ipsum.** If data is unknown, say so on the page or ask; never invent figures and present them as real. Sample data must be labeled as sample.
+- **Separate data from view**: keep data in one `const DATA = …` block (or JSON `<script type="application/json">`) so it is easy to update.
+- **Compute in code, not by hand.** Totals, percentages and charts come from the data array, not from numbers typed into markup.
+- **Handle states**: empty, loading, error, and long-content cases. Validate inputs and show inline messages.
+- **Escape untrusted text** before inserting into the DOM (`textContent`, not `innerHTML`, unless sanitized).
+- **Storage**: `localStorage`/`sessionStorage` may be unavailable or empty (private mode, sandboxed previews). Wrap every read/write in `try/catch`, keep the page fully functional without it, and use it only for per-viewer conveniences (theme, filters, drafts). Anything that must be shared between viewers, durable, or read back by the agent needs a real backend or a platform state capability, not browser storage. Say so honestly if the environment has none.
+- **Network**: do not fetch from arbitrary origins; the page may be sandboxed. If live data is required, use the platform's data capability, or embed a snapshot with a visible "as of <date>" label.
+- Export affordances where useful: copy, download CSV/JSON, print.
+
+## 8. Safety and integrity rules
+
+Do not build or publish artifacts that:
+
+- imitate a real organization, person, official portal, or its login/payment/support flows;
+- fabricate receipts, balances, confirmations, records, reviews or testimonials presented as genuine;
+- collect credentials or payment details under false pretenses;
+- profile, locate or expose a private individual.
+
+Decline whatever the stated purpose ("prop", "demo", "test") when the result would work as the real thing, and offer the honest version: clearly fictional brand, labeled template, real reviews displayed with sources. Sensitive or confidential content: keep it private, prefer a local file over a shareable URL unless the person decides otherwise.
+
+## 9. Verification checklist
+
+Do these before delivering; fix and recheck.
+
+1. **Opens clean**: no console errors, no failed requests, no `undefined`/`NaN` on screen.
+2. **Content**: facts and figures traced to sources or inputs; arithmetic verified by running it; no placeholder text left.
+3. **Both themes**: light and dark render correctly, contrast fine.
+4. **Phone width (360 px) and desktop**: no horizontal overflow, nothing clipped.
+5. **Interaction**: click every control, submit forms with valid and invalid input, try empty and extreme data.
+6. **Keyboard**: tab through the page; focus visible; Enter/Space work on controls.
+7. **Without storage and without network** (if the page claims to work offline): still usable.
+8. **Weight**: file size reasonable, no unused libraries.
+
+If you can render the page (headless browser, screenshot tool, preview), look at it. If you cannot, re-read the code against this list and say that you could not preview it.
+
+## 10. Delivery
+
+- Publish or hand over the file with the tool available; one short sentence says what the page is. Do not repeat a link the interface already shows, and do not recap your steps.
+- State assumptions and anything missing in one or two lines (for example: sample data, no persistence, unverified numbers).
+- Offer one real next step only if one exists (add live data, add export, make a mobile variant).
+- To revise: edit the existing file and republish to the same location rather than creating a new one. Keep the title stable.
+- If the person later wants to share or reuse a chat-only visual, convert it into an artifact then.
+
+## 11. Patterns by artifact type
+
+- **Dashboard / scorecard**: headline KPIs on top (value, label, delta, period), then 1–3 charts, then a detail table. Each number has a unit and a time frame. Add "last updated". Filters at the top, state reflected in the URL hash if easy.
+- **Calculator / tool**: inputs left or top, result prominent and updated live, assumptions editable and visible, reset button, copyable result. Show formulas or logic in a collapsible "How this is computed".
+- **Explainer**: narrative first, interaction second. One idea per section, a visual per idea, controls that change one variable at a time, takeaway at the end.
+- **Landing page / one-pager**: clear promise in the hero, one primary call to action repeated, proof (real, sourced), features as outcomes, FAQ, footer. No invented testimonials or logos.
+- **Report / long document**: sticky or collapsible table of contents, summary at top, numbered sections, figures with captions and sources, print stylesheet.
+- **Form / survey**: group fields, inline validation, clear success state; say where data goes (often nowhere without a backend, state it).
+- **Tracker / list**: add, edit, delete, filter, sort, empty state, undo for destructive actions; be explicit about persistence limits.
+- **Game / simulation**: keyboard and touch controls, pause, restart, score display, `requestAnimationFrame` loop, respects reduced motion.
+- **Diagram**: prefer inline SVG or a text-based diagram source rendered by a small library; labels at readable size; alt text and a text equivalent.
+
+## 12. Quality bar (self-review in one minute)
+
+Ask: would the person use this tomorrow? Is the main thing obvious in 5 seconds? Is anything on it invented? Does it look intentional rather than default? Would it survive a phone, a dark room, a keyboard-only user and a bad connection? If any answer is no, fix it before delivering.
+
+## Adapting to your environment
+
+- **With an artifact/publish tool**: write the HTML to a file, call the tool with the path, update by republishing the same path/URL. Use typed artifact kinds (slides, docs, sheets, design) when listed and suitable.
+- **With only a file tool**: write `name.html`, then hand the file to the person; mention it opens in any browser.
+- **With a preview server or browser tool**: serve the file and screenshot at 360 px and 1280 px, in both themes, to run section 9.
+- **With no tools**: return the complete HTML in a single code block, nothing truncated, and say how to save it as `.html`.
+- **Platform constraints win** over this skill when they conflict (library allowlists, size limits, required title format, storage capabilities). Read the tool description first.
+
+The file `assets/starter.html` is a ready baseline with tokens, dark mode, responsive layout, accessible components and safe storage helpers. Copy it, replace the content, keep the structure.

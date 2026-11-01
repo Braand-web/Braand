@@ -1,0 +1,44 @@
+# Installation du Kit Agent — par plateforme
+
+Le kit transforme un agent ordinaire en agent personnel autonome de type Muse : prompt de comportement, mémoire durable, skills qui s'installent et s'améliorent, outils d'exécution, navigateur manipulable. Installe les couches dans l'ordre : prompt, contexte, skills, outils, navigateur.
+
+## Étape commune à toutes les plateformes
+
+1. Crée un dossier durable pour l'agent (son espace de travail), qui survivra entre les sessions.
+2. Remplis les crochets du prompt maître (nom, dossiers, fuseau) et les 5 modèles du dossier `05-MEMOIRE-ET-CONTEXTE`, renommés sans le suffixe `-modele`.
+3. Copie les skills voulus depuis `02-SKILLS` dans le dossier des skills de l'agent.
+
+## Claude Code
+
+- Prompt : le contenu de `01-PROMPT/prompt-agent-maitre.md` (le bloc de code) dans `~/.claude/CLAUDE.md` ou le `CLAUDE.md` du projet.
+- Skills : copie les dossiers de skills dans `~/.claude/skills/` (tous projets) ou `.claude/skills/` (un projet).
+- Mémoire et contexte : les 5 fichiers modèles à la racine du projet, Claude les relit via le CLAUDE.md qui doit les mentionner.
+- Outils : déjà présents (terminal, fichiers, web). Pour le navigateur manipulable complet, ajoute le serveur Steel du dossier `04-NAVIGATEUR` et un serveur MCP navigateur (Playwright MCP) relié à sa session CDP.
+
+## Cursor / Windsurf
+
+- Prompt : le bloc maître dans `.cursor/rules/agent-maitre.md` (ou le fichier de règles équivalent), en mode toujours actif.
+- Skills : un fichier de règle par skill, créé depuis chaque `SKILL.md` sans son en-tête, ou un dossier de règles par domaine si l'éditeur les charge par dossier.
+- Mémoire : les 5 fichiers à la racine du workspace, cités dans la règle maître.
+- Outils : terminal et fichiers intégrés. Navigateur : Steel en Docker local + extension ou MCP navigateur de l'éditeur.
+
+## ChatGPT / Gemini (sans accès fichiers système)
+
+- Prompt : le bloc maître dans les instructions personnalisées ou les instructions du projet/Gem dédié.
+- Skills et contexte : joins les fichiers `SKILL.md` et les 5 fichiers de contexte comme fichiers du projet. L'agent les suit en lecture ; il ne peut pas installer de nouveaux skills tout seul, il les produira en texte à enregistrer manuellement.
+- Limite honnête : sans terminal ni fichiers persistants, le comportement « Muse » est approché, pas complet. Pour la version complète, utilise une plateforme avec exécution (Claude Code, agent maison, ou Muse lui-même).
+
+## Agent maison (API, LangChain, AutoGen, CrewAI, etc.)
+
+- Prompt : le bloc maître comme prompt système de l'agent principal.
+- Skills : un dossier par skill lu à la demande : implémente une recherche par correspondance sur la description de chaque `SKILL.md`, puis l'injection du fichier choisi dans le contexte de la tâche. C'est exactement le mécanisme de déclenchement de Muse.
+- Mémoire : une table ou un fichier par utilisateur + recherche plein texte ou vectorielle, avec les règles du prompt (lire avant, écrire pendant, corriger les contradictions).
+- Outils : implémente les fonctions du dossier `03-OUTILS` comme outils de l'agent (terminal isolé par utilisateur, fichiers, navigateur Steel via l'API de sessions, tâches programmées par un scheduler, sous-agents par des appels récursifs).
+- Sécurité : un coffre (vault, KMS ou variables chiffrées) pour les identifiants, et des cartes d'approbation pour l'envoi, la publication et le paiement.
+
+## Vérification finale, quelle que soit la plateforme
+
+Pose ces 3 questions à l'agent installé :
+1. « Quels skills as-tu et quand les utilises-tu ? » Il doit citer les skills installés et le principe de la description déclenchante.
+2. Donne-lui une petite tâche réelle avec un fichier à produire. Il doit exécuter, vérifier et livrer le fichier, pas décrire la marche à suivre.
+3. Dis-lui une préférence durable, change de conversation, puis demande-lui autre chose. Il doit tenir compte de la préférence sans que tu la répètes.
