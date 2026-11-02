@@ -26,6 +26,6 @@ Firecrawl ne reçoit ni cookie, ni identifiant de connexion, ni mot de passe, ni
 
 ## Vérifications
 
-Les tests unitaires contrôlent le transport, les quotas, l'absence de rejeu, les reçus et le refus d'un changement de fournisseur. L'intégration SQLite contrôle la recherche, la lecture, le cache, les montants et les erreurs. La recette réelle utilise uniquement une page fictive et `example.com` : navigation, clic, screencast CDP, remplissage fictif sans soumission, capture masquée et fermeture confirmée. Elle ne crée aucun compte client et n'appelle aucun modèle payant.
+Les tests unitaires contrôlent le transport, les quotas, l'absence de rejeu, les reçus et le refus d'un changement de fournisseur. L'intégration SQLite contrôle la recherche, la lecture, le cache, les montants et les erreurs. La recette réelle utilise uniquement une page fictive pour le navigateur et le site officiel Firecrawl pour la recherche publique : navigation, clic, screencast CDP, remplissage fictif sans soumission, capture masquée et fermeture confirmée. Elle ne crée aucun compte client et n'appelle aucun modèle payant.
 
 Les services gratuits ne garantissent pas l'accès aux sites protégés ni la résolution des CAPTCHA. Une authentification ou une autorisation manquante reste un blocage réel ; elle ne doit pas être présentée comme une action réussie.

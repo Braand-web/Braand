@@ -2,7 +2,7 @@
 import {WELCOME_UNITS, WELCOME_TTL} from './welcome-credits.mjs';
 import {createRemoteJWKSet,jwtVerify} from 'jose';
 import {scryptSync} from 'node:crypto';
-type AuthEnv = Pick<Cloudflare.Env, 'DB' | 'APP_ENV' | 'APP_ORIGIN' | 'AUTH_ENABLED' | 'AUTH_HASH_SECRET' | 'AUTH_GOOGLE_CLIENT_ID' | 'AUTH_GOOGLE_CLIENT_SECRET' | 'RESEND_MODE' | 'RESEND_API_KEY' | 'RESEND_FROM' | 'RESEND_TEST_RECIPIENT' | 'RESEND_LIVE_APPROVED'>;
+type AuthEnv = Pick<Cloudflare.Env, 'DB' | 'APP_ENV' | 'APP_ORIGIN' | 'AUTH_ENABLED' | 'AUTH_HASH_SECRET' | 'AUTH_GOOGLE_CLIENT_ID' | 'AUTH_GOOGLE_CLIENT_SECRET' | 'AUTH_GOOGLE_CONFIG' | 'RESEND_MODE' | 'RESEND_API_KEY' | 'RESEND_FROM' | 'RESEND_TEST_RECIPIENT' | 'RESEND_LIVE_APPROVED'>;
 type Challenge = {id: string; email: string; browser_hash: string; return_to: string};
 type PendingPassword = {salt:string;digest:string;iterations:number};
 export type BraandIdentity = {userId: string; email: string; displayName: string; fullName: null};
@@ -58,7 +58,11 @@ function origin(env: AuthEnv) {
   try {const u = new URL(env.APP_ORIGIN || ''); if (u.protocol !== 'https:' || u.username || u.password || u.pathname !== '/' || u.search || u.hash) return null; return u.origin;} catch {return null;}
 }
 function configured(env: AuthEnv) {return env.AUTH_ENABLED === 'true' && !!env.DB && !!origin(env) && (env.AUTH_HASH_SECRET?.length || 0) >= 32;}
-function googleReady(env:AuthEnv){return configured(env)&&!!env.AUTH_GOOGLE_CLIENT_ID&&!!env.AUTH_GOOGLE_CLIENT_SECRET;}
+function googleConfig(env:AuthEnv):{clientId:string;clientSecret:string}|null{
+  if(env.AUTH_GOOGLE_CONFIG){try{const value=JSON.parse(env.AUTH_GOOGLE_CONFIG);if(typeof value.clientId==='string'&&value.clientId&&typeof value.clientSecret==='string'&&value.clientSecret)return {clientId:value.clientId,clientSecret:value.clientSecret};}catch{return null;}return null;}
+  return env.AUTH_GOOGLE_CLIENT_ID&&env.AUTH_GOOGLE_CLIENT_SECRET?{clientId:env.AUTH_GOOGLE_CLIENT_ID,clientSecret:env.AUTH_GOOGLE_CLIENT_SECRET}:null;
+}
+function googleReady(env:AuthEnv){return configured(env)&&!!googleConfig(env);}
 function emailReady(env: AuthEnv) {
   if (!configured(env) || !env.RESEND_API_KEY || !emailPattern.test(env.RESEND_FROM || '')) return false;
   return env.RESEND_MODE === 'live' ? env.APP_ENV === 'production' && env.RESEND_LIVE_APPROVED === 'true' : env.RESEND_MODE === 'sandbox' && ['test','staging'].includes(env.APP_ENV || '') && emailPattern.test(env.RESEND_TEST_RECIPIENT || '');
@@ -147,26 +151,26 @@ export async function handleAuth(request: Request, env: AuthEnv, now = Date.now(
     return response;
   }
   if(path==='/auth/google'&&request.method==='GET'){
-    const browser=cookie(request.headers,LOGIN_COOKIE),ip=request.headers.get('cf-connecting-ip');
-    if(!googleReady(env)||!browser||!ip&&env.APP_ENV!=='test')return page('Connexion Google indisponible','<p>Réessayez depuis la fenêtre de connexion Braand.</p>',503);
+    const browser=cookie(request.headers,LOGIN_COOKIE),ip=request.headers.get('cf-connecting-ip'),credentials=googleConfig(env);
+    if(!googleReady(env)||!credentials||!browser||!ip&&env.APP_ENV!=='test')return page('Connexion Google indisponible','<p>Réessayez depuis la fenêtre de connexion Braand.</p>',503);
     if(!await rate(env,'google-ip',ip||'offline-fixture',20,600_000,now))return page('Patientez un instant','<p>Trop de tentatives. Réessayez dans quelques minutes.</p>',429);
     const state=random(),verifier=await hash('google-pkce:'+state+':'+browser,env);
     const challenge=encode(new Uint8Array(await crypto.subtle.digest('SHA-256',text.encode(verifier))));
     await env.DB!.prepare('INSERT INTO auth_google_states(state_hash,browser_hash,return_to,expires_at) VALUES (?,?,?,?)').bind(await hash('google-state:'+state,env),await hash('browser:'+browser,env),safeAuthReturn(url.searchParams.get('return_to')),now+600_000).run();
     const google=new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    for(const [key,value] of Object.entries({client_id:env.AUTH_GOOGLE_CLIENT_ID!,redirect_uri:origin(env)+'/auth/google/callback',response_type:'code',scope:'openid email profile',state,nonce:state,code_challenge:challenge,code_challenge_method:'S256'}))google.searchParams.set(key,value);
+    for(const [key,value] of Object.entries({client_id:credentials.clientId,redirect_uri:origin(env)+'/auth/google/callback',response_type:'code',scope:'openid email profile',state,nonce:state,code_challenge:challenge,code_challenge_method:'S256'}))google.searchParams.set(key,value);
     return redirect(google.href);
   }
   if(path==='/auth/google/callback'&&request.method==='GET'){
-    const state=url.searchParams.get('state')||'',code=url.searchParams.get('code')||'',browser=cookie(request.headers,LOGIN_COOKIE);
-    if(!googleReady(env)||!browser||!tokenPattern.test(state)||!code||code.length>2048)return denied();
+    const state=url.searchParams.get('state')||'',code=url.searchParams.get('code')||'',browser=cookie(request.headers,LOGIN_COOKIE),credentials=googleConfig(env);
+    if(!googleReady(env)||!credentials||!browser||!tokenPattern.test(state)||!code||code.length>2048)return denied();
     const saved=await env.DB!.prepare('DELETE FROM auth_google_states WHERE state_hash=? AND browser_hash=? AND expires_at>? RETURNING return_to').bind(await hash('google-state:'+state,env),await hash('browser:'+browser,env),now).first<{return_to:string}>();
     if(!saved)return denied();
     try{
-      const tokenResponse=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:env.AUTH_GOOGLE_CLIENT_ID!,client_secret:env.AUTH_GOOGLE_CLIENT_SECRET!,redirect_uri:origin(env)+'/auth/google/callback',grant_type:'authorization_code',code_verifier:await hash('google-pkce:'+state+':'+browser,env)}),signal:AbortSignal.timeout(8000)});
+      const tokenResponse=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:credentials.clientId,client_secret:credentials.clientSecret,redirect_uri:origin(env)+'/auth/google/callback',grant_type:'authorization_code',code_verifier:await hash('google-pkce:'+state+':'+browser,env)}),signal:AbortSignal.timeout(8000)});
       if(!tokenResponse.ok)throw new Error('google_token_unavailable');
       const payload=await tokenResponse.json() as {id_token?:unknown};if(typeof payload.id_token!=='string'||payload.id_token.length>16000)throw new Error('google_token_invalid');
-      const verified=await jwtVerify(payload.id_token,googleKeys,{algorithms:['RS256'],issuer:['https://accounts.google.com','accounts.google.com'],audience:env.AUTH_GOOGLE_CLIENT_ID,currentDate:new Date(now),clockTolerance:5});
+      const verified=await jwtVerify(payload.id_token,googleKeys,{algorithms:['RS256'],issuer:['https://accounts.google.com','accounts.google.com'],audience:credentials.clientId,currentDate:new Date(now),clockTolerance:5});
       const claims=verified.payload,email=typeof claims.email==='string'?claims.email.trim().toLowerCase():'',subject=claims.sub||'';
       if(claims.nonce!==state||claims.email_verified!==true||!emailPattern.test(email)||email.length>254||!subject||subject.length>255)throw new Error('google_identity_invalid');
       const linked=await env.DB!.prepare('SELECT user_id FROM auth_google_identities WHERE subject=?').bind(subject).first<{user_id:string}>();

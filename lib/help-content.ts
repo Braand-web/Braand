@@ -121,11 +121,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     title: "Crédits et facturation",
     category: "billing",
     summary: "Consulter vos crédits et comprendre les informations affichées dans Facturation.",
-    excerpt: "Voir le solde, les crédits réservés, les opérations et la disponibilité des paiements.",
+    excerpt: "Voir le solde, la consommation et la disponibilité des paiements.",
     keywords: ["solde", "crédit", "crédits", "paiement", "facture", "forfait", "recharge"],
     questions: [
       { id: "credits-view", question: "Où consulter mes crédits ?", answer: "Ouvrez Facturation pour consulter les crédits disponibles et les mouvements affichés dans votre espace.", keywords: ["solde", "historique"] },
-      { id: "credits-reserved", question: "Pourquoi une partie des crédits est-elle réservée ?", answer: "Une réservation peut couvrir une action en cours ou à confirmer. Le détail de l’opération indique son état; ne relancez pas une action dont le résultat est incertain.", keywords: ["réservation", "en cours"] },
+      { id: "credits-reserved", question: "Quand mes crédits sont-ils déduits ?", answer: "Les nouvelles demandes ne bloquent pas de crédits à l’avance. Une ancienne opération peut encore être en cours de régularisation.", keywords: ["réservation", "consommation", "en cours"] },
       { id: "billing-status", question: "Un paiement affiché est-il forcément confirmé ?", answer: "Consultez son statut dans Facturation. Une redirection ou une demande en attente ne constitue pas à elle seule une confirmation de paiement.", keywords: ["transaction", "statut"] },
       { id: "billing-checkout", question: "Comment acheter des crédits ou un forfait ?", answer: "Dans Facturation, choisissez votre recharge ou votre forfait. Le checkout s’ouvre pour confirmer le montant et le moyen de paiement. Vos crédits ou votre forfait deviennent disponibles après confirmation du paiement.", keywords: ["acheter", "recharger", "abonnement"] },
       { id: "billing-receipt", question: "Où retrouver mon reçu et comment renouveler ?", answer: "Les documents de paiement se téléchargent dans Facturation, rubrique Paiements. Le renouvellement est volontaire : choisissez une nouvelle période lorsque vous souhaitez poursuivre. Une conversion éventuelle est affichée dans le checkout avant de payer.", keywords: ["reçu", "conversion", "renouvellement"] },

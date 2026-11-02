@@ -115,18 +115,27 @@ export async function reserve(who:BillingIdentity,reference:string,units:number,
  const now=Date.now(),id=uid(),lots=await s('SELECT id,balance-reserved available FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved ORDER BY expires_at IS NULL,expires_at,created_at,id',who.organization,now,now).all<{id:string;available:number}>();
  if(options.upToAvailable)units=Math.min(units,lots.results.reduce((sum,lot)=>sum+lot.available,0));
  if(units<=0)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
- let left=units;const statements=[s('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)',id,who.organization,who.tenant,who.user.userId,reference,units,now)];
- for(const lot of lots.results){const n=Math.min(left,lot.available);if(n>0)statements.push(s('INSERT INTO credit_allocations(id,hold_id,lot_id,units,created_at) VALUES (?,?,?,?,?)',uid(),id,lot.id,n,now));left-=n;if(!left)break;}
- if(left>0)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
- try{await db().batch(statements);}catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('insufficient_credits')||String(error).includes('spend_limit'))throw new AppError('Solde ou plafond modifié. Aucun nouvel appel fournisseur effectué.',402);throw error;}
+ if(lots.results.reduce((sum,lot)=>sum+lot.available,0)<units)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
+ // Keep an idempotent usage record, but do not allocate or freeze wallet funds.
+ try{await s('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)',id,who.organization,who.tenant,who.user.userId,reference,units,now).run();}catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('spend_limit'))throw new AppError('Le plafond de dépenses est atteint.',402);throw error;}
  return {id,units,status:'reserved',organization_id:who.organization};
 }
 export async function settleHold(id:string,units:number){
  const hold=await s('SELECT * FROM credit_holds WHERE id=?',id).first<CreditHoldRow>();if(!hold||hold.status==='settled')return;
  if(!Number.isSafeInteger(units)||units<0)throw new AppError('Consommation invalide.');
- const charged=Math.min(units,hold.units),rows=await s('SELECT * FROM credit_allocations WHERE hold_id=? ORDER BY created_at,id',id).all<CreditAllocationRow>();let left=charged;
- const statements=rows.results.map(row=>{const n=Math.min(row.units,left);left-=n;return s("UPDATE credit_allocations SET charged=?,state='settled' WHERE id=? AND state='reserved'",n,row.id);});
- statements.push(s("UPDATE credit_holds SET status='settled',actual=? WHERE id=? AND status!='settled'",charged,id));await db().batch(statements);await expireLots(hold.organization_id);
+ const charged=Math.min(units,hold.units),rows=await s('SELECT * FROM credit_allocations WHERE hold_id=? ORDER BY created_at,id',id).all<CreditAllocationRow>();
+ if(rows.results.some(row=>row.state==='reserved')){
+  let left=charged;const statements=rows.results.map(row=>{const n=Math.min(row.units,left);left-=n;return s("UPDATE credit_allocations SET charged=?,state='settled' WHERE id=? AND state='reserved'",n,row.id);});
+  statements.push(s("UPDATE credit_holds SET status='settled',actual=? WHERE id=? AND status!='settled'",charged,id));await db().batch(statements);
+ }else{
+  const now=Date.now(),lots=await s('SELECT id FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved ORDER BY expires_at IS NULL,expires_at,created_at,id',hold.organization_id,now,now).all<{id:string}>();
+  const statements=[];for(const lot of lots.results){const allocation=uid(),remaining='MAX(0,? - COALESCE((SELECT SUM(charged) FROM credit_allocations WHERE hold_id=? AND state=\'settled\'),0))';
+   statements.push(s(`INSERT INTO credit_allocations(id,hold_id,lot_id,units,created_at) SELECT ?,?,id,MIN(balance-reserved,${remaining}),? FROM credit_lots WHERE id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved AND ${remaining}>0 AND EXISTS(SELECT 1 FROM credit_holds WHERE id=? AND status!='settled')`,allocation,id,charged,id,now,lot.id,now,now,charged,id,id));
+   statements.push(s("UPDATE credit_allocations SET charged=units,state='settled' WHERE id=? AND state='reserved'",allocation));
+  }
+  statements.push(s("UPDATE credit_holds SET status='settled',actual=COALESCE((SELECT SUM(charged) FROM credit_allocations WHERE hold_id=? AND state='settled'),0) WHERE id=? AND status!='settled'",id,id));await db().batch(statements);
+ }
+ await expireLots(hold.organization_id);
 }
 export async function makeQuote(who:BillingIdentity,input:QuoteInput){
  requireBilling(who);const now=Date.now(),version=await subscriptionVersion(who.organization);let p:BillingProduct;

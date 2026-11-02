@@ -335,8 +335,9 @@ await check('approved durable work proposes a linked exact action once and prese
  try{const stopped=await c.decideConnectorAction(who,gated.id,'approve');assert.equal(stopped.status,'needs_input');assert.equal(effects.length,beforeEffects);}finally{nativeChallenge=null;}
  sql.prepare("UPDATE agent_work SET status='cancelled' WHERE id=?").run(resource.id);await assert.rejects(()=>invoke('braand_connector_status',{}),e=>e.code==='work_connector_denied');
 });
-// Touch real billing projections too: all holds remain visible in the organization's ledger.
-assert.ok((await b.summary(who.organization)).wallet.reserved>0);
+// Uncertain usage remains traceable without blocking the wallet.
+assert.equal((await b.summary(who.organization)).wallet.reserved,0);
+assert.ok(sql.prepare("SELECT COUNT(*) n FROM credit_holds WHERE organization_id=? AND status!='settled'").get(who.organization).n>0);
 globalThis.fetch=originalFetch;sql.close();
 console.log(`${checks} Composio integration checks passed; ${failures.length} failed. SDK/provider responses were simulated. No real connection, payment or provider call.`);
 if(failures.length)process.exitCode=1;

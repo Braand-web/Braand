@@ -147,3 +147,38 @@ jobs:
           node scripts/configure-web-providers.mjs
           curl --fail --silent --show-error https://braand.fun/api/health
           curl --fail --silent --show-error 'https://braand.fun/api/health?check=assistant'
+  deploy-postpaid:
+    name: Publish verified credit billing correction
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/credits-postpaid'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: braand-production
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --include=dev --include=optional
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-production-build
+          path: dist
+      - name: Verify production provenance and deploy
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          node scripts/prepare-production-deploy.mjs
+          npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified credit settlement ${GITHUB_SHA}"
+          curl --fail --silent --show-error https://braand.fun/api/health
+          curl --fail --silent --show-error "https://braand.fun/api/health?check=assistant"
+
+
