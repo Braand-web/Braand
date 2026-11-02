@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {env} from "cloudflare:workers";
 import {z} from "zod";
 import {fileIdentity,getResource,failure,uid,db,config} from "@/lib/server";
@@ -43,7 +44,7 @@ async function takePartRate(userId:string,bytes:number,now:number){
 async function startUpload(request:Request){
  const {tenant,user}=await fileIdentity(request);
  if(!env.BUCKET)throw new AppError("Stockage des fichiers indisponible.",503,"storage_unavailable");
- const input=z.object({name:z.string().min(1).max(FILE_POLICY.maxDisplayNameChars*2),size:z.number().int().positive().max(FILE_POLICY.maxFileBytes),mime:z.string().max(128).optional().default(""),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await request.json());
+ const input=z.object({name:z.string().min(1).max(FILE_POLICY.maxDisplayNameChars*2),size:z.number().int().positive().max(FILE_POLICY.maxFileBytes),mime:z.string().max(128).optional().default(""),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await privateJSON(request,1048576));
  const now=Date.now(),name=displayName(input.name),declaredMime=input.mime.trim().toLowerCase();
  const duplicate=await db().prepare("SELECT id FROM files WHERE workspace_id=? AND sha256=? AND status='ready'").bind(tenant,input.sha256.toLowerCase()).first<{id:string}>();
  if(duplicate){const resource=await getResource(tenant,duplicate.id);return Response.json({deduplicated:true,resource:safeResourceDto(resource)},{status:200});}
@@ -141,7 +142,7 @@ async function rejectCompletedUpload(session:UploadSession,code:string,message:s
 
 async function completeUpload(request:Request){
  const {tenant,user,organization}=await fileIdentity(request);if(!env.BUCKET)throw new AppError("Stockage des fichiers indisponible.",503,"storage_unavailable");
- const input=z.object({action:z.literal("complete"),uploadId:z.string().uuid(),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await request.json());
+ const input=z.object({action:z.literal("complete"),uploadId:z.string().uuid(),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await privateJSON(request,1048576));
  let session=await findSession(input.uploadId,tenant,user.userId);if(!session)throw notFound();
  if(session.status==="completed"){const resource=await getResource(tenant,session.file_id);return Response.json({resource:safeResourceDto(resource),completed:true});}
  if(session.status==="failed"||session.status==="aborted"||uploadSessionExpired(session))throw notFound();

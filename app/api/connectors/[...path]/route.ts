@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {z} from 'zod';
 import {identity,failure} from '@/lib/server';
 import {AppError} from '@/lib/core.mjs';
@@ -11,7 +12,7 @@ export async function GET(request:Request,context:Context){try{
 export async function POST(request:Request,context:Context){try{
  if(request.headers.get('origin')!==new URL(request.url).origin)throw new AppError('Origine non autorisée.',403);
  const who=await identity(request),{path}=await context.params;
- const body=await request.json();
+ const body=await privateJSON(request,1048576);
  if(path.length===1&&path[0]==='authorize')return Response.json(await authorizeConnector(who,z.object({toolkit:z.string()}).strict().parse(body).toolkit),{headers:connectorHeaders});
  if(path.length===2&&path[0]==='approvals')return Response.json(await decideConnectorAction(who,path[1],z.object({decision:z.enum(['approve','reject'])}).strict().parse(body).decision),{headers:connectorHeaders});
  throw new AppError('Route introuvable.',404);

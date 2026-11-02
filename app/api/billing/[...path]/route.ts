@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {z} from 'zod';
 import {identity,db,failure} from '@/lib/server';
 import {AppError} from '@/lib/core.mjs';
@@ -41,7 +42,7 @@ export async function GET(request:Request,context:Context){try{
  throw new AppError('Route introuvable.',404);
  }catch(error){return failure(error);}}
 export async function POST(request:Request,context:Context){try{
- const who=await identity(request),{path}=await context.params,body=await request.json();
+ const who=await identity(request),{path}=await context.params,body=await privateJSON(request,1048576);
  if(path[0]==='quotes'){
   const p=z.discriminatedUnion('kind',[z.object({kind:z.literal('topup'),quantity:z.number().int().refine(value=>[50,125,300].includes(value))}),z.object({kind:z.literal('subscription'),plan:z.enum(['essential','pro','business']),cycle:z.enum(['period','annual'])}),z.object({kind:z.literal('upgrade'),plan:z.enum(['essential','pro','business']).optional()})]).parse(body);
   return Response.json(await makeQuote(who,p),{status:201});

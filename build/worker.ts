@@ -5,6 +5,7 @@ import { runWithConnectorBinding } from "../lib/connector-context";
 import { raiseOperationalAlert } from "../lib/operations";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import {authenticatedRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
+import {secureResponse} from '../lib/response-security.mjs';
 export {BrowserSession} from "../lib/browser-session-do";
 
 const scheduledTasks = [
@@ -75,10 +76,10 @@ export default {
     if (!import.meta.env.DEV) {
       try {
         const authResponse = await handleAuth(request, env);
-        if (authResponse) return authResponse;
+        if (authResponse) return secureResponse(authResponse,request);
         request = await authenticatedRequest(request, env);
       } catch {
-        return Response.json({error:"Connexion temporairement indisponible.",code:"authentication_unavailable"}, {status:503,headers:{"Cache-Control":"no-store"}});
+        return secureResponse(Response.json({error:"Connexion temporairement indisponible.",code:"authentication_unavailable"}, {status:503,headers:{"Cache-Control":"no-store"}}),request);
       }
     }
     if (new URL(request.url).pathname.startsWith("/api/") && request.headers.has("x-braand-identity-id")) {await ensureModelRates(env);await ensureFalRates(env as unknown as Record<string,unknown> & {BUCKET?:R2Bucket});}
@@ -101,7 +102,7 @@ export default {
         },
       };
     }
-    return runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx));
+    return secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
   },
   scheduled(
     controller: ScheduledController,

@@ -14,11 +14,11 @@ test('video edits reject free commands, foreign paths and invalid timing before 
  const {style,...legacy}=edit();assert.equal(assemblyInput.safeParse(legacy).success,true);assert.equal(assemblyInput.safeParse(edit()).success,false);assert.equal(style.fit,'cover');
 });
 
-test('reading the video skill never enables unverified editing or bypasses autonomous planning',()=>{
+test('autonomy can prepare editing only when the verified renderer is discovered',()=>{
  const closed=discoveredPlatformTools('media',{assembly:{ready:false},videoEditing:{ready:false}}).map(tool=>tool.name);
  assert.ok(closed.includes('get_video_edit_result'));assert.ok(!closed.includes('prepare_video_edit'));assert.ok(!closed.includes('assemble_media'));
  const ready=discoveredPlatformTools('media',{videoEditing:{ready:true}}).map(tool=>tool.name);assert.ok(ready.includes('prepare_video_edit'));
- assert.equal(agentToolAllowedForMode('autonomous','prepare_video_edit'),false);
+ assert.equal(agentToolAllowedForMode('autonomous','prepare_video_edit'),true);
  assert.equal(agentToolAllowedForMode('autonomous','get_video_edit_result'),true);
  assert.equal(agentToolAllowedForMode('approved_mission','prepare_video_edit'),true);
 });

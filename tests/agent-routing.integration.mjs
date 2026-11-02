@@ -33,11 +33,11 @@ async function setup(){sql.prepare("UPDATE runs SET status='partial' WHERE statu
 const run=execution=>agent.runAgent(who.tenant,execution.conversationId,execution.runId,emit,signal(),execution.budget);
 const specialist=(execution,role)=>agent.runSpecialist(who.tenant,execution.runId,{role,task:'Travail encadré '+role,context:'Faits fournis par cet espace'},emit,signal(),execution.budget);
 let count=0;async function check(name,fn){await fn();count++;console.log('PASS '+name);}
-await check('file export is available immediately without discovery and remains excluded from autonomous planning',async()=>{
+await check('file export is available immediately without discovery and is available for autonomous private delivery',async()=>{
  const execution=await setup();fixture.responses=[text('Quelle information doit figurer dans le document ?')];await run(execution);
  assert.ok(fixture.requests[0].body.tools.some(tool=>tool.name==='export_deliverable'));
  const planned=await setup();fixture.responses=[text('Le mandat reste en brouillon.')];await agent.runAgent(who.tenant,planned.conversationId,planned.runId,emit,signal(),planned.budget,'autonomous');
- assert.equal(fixture.requests[0].body.tools.some(tool=>tool.name==='export_deliverable'),false);
+ assert.equal(fixture.requests[0].body.tools.some(tool=>tool.name==='export_deliverable'),true);
 });
 await check('unconfigured native Meta reads are hidden while configured reads remain available',async()=>{
  delete fixture.env.META_GRAPH_VERSION;let execution=await setup();fixture.responses=[text('Vérifions les connexions disponibles.')];await run(execution);
@@ -191,9 +191,9 @@ await check('an unavailable tool is refused before execution and gets an interna
  const result=fixture.requests[1].body.messages.at(-1).content[0];assert.equal(result.is_error,true);assert.deepEqual(fixture.external,[]);
  const rows=sql.prepare("SELECT detail FROM audit WHERE workspace_id=? AND target=? AND action='tool_failed.braand_unadvertised_write'").all(who.tenant,execution.runId);assert.equal(rows.length,1);assert.equal(JSON.parse(rows[0].detail).code,'tool_unavailable');assert.doesNotMatch(rows[0].detail,/PRIVATE_INPUT_MARKER/);
 });
-await check('autonomous planning cannot save reports, correct memory or withdraw facts',async()=>{
+await check('autonomous private mutations still validate their arguments',async()=>{
  for(const name of ['save_deliverable','revise_deliverable','revise_knowledge','forget_knowledge']){
-  const execution=await setup(),before=sql.prepare('SELECT COUNT(*) n FROM resources').get().n;fixture.responses=[call('denied',name,{}),text('Cette modification nécessite le mode approprié.')];await agent.runAgent(who.tenant,execution.conversationId,execution.runId,emit,signal(),execution.budget,'autonomous');assert.equal(sql.prepare('SELECT COUNT(*) n FROM resources').get().n,before);assert.ok(!fixture.requests[0].body.tools.some(tool=>tool.name===name));assert.equal(fixture.requests[1].body.messages.at(-1).content[0].is_error,true);
+  const execution=await setup(),before=sql.prepare('SELECT COUNT(*) n FROM resources').get().n;fixture.responses=[call('denied',name,{}),text('Cette modification nécessite le mode approprié.')];await agent.runAgent(who.tenant,execution.conversationId,execution.runId,emit,signal(),execution.budget,'autonomous');assert.equal(sql.prepare('SELECT COUNT(*) n FROM resources').get().n,before);assert.ok(fixture.requests[0].body.tools.some(tool=>tool.name===name));assert.equal(fixture.requests[1].body.messages.at(-1).content[0].is_error,true);
  }
 });
 await check('an already aborted request performs no model call and no tool work',async()=>{

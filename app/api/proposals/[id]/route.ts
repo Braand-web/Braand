@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {z} from 'zod';
 import {identity,getResource,db,updateResource,failure,auditLog,config,authorize} from '@/lib/server';
 import {AppError,assertVersion,validateMediaInput} from '@/lib/core.mjs';
@@ -11,7 +12,7 @@ import {pollMediaProposal} from '@/lib/media-jobs';
 import {linkMediaWork,wakeWorkForResource} from '@/lib/work';
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){try{
  const who=await identity(request,'approve'),{tenant}=who,{id}=await context.params;
- const {version}=z.object({version:z.number().int()}).parse(await request.json());
+ const {version}=z.object({version:z.number().int()}).parse(await privateJSON(request,1048576));
  const resource=await getResource(tenant,id),opId=id+':'+version;
  const previous=await db().prepare('SELECT id,status FROM operations WHERE id=? AND workspace_id=?').bind(opId,tenant).first();
  if(previous)return Response.json({operation:previous,replayed:true});

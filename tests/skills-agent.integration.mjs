@@ -146,14 +146,14 @@ await check('reading a method never grants a specialist media preparation or ano
  assert.equal(skillAudits().length,1);assertNoExternalOrMutation(before);
 });
 
-await check('autonomous planning can read methods but cannot obtain or invoke prepare_media',async()=>{
+await check('autonomy can prepare media but a skill never enables an unconfigured provider',async()=>{
  const execution=await setup(),before=mutationCount();
  fixture.responses=[stream([read('autonomous-method','braand-media-pipeline')]),stream([tool('autonomous-media','prepare_media',{title:'Interdit',rationale:'Validation exacte requise',task:'image',input:{},maxCredits:120})]),text('La création attendra une proposition accompagnée et sa validation.')];
  await run(execution,'autonomous');
- for(const request of fixture.requests){assert.ok(request.body.tools.some(item=>item.name==='read_skill'));assert.ok(!request.body.tools.some(item=>['prepare_media','propose_media','delegate_specialist'].includes(item.name)));assert.equal(request.budget,execution.budget);}
+ for(const request of fixture.requests){assert.ok(request.body.tools.some(item=>item.name==='read_skill'));assert.ok(request.body.tools.some(item=>item.name==='prepare_media'));assert.ok(!request.body.tools.some(item=>item.name==='generate_media'));assert.equal(request.budget,execution.budget);}
  assert.ok(parsedResult(fixture.requests[1],'autonomous-method').content.includes('name: braand-media-pipeline'));
- const rejection=toolResult(fixture.requests[2],'autonomous-media');assert.equal(rejection.is_error,true);assert.match(rejection.content,/mode Autonome/);
- assert.equal(skillAudits().length,1);assertNoExternalOrMutation(before);
+ const rejection=toolResult(fixture.requests[2],'autonomous-media');assert.equal(rejection.is_error,true);assert.match(rejection.content,/disponible|configur|valid|catalogue|crédit|activ/i);
+ assert.equal(skillAudits().length,1);assert.equal(mutationCount(),before);assert.deepEqual(fixture.external,['media']);assert.equal(fixture.responses.length,0); // Only the rejecting media configuration stub ran; no network or generation.
 });
 
 await check('invalid references are rejected before content, audit, mutation or provider access',async()=>{

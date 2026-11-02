@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import { z } from 'zod';
 import { identity, failure } from '@/lib/server';
 import { listWork, prepareWork, workSummary } from '@/lib/work';
@@ -10,7 +11,7 @@ catch (error) {
     return failure(error);
 } }
 export async function POST(request: Request) { try {
-    const who = await identity(request), { conversationId, plan } = z.object({ conversationId: z.string().min(1).max(160), plan: z.unknown() }).strict().parse(await request.json());
+    const who = await identity(request), { conversationId, plan } = z.object({ conversationId: z.string().min(1).max(160), plan: z.unknown() }).strict().parse(await privateJSON(request,1048576));
     return Response.json(await prepareWork(who, conversationId, plan), { status: 201, headers: { 'Cache-Control': 'private, no-store' } });
 }
 catch (error) {

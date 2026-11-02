@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import { z } from 'zod';
 import { identity, failure, list, createResource, getResource, updateResource, auditLog } from '@/lib/server';
 import { knowledgeInput, reviseKnowledge, forgetKnowledge } from '@/lib/agent-memory';
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
         const who = await identity(request), body = z.discriminatedUnion('action', [
             z.object({ action: z.literal('create'), memory: knowledgeInput }), z.object({ action: z.literal('revise'), id: z.string().max(160), version: z.number().int().positive(), memory: knowledgeInput }), z.object({ action: z.literal('forget'), id: z.string().max(160), version: z.number().int().positive() }),
             z.object({ action: z.literal('create_brand'), brand }), z.object({ action: z.literal('revise_brand'), id: z.string().max(160), version: z.number().int().positive(), brand })
-        ]).parse(await request.json());
+        ]).parse(await privateJSON(request,1048576));
         let result: unknown;
         if (body.action === 'create')
             result = await createResource(who.tenant, 'knowledge', body.memory.title, { ...body.memory, validatedAt: Date.now(), origin: 'user' }, 'saved');

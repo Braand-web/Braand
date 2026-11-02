@@ -12,13 +12,14 @@ import type {FileRecord} from '@/lib/contracts';
 import {chatAttachmentBlocks} from '@/lib/chat-attachments.mjs';
 import {responseSources,responseStatus} from '@/lib/response-metadata.mjs';
 import {containsExplicitLoginSecret} from '@/lib/chat-secret-guard.mjs';
+import {privateJSON} from '@/lib/private-json';
 export async function POST(request:Request){
  let tenant="",conversationId="",locked=false,budget:RunBudget|undefined;
  try{
   const who=await identity(request);tenant=who.tenant;
   await ensureModelPricing();
   if(routingEnabled(config()))routedModel(config(),{task:'conversation'});else requireModel();
-  const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().optional(),attachments:z.array(z.string()).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied")}).parse(await request.json());
+  const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().max(160).optional(),attachments:z.array(z.string().max(160)).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied")}).parse(await privateJSON(request,80000));
   if(containsExplicitLoginSecret(body.text))throw new AppError('Cette saisie semble contenir un identifiant secret. Utilisez la saisie sécurisée dans Paramètres → Autorisations, ou dans le navigateur sous votre contrôle.',400,'secure_login_input_required');
   const conversation=body.conversationId?await getResource(tenant,body.conversationId):await createResource(tenant,"conversation",body.text.slice(0,70),{},"saved");if(conversation.kind!=="conversation"||conversation.status==="deleted")throw new AppError("Discussion invalide.");const sidebar=conversation.data.sidebar;if(sidebar&&typeof sidebar==="object"&&!Array.isArray(sidebar)&&(sidebar as Record<string,unknown>).archived===true)throw new AppError("Restaurez cette discussion avant de la continuer.",409);conversationId=conversation.id;
   const lock=await db().prepare("UPDATE resources SET status='streaming',updated_at=? WHERE id=? AND workspace_id=? AND (status!='streaming' OR updated_at<?)").bind(Date.now(),conversationId,tenant,Date.now()-300000).run();if(!lock.meta.changes)throw new AppError("Une réponse est déjà en cours dans cette discussion.",409);
@@ -33,7 +34,7 @@ export async function POST(request:Request){
    async start(controller){
     const buffered=bufferedAgentEvents(async(type:string,data:unknown)=>{if(Date.now()-lastHeartbeat>30000){lastHeartbeat=Date.now();await db().prepare("UPDATE runs SET updated_at=? WHERE id=? AND status='streaming'").bind(lastHeartbeat,runId).run();await db().prepare("UPDATE resources SET updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(lastHeartbeat,conversationId,tenant).run();}const saved=await db().prepare("INSERT INTO events (run_id,type,data,created_at) VALUES (?,?,?,?)").bind(runId,type,JSON.stringify(data),Date.now()).run();if(!clientClosed)controller.enqueue(encoder.encode("id: "+saved.meta.last_row_id+"\nevent: "+type+"\ndata: "+JSON.stringify(data)+"\n\n"));});const emit=buffered.emit;
     try{await emit("run",{runId,conversationId});await runAgent(tenant,conversationId,runId,emit,abort.signal,budget!,body.workMode);const completed=await db().prepare("UPDATE runs SET status='completed',updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(Date.now(),runId,tenant).run();if(!completed.meta.changes)throw new AppError('Réponse arrêtée.',499,'cancelled');await emit("done",{runId});}
-    catch(error){await buffered.flush().catch(()=>undefined);await persistPartialText(tenant,conversationId,runId);const message=error instanceof AppError?error.message:"Le flux a été interrompu. Les étapes terminées restent enregistrées.";await db().prepare("UPDATE runs SET status=CASE WHEN status='cancelled' THEN status WHEN ? IN ('budget_exhausted','step_limit') THEN 'partial' ELSE 'failed' END,error=?,updated_at=? WHERE id=?").bind(error instanceof AppError?error.code:"technical_failure",message,Date.now(),runId).run();if(!clientClosed)await emit("error",{message});}
+    catch(error){await buffered.flush().catch(()=>undefined);await persistPartialText(tenant,conversationId,runId);const message=error instanceof AppError?error.message:"Le flux a été interrompu. Les étapes terminées restent enregistrées.";await db().prepare("UPDATE runs SET status=CASE WHEN status='cancelled' THEN status WHEN ? IN ('budget_exhausted','step_limit') THEN 'partial' ELSE 'failed' END,error=?,updated_at=? WHERE id=?").bind(error instanceof AppError?error.code:"technical_failure",message,Date.now(),runId).run();await emit("error",{message,code:error instanceof AppError?error.code:"technical_failure",runId});console.error(JSON.stringify({event:"agent_run_failed",runId,code:error instanceof AppError?error.code:"technical_failure"}));}
     finally{try{await buffered.flush().catch(()=>undefined);await finishRunBudget(budget!);}finally{await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id=? AND workspace_id=?").bind(Date.now(),conversationId,tenant).run();if(!clientClosed)controller.close();}}
    },cancel(){clientClosed=true;abort.abort();}
   });
@@ -52,7 +53,7 @@ export async function GET(request:Request){try{
  }catch(error){return failure(error);}}
 export async function PATCH(request:Request){try{
  const {tenant,user}=await identity(request);
- const {messageId,feedback}=z.object({messageId:z.string().min(1).max(128),feedback:z.enum(['up','down']).nullable()}).strict().parse(await request.json());
+ const {messageId,feedback}=z.object({messageId:z.string().min(1).max(128),feedback:z.enum(['up','down']).nullable()}).strict().parse(await privateJSON(request,1048576));
  const now=Date.now();
  // Match the message and workspace in the write itself so a stale check cannot
  // insert a vote for another tenant or a non-assistant message.
@@ -60,7 +61,7 @@ export async function PATCH(request:Request){try{
  if(!result.meta.changes)throw new AppError("Réponse introuvable.",404,"message_not_found");
  return Response.json({messageId,feedback});
  }catch(error){return failure(error);}}
-export async function DELETE(request:Request){try{const {tenant}=await identity(request);const {runId}=z.object({runId:z.string()}).parse(await request.json());await db().prepare("UPDATE runs SET status='cancelled',updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(Date.now(),runId,tenant).run();return Response.json({stopped:true});}catch(error){return failure(error);}}
+export async function DELETE(request:Request){try{const {tenant}=await identity(request);const {runId}=z.object({runId:z.string()}).parse(await privateJSON(request,1048576));await db().prepare("UPDATE runs SET status='cancelled',updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(Date.now(),runId,tenant).run();return Response.json({stopped:true});}catch(error){return failure(error);}}
 
 
 

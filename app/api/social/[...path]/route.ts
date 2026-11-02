@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import { identity, failure } from '@/lib/server';
 import { AppError } from '@/lib/core.mjs';
 import { socialAccounts, syncSocialAccounts, listSocialBatches, getSocialBatch, createSocialBatch, reviseSocialPost, decideSocialBatch, listComments, syncComments, prepareReply, decideReply, socialInsights, syncInsights, socialAssetChoices, socialPostList } from '@/lib/social';
@@ -43,19 +44,19 @@ export async function POST(request: Request, context: Context) {
         if (path.length === 1 && path[0] === 'accounts')
             result = await syncSocialAccounts(who);
         else if (path.length === 1 && path[0] === 'batches')
-            result = await createSocialBatch(who, await request.json());
+            result = await createSocialBatch(who, await privateJSON(request,1048576));
         else if (path.length === 3 && path[0] === 'batches' && path[2] === 'decision')
-            result = await decideSocialBatch(who, path[1], await request.json());
+            result = await decideSocialBatch(who, path[1], await privateJSON(request,1048576));
         else if (path.length === 2 && path[0] === 'comments' && path[1] === 'sync') {
-            const p = z.object({ accountId: z.string().min(1).max(160), postId: z.string().min(1).max(160).optional() }).strict().parse(await request.json());
+            const p = z.object({ accountId: z.string().min(1).max(160), postId: z.string().min(1).max(160).optional() }).strict().parse(await privateJSON(request,1048576));
             result = await syncComments(who, p.accountId, p.postId);
         }
         else if (path.length === 1 && path[0] === 'replies')
-            result = await prepareReply(who, await request.json());
+            result = await prepareReply(who, await privateJSON(request,1048576));
         else if (path.length === 3 && path[0] === 'replies' && path[2] === 'decision')
-            result = await decideReply(who, path[1], await request.json());
+            result = await decideReply(who, path[1], await privateJSON(request,1048576));
         else if (path.length === 2 && path[0] === 'insights' && path[1] === 'sync')
-            result = await syncInsights(who, await request.json());
+            result = await syncInsights(who, await privateJSON(request,1048576));
         else
             throw new AppError('Action introuvable.', 404);
         return Response.json(result, { headers });
@@ -68,7 +69,7 @@ export async function PATCH(request: Request, context: Context) { try {
     const who = await identity(request), path = (await context.params).path;
     if (path.length !== 2 || path[0] !== 'posts')
         throw new AppError('Publication introuvable.', 404);
-    return Response.json(await reviseSocialPost(who, path[1], await request.json()), { headers });
+    return Response.json(await reviseSocialPost(who, path[1], await privateJSON(request,1048576)), { headers });
 }
 catch (error) {
     return failure(error);

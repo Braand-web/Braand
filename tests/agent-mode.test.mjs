@@ -30,20 +30,22 @@ test('an approved mission discovers guarded connected actions without acquiring 
  assert.equal(agentToolAllowedForMode('approved_mission','export_deliverable'),true);
 });
 
-test("autonomous mode exposes only safe reads and draft mission planning", () => {
+test("autonomous mode can deliver private work through guarded tools", () => {
   assert.deepEqual(
     agentToolsForMode("autonomous", standardTools, connectorTools).map((tool) => tool.name),
-    ["search_skills", "read_skill", "search_workspace", "get_workspace_resource", "read_meta", "plan_mission"],
+    [...standardTools, ...connectorTools].map(tool=>tool.name),
   );
   assert.equal(agentToolAllowedForMode("autonomous", "plan_mission"), true);
   assert.equal(agentToolAllowedForMode("autonomous", "get_workspace_resource"), true);
-  assert.equal(agentToolAllowedForMode("autonomous", "create_page"), false);
-  assert.equal(agentToolAllowedForMode("autonomous", "braand_connector_action"), false);
-  assert.equal(agentToolAllowedForMode("autonomous", "braand_connector_status"), false);
+  assert.equal(agentToolAllowedForMode("autonomous", "create_page"), true);
+  assert.equal(agentToolAllowedForMode("autonomous", "braand_connector_action"), true);
+  assert.equal(agentToolAllowedForMode("autonomous", "braand_connector_status"), true);
 });
 
 test('native computations and source exports keep the distinction between planning and approved work',()=>{
- for(const tool of ['analyze_data','save_source_project']){assert.equal(agentToolAllowedForMode('autonomous',tool),false);assert.equal(agentToolAllowedForMode('approved_mission',tool),true);assert.equal(agentToolAllowedForMode('accompanied',tool),true);}
+ for(const tool of ['analyze_data','save_source_project']){assert.equal(agentToolAllowedForMode('autonomous',tool),true);assert.equal(agentToolAllowedForMode('approved_mission',tool),true);assert.equal(agentToolAllowedForMode('accompanied',tool),true);}
  for(const tool of ['get_analysis_result','get_source_project'])assert.equal(agentToolAllowedForMode('autonomous',tool),true);
  for(const tool of ['run_shell','execute_code','deploy_app'])assert.equal(agentToolAllowedForMode('approved_mission',tool),false);
 });
+
+test('autonomy does not acquire approval, shell or raw connector execution rights',()=>{for(const tool of ['approve','publish_page','execute_code','run_shell','COMPOSIO_MULTI_EXECUTE_TOOL','COMPOSIO_REMOTE_BASH_TOOL'])assert.equal(agentToolAllowedForMode('autonomous',tool),false);});

@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {env} from "cloudflare:workers";
 import {z} from "zod";
 import {fileIdentity,db,failure,config,uid} from "@/lib/server";
@@ -13,7 +14,7 @@ function signingSecret(){const cfg=config(),secret=cfg.FILE_URL_SIGNING_SECRET||
 export async function POST(request:Request,context:Context){try{
  if(!enabled())throw notFound();
  const {tenant,user}=await fileIdentity(request),{id,action}=await context.params;if(action!=="url")throw notFound();
- const {scope}=z.object({scope:z.enum(["content","download","thumbnail"])}).strict().parse(await request.json());
+ const {scope}=z.object({scope:z.enum(["content","download","thumbnail"])}).strict().parse(await privateJSON(request,1048576));
  const file=await db().prepare("SELECT id,status FROM files WHERE id=? AND workspace_id=? AND status='ready'").bind(id,tenant).first<{id:string;status:string}>();if(!file)throw notFound();
  const now=Date.now(),token=await issueFileToken(signingSecret(),{fileId:id,userId:user.userId,workspaceId:tenant,scope},now);
  const url=new URL(`/api/files/${encodeURIComponent(id)}/${scope}?token=${encodeURIComponent(token)}`,request.url).toString();

@@ -42,7 +42,31 @@ await check('Historical ten-credit grants retain their original amount and deadl
  assert.equal(lot.granted,1000);assert.equal(lot.expires_at,issued+7*86400000);assert.equal((await b.summary('owner')).wallet.available,10);
 });
 await check('Usage does not reserve a wallet and settlement is idempotent',async()=>{const h=await b.reserve(who,'reservation-test',800);assert.equal((await b.reserve(who,'reservation-test',800)).id,h.id);assert.equal((await b.summary('owner')).wallet.available,10);assert.equal((await b.summary('owner')).wallet.reserved,0);await b.settleHold(h.id,500);await b.settleHold(h.id,900);assert.equal((await b.summary('owner')).wallet.available,5);});
-await check('Concurrent completed usage never debits more than the remaining wallet',async()=>{const now=Date.now(),person={...who,organization:'concurrent-org'};sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('concurrent-lot',person.organization,'free','concurrent',1500,1500,now,now);const a=await b.reserve(person,'concurrent-a',1500),c=await b.reserve(person,'concurrent-b',1500);assert.equal((await b.summary(person.organization)).wallet.available,15);await Promise.all([b.settleHold(a.id,1000),b.settleHold(c.id,1000)]);assert.equal((await b.summary(person.organization)).wallet.available,0);assert.equal(sql.prepare("SELECT SUM(units) n FROM credit_ledger WHERE organization_id=? AND kind='consume'").get(person.organization).n,1500);});
+await check('Concurrent admission shares a funded ceiling without a visible reservation',async()=>{
+ const now=Date.now(),person={...who,organization:'concurrent-org'};
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('concurrent-lot',person.organization,'free','concurrent',1500,1500,now,now);
+ const admitted=await Promise.allSettled([b.reserve(person,'concurrent-a',1000),b.reserve(person,'concurrent-b',1000)]);
+ assert.equal(admitted.filter(x=>x.status==='fulfilled').length,1);
+ const first=admitted.find(x=>x.status==='fulfilled').value;
+ assert.equal((await b.summary(person.organization)).wallet.available,15);
+ assert.equal((await b.summary(person.organization)).wallet.reserved,0);
+ const second=await b.reserve(person,'concurrent-c',1000,{upToAvailable:true});assert.equal(second.units,500);
+ await assert.rejects(()=>b.reserve(person,'concurrent-d',1),e=>e.code==='insufficient_credits');
+ await Promise.all([b.settleHold(first.id,800),b.settleHold(second.id,400)]);
+ assert.equal((await b.summary(person.organization)).wallet.available,3);
+ assert.equal(sql.prepare("SELECT SUM(units) n FROM credit_ledger WHERE organization_id=? AND kind='consume'").get(person.organization).n,1200);
+ const next=await b.reserve(person,'concurrent-next',300);await b.settleHold(next.id,0);
+ assert.equal((await b.summary(person.organization)).wallet.available,3);
+});
+await check('Historical underfunded usage remains reconcilable and does not silently lose cost',async()=>{
+ const now=Date.now();sql.prepare('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)').run('underfunded','underfunded-org',who.tenant,who.user.userId,'underfunded',500,now);
+ await b.settleHold('underfunded',400);
+ assert.deepEqual({...sql.prepare('SELECT status,actual FROM credit_holds WHERE id=?').get('underfunded')},{status:'needs_reconciliation',actual:400});
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('repair-lot','underfunded-org','free','repair',500,500,now,now);
+ await b.settleHold('underfunded',400);await b.settleHold('underfunded',400);
+ assert.equal(sql.prepare('SELECT status FROM credit_holds WHERE id=?').get('underfunded').status,'settled');
+ assert.equal((await b.summary('underfunded-org')).wallet.available,1);
+});
 await check('An existing reserved allocation settles and releases its remainder once',async()=>{const now=Date.now();sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('old-lot','old-org','free','old',1500,1500,now,now);sql.prepare('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)').run('old-hold','old-org',who.tenant,who.user.userId,'old-reference',1000,now);sql.prepare('INSERT INTO credit_allocations(id,hold_id,lot_id,units,created_at) VALUES (?,?,?,?,?)').run('old-allocation','old-hold','old-lot',1000,now);await b.settleHold('old-hold',600);await b.settleHold('old-hold',600);const wallet=(await b.summary('old-org')).wallet;assert.equal(wallet.available,9);assert.equal(wallet.reserved,0);assert.equal(sql.prepare("SELECT SUM(units) n FROM credit_ledger WHERE organization_id='old-org' AND kind='consume'").get().n,600);});
 const economics={taxBps:0,feeBps:500,feeFixed:100,unitCost:4,monthlyServiceCost:300,riskBps:100};
 const taxRule={mode:'exclusive',rateBps:0,jurisdiction:'fixture:CM-test-rule',version:'fixture-tax-v1',validatedAt:'2026-10-22'};

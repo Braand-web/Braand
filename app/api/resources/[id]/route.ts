@@ -1,3 +1,4 @@
+import {privateJSON} from '@/lib/private-json';
 import {z} from "zod";
 import {identity,getResource,getClientResource,updateResource,failure,auditLog,db} from "@/lib/server";
 import {AppError} from "@/lib/core.mjs";
@@ -6,7 +7,7 @@ import {campaignBriefSchema,reviseCampaignBrief} from '@/lib/campaign-brief';
 export async function GET(request:Request,context:{params:Promise<{id:string}>}){try{const {tenant,user}=await identity(request);const resource=await getClientResource(tenant,(await context.params).id);if(resource.kind==="connector_action"&&resource.data.requester!==user.userId)throw new AppError("Élément introuvable.",404);return Response.json(resource);}catch(error){return failure(error);}}
 export async function PATCH(request:Request,context:{params:Promise<{id:string}>}){try{
  const {tenant,user}=await identity(request),{id}=await context.params,resource=await getResource(tenant,id);if(resource.status==="deleted")throw new AppError("Élément introuvable.",404);
- const p=z.object({version:z.number().int(),action:z.enum(["rename","restore","suspend","cancel","campaign_brief","pin","unpin","mark_unread","mark_read","archive","unarchive","delete"]),title:z.string().trim().min(1).max(160).optional(),historyVersion:z.number().int().optional(),brief:campaignBriefSchema.optional()}).parse(await request.json());
+ const p=z.object({version:z.number().int(),action:z.enum(["rename","restore","suspend","cancel","campaign_brief","pin","unpin","mark_unread","mark_read","archive","unarchive","delete"]),title:z.string().trim().min(1).max(160).optional(),historyVersion:z.number().int().optional(),brief:campaignBriefSchema.optional()}).parse(await privateJSON(request,1048576));
  if(p.action==='campaign_brief'){
   if(!p.brief)throw new AppError('Brief de campagne requis.');
   await reviseCampaignBrief(tenant,id,p.version,p.brief,p.title);await auditLog(tenant,user.userId,'campaign.brief.update',id,{version:p.version});return Response.json(await getClientResource(tenant,id));

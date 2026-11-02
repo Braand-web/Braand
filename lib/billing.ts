@@ -112,13 +112,22 @@ export async function reserve(who:BillingIdentity,reference:string,units:number,
  if(!Number.isSafeInteger(units)||units<=0)throw new AppError('Plafond de crédits invalide.');
  await allocateDue(who.organization);
  const prior=await s('SELECT * FROM credit_holds WHERE reference=?',reference).first<CreditHoldRow>();if(prior){if(prior.organization_id!==who.organization)throw new AppError('Réservation invalide.',403);return prior;}
- const now=Date.now(),id=uid(),lots=await s('SELECT id,balance-reserved available FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved ORDER BY expires_at IS NULL,expires_at,created_at,id',who.organization,now,now).all<{id:string;available:number}>();
- if(options.upToAvailable)units=Math.min(units,lots.results.reduce((sum,lot)=>sum+lot.available,0));
- if(units<=0)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
- if(lots.results.reduce((sum,lot)=>sum+lot.available,0)<units)throw new AppError('Crédits insuffisants. Rechargez votre portefeuille avant de continuer.',402,'insufficient_credits');
- // Keep an idempotent usage record, but do not allocate or freeze wallet funds.
- try{await s('INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at) VALUES (?,?,?,?,?,?,?)',id,who.organization,who.tenant,who.user.userId,reference,units,now).run();}catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('spend_limit'))throw new AppError('Le plafond de dépenses est atteint.',402);throw error;}
- return {id,units,status:'reserved',organization_id:who.organization};
+ const now=Date.now(),id=uid();
+ // Admission and insertion share one SQLite statement: concurrent requests
+ // cannot both promise the same remaining funds. This is an internal ceiling,
+ // not a debit or a visible reservation. Legacy allocations are already
+ // excluded from the wallet and must not be counted twice.
+ const capacity=`MAX(0,
+  COALESCE((SELECT SUM(balance-reserved) FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?)),0)
+  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND h.status IN ('reserved','needs_reconciliation')),0))`;
+ try{
+  await s(`INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at)
+   SELECT ?,?,?,?,?,CASE WHEN ? THEN MIN(?,available) ELSE ? END,? FROM (SELECT ${capacity} available)
+   WHERE available>0 AND (? OR available>=?)`,id,who.organization,who.tenant,who.user.userId,reference,options.upToAvailable?1:0,units,units,now,who.organization,now,now,who.organization,options.upToAvailable?1:0,units).run();
+ }catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('spend_limit'))throw new AppError('Le plafond de dépenses est atteint.',402);throw error;}
+ const hold=await s('SELECT * FROM credit_holds WHERE id=?',id).first<CreditHoldRow>();
+ if(!hold)throw new AppError('Le solde disponible ne couvre pas cette demande et les tâches déjà en cours. Attendez leur fin ou rechargez votre portefeuille.',402,'insufficient_credits');
+ return hold;
 }
 export async function settleHold(id:string,units:number){
  const hold=await s('SELECT * FROM credit_holds WHERE id=?',id).first<CreditHoldRow>();if(!hold||hold.status==='settled')return;
@@ -133,7 +142,7 @@ export async function settleHold(id:string,units:number){
    statements.push(s(`INSERT INTO credit_allocations(id,hold_id,lot_id,units,created_at) SELECT ?,?,id,MIN(balance-reserved,${remaining}),? FROM credit_lots WHERE id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) AND balance>reserved AND ${remaining}>0 AND EXISTS(SELECT 1 FROM credit_holds WHERE id=? AND status!='settled')`,allocation,id,charged,id,now,lot.id,now,now,charged,id,id));
    statements.push(s("UPDATE credit_allocations SET charged=units,state='settled' WHERE id=? AND state='reserved'",allocation));
   }
-  statements.push(s("UPDATE credit_holds SET status='settled',actual=COALESCE((SELECT SUM(charged) FROM credit_allocations WHERE hold_id=? AND state='settled'),0) WHERE id=? AND status!='settled'",id,id));await db().batch(statements);
+  statements.push(s("UPDATE credit_holds SET status=CASE WHEN COALESCE((SELECT SUM(charged) FROM credit_allocations WHERE hold_id=? AND state='settled'),0)>=? THEN 'settled' ELSE 'needs_reconciliation' END,actual=? WHERE id=? AND status!='settled'",id,charged,charged,id));await db().batch(statements);
  }
  await expireLots(hold.organization_id);
 }
