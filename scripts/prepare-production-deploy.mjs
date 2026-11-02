@@ -12,7 +12,7 @@ const script='aira-production';
 const sourceRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const candidate=execFileSync('git',['rev-parse','HEAD'],{cwd:sourceRoot,encoding:'utf8'}).trim();
 if(process.env.GITHUB_SHA&&process.env.GITHUB_SHA!==candidate)throw Error('The checked-out source does not match the verified GitHub revision.');
-const readWorker=async suffix=>{const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}${suffix}`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(30000)});const json=await r.json();if(!r.ok||!json.success)throw Error('Unable to verify the live production source.');return json.result;};
+const readWorker=async suffix=>{const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${script}${suffix}`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(30000)});const json=await r.json();if(!r.ok||!json.success)throw Error('Unable to verify the live production source (HTTP '+r.status+', codes '+(Array.isArray(json.errors)?json.errors.map(error=>Number(error.code)||0).join(','):'unknown')+').');return json.result;};
 const deployments=(await readWorker('/deployments')).deployments;
 const deployment=deployments[0];
 if(deployment.versions.length!==1||deployment.versions[0].percentage!==100)throw Error('Resolve the current split deployment before publishing.');
