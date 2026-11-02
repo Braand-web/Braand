@@ -348,17 +348,3 @@ html[data-design-system="muse"] .toast.toast-error .icon-button { flex: 0 0 auto
 @media (max-width:700px){.chat-background-link span{display:none}.chat-background-link{min-width:44px;min-height:44px;justify-content:center}}
 
 html[data-design-system="muse"] .platform-quick-start button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
-
-/* Keep accessibility-only announcements available to assistive technology. */
-.sr-only{
-  position:absolute;
-  width:1px;
-  height:1px;
-  padding:0;
-  margin:-1px;
-  overflow:hidden;
-  clip:rect(0,0,0,0);
-  clip-path:inset(50%);
-  white-space:nowrap;
-  border:0;
-}
