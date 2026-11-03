@@ -117,9 +117,11 @@ export async function reserve(who:BillingIdentity,reference:string,units:number,
  // cannot both promise the same remaining funds. This is an internal ceiling,
  // not a debit or a visible reservation. Legacy allocations are already
  // excluded from the wallet and must not be counted twice.
+ // Only work still running counts: a finished run waiting for a cost receipt
+ // never blocks the customer's available credits.
  const capacity=`MAX(0,
   COALESCE((SELECT SUM(balance-reserved) FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?)),0)
-  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND h.status IN ('reserved','needs_reconciliation')),0))`;
+  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND h.status='reserved'),0))`;
  try{
   await s(`INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at)
    SELECT ?,?,?,?,?,CASE WHEN ? THEN MIN(?,available) ELSE ? END,? FROM (SELECT ${capacity} available)
