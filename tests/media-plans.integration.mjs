@@ -19,11 +19,12 @@ const f={env:{FAL_KEY:'fal-test',FAL_CATALOG_JSON:JSON.stringify(catalog),ANTHRO
 globalThis.__planFixture=f;
 
 await build({entryPoints:[path.join(root,'lib/media-plans.ts')],outfile:out,bundle:true,platform:'node',format:'esm',logLevel:'error',plugins:[{name:'plan-fixture',setup(b){
- b.onResolve({filter:/^\.\/(server|billing|fal-storage|work)$/},a=>({path:a.path.slice(2),namespace:'fx'}));
+ b.onResolve({filter:/^\.\/(server|billing|fal-storage|work|metering)$/},a=>({path:a.path.slice(2),namespace:'fx'}));
  b.onLoad({filter:/.*/,namespace:'fx'},a=>({loader:'js',contents:{
   billing:`const f=globalThis.__planFixture;export async function reserve(who,ref,units){f.holds.push({ref,units});return {id:'hold-1'};}export async function settleHold(id,units){f.settled.push({id,units});}`,
   'fal-storage':`export async function uploadLibraryFileToFal(t,id){return 'https://fal.media/files/library/'+id+'.png';}`,
   work:`export async function wakeWorkForResource(){}`,
+  metering:`export function modelRate(){return {input:5,output:25,usdXaf:600,overheadXaf:0};}`,
   server:`const f=globalThis.__planFixture;
   export const config=()=>f.env;
   export async function authorize(){}
@@ -59,7 +60,7 @@ globalThis.fetch=async(url,init={})=>{
   const body=JSON.parse(init.body),image=body.messages[0].content.find(part=>part.type==='image').source.url;fal.reviews.push(image);
   // The first image of the hero step fails review once.
   const pass=!(image.endsWith('req-1.png'));
-  return Response.json({content:[{type:'text',text:JSON.stringify({pass,issues:pass?[]:['Texte du logo illisible'],fix:'Make the logo text crisp and legible.'})}]});
+  return Response.json({usage:{input_tokens:1600,output_tokens:300},content:[{type:'text',text:JSON.stringify({pass,issues:pass?[]:['Texte du logo illisible'],fix:'Make the logo text crisp and legible.'})}]});
  }
  throw Error('Unexpected network call '+href);
 };
@@ -71,9 +72,9 @@ const steps=[
  {id:'motion',label:'Héros animé',task:'video_from_image',input:{prompt:'Slow push-in, light sweep'},references:[{field:'image_url',fromStep:'hero'}]},
 ];
 
-await assert.rejects(plans.prepareMediaPlan('workspace',{title:'Lancement',rationale:'Test',steps,budgetCredits:20}),/au moins 62 crédits/);
+await assert.rejects(plans.prepareMediaPlan('workspace',{title:'Lancement',rationale:'Test',steps,budgetCredits:20}),/au moins 66 crédits/);
 const proposal=await plans.prepareMediaPlan('workspace',{title:'Lancement',rationale:'Test',steps,budgetCredits:90});
-assert.equal(proposal.status,'awaiting_approval');assert.equal(proposal.data.kind,'media_plan');assert.equal(proposal.data.payload.expectedCredits,62);
+assert.equal(proposal.status,'awaiting_approval');assert.equal(proposal.data.kind,'media_plan');assert.equal(proposal.data.payload.expectedCredits,66);
 assert.equal(fal.submissions.length,0,'Preparing a plan never generates');
 
 await plans.approveMediaPlan(who,proposal.id,proposal.version);
@@ -99,7 +100,7 @@ assert.equal(video.model,'bytedance/seedance-2.5/image-to-video','The dependent 
 assert.equal(video.body.image_url,'https://fal.media/files/req-3.png','Video uses the accepted hero output');
 state=await plans.advanceMediaPlan('workspace',proposal.id);
 assert.equal(state.status,'completed');
-assert.equal(state.spent,10+10+2+10+2+40,'Two images, one corrected retry, two reviews and one video');
+assert.equal(state.spent,10+10+3+10+3+40,'Two images, one corrected retry, two reviews at their real token cost and one video');
 assert.deepEqual(f.settled,[{id:'hold-1',units:state.spent*100}]);
 assert.ok(state.spent<=90);
 assert.ok(f.resources.has('media:plan:'+proposal.id+':hero'),'Accepted outputs become library media');

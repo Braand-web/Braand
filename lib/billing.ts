@@ -117,15 +117,16 @@ export async function reserve(who:BillingIdentity,reference:string,units:number,
  // cannot both promise the same remaining funds. This is an internal ceiling,
  // not a debit or a visible reservation. Legacy allocations are already
  // excluded from the wallet and must not be counted twice.
- // Only work still running counts: a finished run waiting for a cost receipt
- // never blocks the customer's available credits.
+ // Work still running counts. A finished run waiting for its cost receipt
+ // counts only for 30 minutes (normal reconciliation time), so it can never
+ // block the customer's credits for long while unpaid usage stays bounded.
  const capacity=`MAX(0,
   COALESCE((SELECT SUM(balance-reserved) FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?)),0)
-  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND h.status='reserved'),0))`;
+  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND (h.status='reserved' OR (h.status='needs_reconciliation' AND h.created_at>?))),0))`;
  try{
   await s(`INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at)
    SELECT ?,?,?,?,?,CASE WHEN ? THEN MIN(?,available) ELSE ? END,? FROM (SELECT ${capacity} available)
-   WHERE available>0 AND (? OR available>=?)`,id,who.organization,who.tenant,who.user.userId,reference,options.upToAvailable?1:0,units,units,now,who.organization,now,now,who.organization,options.upToAvailable?1:0,units).run();
+   WHERE available>0 AND (? OR available>=?)`,id,who.organization,who.tenant,who.user.userId,reference,options.upToAvailable?1:0,units,units,now,who.organization,now,now,who.organization,now-1800000,options.upToAvailable?1:0,units).run();
  }catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('spend_limit'))throw new AppError('Le plafond de dépenses est atteint.',402);throw error;}
  const hold=await s('SELECT * FROM credit_holds WHERE id=?',id).first<CreditHoldRow>();
  if(!hold)throw new AppError('Le solde disponible ne couvre pas cette demande et les tâches déjà en cours. Attendez leur fin ou rechargez votre portefeuille.',402,'insufficient_credits');
