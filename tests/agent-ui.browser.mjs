@@ -16,7 +16,7 @@ const {chromium}=await import(playwright?pathToFileURL(path.resolve(playwright))
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'.tmp','agent-ui-browser');
 await mkdir(output,{recursive:true});
-await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {AppearanceProvider} from "./components/appearance-provider";import "./app/appearance.css";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";createRoot(document.getElementById("root")).render(<AppearanceProvider><FilePreviewProvider><Studio/></FilePreviewProvider></AppearanceProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
+await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {AppearanceProvider} from "./components/appearance-provider";import "./app/appearance.css";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";import "./app/conversation.css";createRoot(document.getElementById("root")).render(<AppearanceProvider><FilePreviewProvider><Studio/></FilePreviewProvider></AppearanceProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZsAAAAASUVORK5CYII=','base64');
 const now=Date.now();
 // Explicit test fixture only: this is not a production tax determination.
@@ -28,7 +28,7 @@ const conversation={id:'conversation-fixture',workspace_id:'fixture',kind:'conve
 const sources=[{id:'source-real',title:'Rapport de test',domain:'example.org',url:'https://example.org/report'},{id:'source-unsafe',title:'<script>source non exécutable</script>',domain:'Document joint',url:'javascript:alert(1)'}];
 const history=[];const votes=new Map();
 const workspaceResources=[proposal,conversation],workspaceMutations=[];
-let skillReads=0,failSkills=false,browserWrites=0,anonymousSession=false,authSends=0;
+let failSkills=false,browserWrites=0,anonymousSession=false,authSends=0;
 let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,failFeedback=false;
 const firstChatHeaders=Promise.withResolvers();
 const backgroundCompletion=Promise.withResolvers();
@@ -62,7 +62,7 @@ const server=createServer(async(req,res)=>{
   if(url.pathname.startsWith('/api/pages/shell-page-')){if(url.searchParams.has('publication')){json(res,null);return;}const name=url.pathname.endsWith('-a')?'A':'B';setTimeout(()=>json(res,{html:'<!doctype html><html lang="fr"><body><h1>Page '+name+'</h1></body></html>'}),name==='A'?700:15);return;}
   if(url.pathname==='/api/work'){json(res,{items:[],readiness:{enabled:false},nextCursor:null});return;}
   if(url.pathname==='/api/skills'){
-skillReads++;if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:'Catalogue indisponible'}));return;}json(res,{skills:SKILL_CATALOG.map(({id,title,description,category,version,capability})=>({id,title,description,category,version,capability}))});return;}
+if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:'Catalogue indisponible'}));return;}json(res,{skills:SKILL_CATALOG.map(({id,title,description,category,version,capability})=>({id,title,description,category,version,capability}))});return;}
   if(url.pathname==='/api/workspace'&&req.method==='POST'){
 
     const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks).toString());workspaceMutations.push(body);
@@ -330,19 +330,14 @@ try{
   assert.deepEqual({chatCalls,approvals,authorizationCalls:authorizationRequests.length,revocationCalls:revocationRequests.length},mutationsBeforeSwitch);
   checks.push('A workspace change in another tab reloads its snapshot without running model, generation or connector mutations');
   await page.goto(origin+'/?view=knowledge');await settings.waitFor();await settings.getByRole('heading',{name:'Compétences',exact:true}).waitFor();
-  await settings.getByRole('heading',{name:'Pilotage opérationnel des publicités',exact:true}).waitFor();
-  assert.equal(await settings.locator('.skill-card').count(),SKILL_CATALOG.length);
-  assert.ok(skillReads>0);assert.equal(await settings.getByRole('heading',{name:'Auditer une campagne Meta',exact:true}).count(),0);
-  const methodSearch=settings.getByRole('textbox',{name:'Rechercher des compétences'});
-  await methodSearch.fill('Réunions');const meetingCard=settings.locator('.skill-card');assert.equal(await meetingCard.count(),1);
-  await meetingCard.getByRole('button',{name:'Utiliser',exact:true}).focus();await page.keyboard.press('Enter');await settings.waitFor({state:'hidden'});
-  assert.match(await composer.inputValue(),/braand-meeting-actions/);assert.equal(chatCalls,0);await composer.fill('');
-  failSkills=true;await page.goto(origin+'/?view=knowledge');await settings.waitFor();await settings.getByRole('alert').filter({hasText:'méthodes intégrées'}).waitFor();
-  failSkills=false;await settings.getByRole('button',{name:'Réessayer',exact:true}).click();await settings.getByRole('heading',{name:'Réunions, décisions et actions',exact:true}).waitFor();
-  checks.push('The settings library uses the real reviewed registry; keyboard Use only prepares a draft and a catalog failure can be retried');
-  await settings.getByRole('heading',{name:'Compétences',exact:true}).hover();
-  await page.waitForFunction(()=>{const card=document.querySelector('.skill-card');return card&&!card.matches(':hover')&&getComputedStyle(card).backgroundColor==='rgb(40, 41, 43)';});
-  assert.equal(await settings.locator('.skill-card').first().evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(40, 41, 43)');
+  await settings.getByRole('heading',{name:'Aucune compétence ajoutée pour l’instant.',exact:true}).waitFor();
+  assert.equal(await settings.locator('.skill-card').count(),0,'Built-in Braand methods stay internal');
+  for(const name of ['Pilotage opérationnel des publicités','Réunions, décisions et actions'])assert.equal(await settings.getByRole('heading',{name,exact:true}).count(),0);
+  assert.equal(await settings.getByRole('button',{name:'Intégrées',exact:true}).count(),0);
+  await settings.getByRole('button',{name:'Créer avec l’agent',exact:true}).click();await settings.waitFor({state:'hidden'});
+  assert.match(await composer.inputValue(),/Crée une compétence privée/);assert.equal(chatCalls,0,'Creating with the agent only prepares a draft');await composer.fill('');
+  await page.goto(origin+'/?view=knowledge');await settings.waitFor();await settings.getByRole('heading',{name:'Compétences',exact:true}).waitFor();
+  checks.push('Settings list only the workspace’s own skills; built-in methods stay internal and “Créer avec l’agent” prepares a chat draft without execution');
   await capture({path:path.join(output,'design-skills-desktop.png'),fullPage:true});
   const skillChooserPromise=page.waitForEvent('filechooser');await settings.getByRole('button',{name:'Importer une compétence',exact:true}).click();const skillChooser=await skillChooserPromise;
   await skillChooser.setFiles({name:'methode-test-locale.md',mimeType:'text/markdown',buffer:Buffer.from('# Méthode de test locale\nUne méthode strictement fictive.\n## Étapes\n- Lire le contexte\n## Vérifications\n- Demander les preuves')});

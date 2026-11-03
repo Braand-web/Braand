@@ -28,8 +28,15 @@ export function createChatSessions<M,A,S>(){
 }
 
 /** Queue explicit user submissions without bypassing server concurrency or making retries. */
-export function createChatQueue(limit=3){
- let active=false;const waiting:{signal:AbortSignal;resolve:(release:()=>void)=>void;reject:(error:Error)=>void;abort:()=>void}[]=[];
- const drain=()=>{if(active)return;const next=waiting.shift();if(!next)return;next.signal.removeEventListener('abort',next.abort);if(next.signal.aborted){next.reject(new DOMException('Stopped','AbortError'));drain();return;}active=true;let released=false;next.resolve(()=>{if(released)return;released=true;active=false;drain();});};
- return {acquire(signal:AbortSignal):Promise<()=>void>{if(signal.aborted)return Promise.reject(new DOMException('Stopped','AbortError'));if(waiting.length+(active?1:0)>=limit)return Promise.reject(new Error('Trois demandes sont déjà en cours ou en attente.'));return new Promise((resolve,reject)=>{const item={signal,resolve,reject,abort:()=>{const i=waiting.indexOf(item);if(i>=0)waiting.splice(i,1);reject(new DOMException('Stopped','AbortError'));}};signal.addEventListener('abort',item.abort,{once:true});waiting.push(item);drain();});}};
+// Parallel conversations follow the plan's concurrency (the server enforces the
+// same limit). Extra explicit requests wait in order; at most `waitingLimit`
+// may wait so a burst of clicks cannot queue unbounded work.
+export function createChatQueue(waitingLimit=2,initialParallel=1){
+ let parallel=Math.max(1,initialParallel),active=0;const waiting:{signal:AbortSignal;resolve:(release:()=>void)=>void;reject:(error:Error)=>void;abort:()=>void}[]=[];
+ const drain=()=>{while(active<parallel){const next=waiting.shift();if(!next)return;next.signal.removeEventListener('abort',next.abort);if(next.signal.aborted){next.reject(new DOMException('Stopped','AbortError'));continue;}active++;let released=false;next.resolve(()=>{if(released)return;released=true;active--;drain();});}};
+ return {
+  get parallel(){return parallel;},
+  setParallel(value:number){parallel=Math.max(1,Math.min(10,Math.floor(value)||1));drain();},
+  acquire(signal:AbortSignal):Promise<()=>void>{if(signal.aborted)return Promise.reject(new DOMException('Stopped','AbortError'));if(active>=parallel&&waiting.length>=waitingLimit)return Promise.reject(new Error(parallel>1?'Toutes vos réponses simultanées sont occupées et deux demandes attendent déjà.':'Une réponse est en cours et deux demandes attendent déjà.'));return new Promise((resolve,reject)=>{const item={signal,resolve,reject,abort:()=>{const i=waiting.indexOf(item);if(i>=0)waiting.splice(i,1);reject(new DOMException('Stopped','AbortError'));}};signal.addEventListener('abort',item.abort,{once:true});waiting.push(item);drain();});},
+ };
 }
