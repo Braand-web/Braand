@@ -2,6 +2,20 @@
 // Inputs are rebuilt from fal's own OpenAPI schema on the release runner; a
 // model whose schema is missing, unbounded or differs is skipped, never guessed.
 export const CANDIDATES=[
+ {id:'google/gemini-omni-flash',name:'Omni Flash',kind:'video',tasks:['video_short','video_narrative']},
+ {id:'google/gemini-omni-flash/reference-to-video',name:'Omni Flash (référence)',kind:'video',tasks:['video_reference','video_from_image']},
+ {id:'google/gemini-omni-flash/image-to-video',name:'Omni Flash (image)',kind:'video',tasks:['video_from_image']},
+ {id:'google/nano-banana-2.1',name:'Nano Banana 2.1',kind:'image',tasks:['image']},
+ {id:'google/nano-banana-2.1/edit',name:'Nano Banana 2.1 Retouche',kind:'image',tasks:['image_edit']},
+ {id:'bytedance/seedance-2.5/text-to-video',name:'Seedance 2.5',kind:'video',tasks:['video_narrative']},
+ {id:'bytedance/seedance-2.5/image-to-video',name:'Seedance 2.5 (image)',kind:'video',tasks:['video_from_image']},
+ {id:'bytedance/seedance-2.5/reference-to-video',name:'Seedance 2.5 (référence)',kind:'video',tasks:['video_reference']},
+ {id:'bytedance/seedance-2.0/fast/text-to-video',name:'Seedance 2.0 Fast',kind:'video',tasks:['video_short']},
+ {id:'openai/sora-2/text-to-video',name:'Sora 2',kind:'video',tasks:['video_narrative','video_short']},
+ {id:'openai/sora-2/image-to-video',name:'Sora 2 (image)',kind:'video',tasks:['video_from_image','video_reference']},
+ {id:'openai/sora-2/text-to-video/pro',name:'Sora 2 Pro',kind:'video',tasks:['video_narrative']},
+ {id:'google/imagen-4',name:'Imagen 4',kind:'image',tasks:['image_precision']},
+ {id:'google/imagen-4/ultra',name:'Imagen 4 Ultra',kind:'image',tasks:['image_precision']},
  {id:'fal-ai/nano-banana',name:'Nano Banana',kind:'image',tasks:['image']},
  {id:'fal-ai/nano-banana/edit',name:'Nano Banana Retouche',kind:'image',tasks:['image_edit']},
  {id:'fal-ai/bytedance/seedream/v4/text-to-image',name:'Seedream 4',kind:'image',tasks:['image']},

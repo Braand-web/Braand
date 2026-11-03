@@ -8,6 +8,7 @@ import {AppError} from './core.mjs';
 import {FX_REFERENCE_URL,parseBEACReference} from './model-rate-sources.mjs';
 import {FAL_PRICE_URL} from './fal-rate-refresh';
 import {MEDIA_TASKS} from './media-routing.mjs';
+import {FAL_APPROVED_MODELS} from './fal-approved.generated.mjs';
 
 type Bucket={get(key:string):Promise<{text():Promise<string>;size:number}|null>;put(key:string,value:string):Promise<unknown>};
 type Bindings=Record<string,unknown>&{BUCKET?:Bucket;FAL_KEY?:string};
@@ -26,7 +27,7 @@ export const approvedModelSchema=z.object({
  approvedAt:z.string().datetime(),approvedBy:z.string().max(160),quote:quoteSchema.optional(),
 });
 export type ApprovedModel=z.infer<typeof approvedModelSchema>;
-const storeSchema=z.object({version:z.literal(1),items:z.array(approvedModelSchema).max(40)});
+const storeSchema=z.object({version:z.literal(1),items:z.array(approvedModelSchema).max(60)});
 
 let cache:{items:ApprovedModel[];loadedAt:number;inFlight?:Promise<void>}={items:[],loadedAt:0};
 
@@ -64,13 +65,19 @@ export async function priceModels(key:string,items:(Pick<ApprovedModel,'id'|'uni
  return quotes;
 }
 
-function configured(env:Bindings){try{return z.array(approvedModelSchema).max(40).parse(JSON.parse(String(env.FAL_APPROVED_MODELS_JSON||'[]')));}catch{return [] as ApprovedModel[];}}
+function configured(env:Bindings){
+ // Release-validated models ship with the code (generated from fal's OpenAPI
+ // schemas by the activation workflow); a variable can add more.
+ const parse=(value:unknown)=>{try{return z.array(approvedModelSchema).max(60).parse(value);}catch{return [] as ApprovedModel[];}};
+ let extra:unknown=[];try{extra=JSON.parse(String(env.FAL_APPROVED_MODELS_JSON||'[]'));}catch{extra=[];}
+ const byId=new Map(parse(FAL_APPROVED_MODELS).map(item=>[item.id,item]));for(const item of parse(extra))byId.set(item.id,item);return [...byId.values()];
+}
 async function load(env:Bindings){
  // Models activated by the operations workflow (FAL_APPROVED_MODELS_JSON) and
  // by the admin page (R2) are merged; the stored entry keeps its latest price.
  const saved=await env.BUCKET?.get(STORE),stored=saved&&saved.size<=262144?storeSchema.parse(JSON.parse(await saved.text())).items:[];
  const byId=new Map(configured(env).map(item=>[item.id,item]));for(const item of stored)byId.set(item.id,{...byId.get(item.id),...item,quote:item.quote});
- return [...byId.values()].slice(0,40);
+ return [...byId.values()].slice(0,60);
 }
 async function store(env:Bindings,items:ApprovedModel[]){if(!env.BUCKET)throw new AppError('Stockage indisponible.',503);await env.BUCKET.put(STORE,JSON.stringify({version:1,items}));cache={items,loadedAt:Date.now()};}
 
@@ -114,7 +121,7 @@ export async function approveFalModel(env:Bindings,adminId:string,raw:unknown){
  const quote=(await priceModels(String(env.FAL_KEY),[item])).get(item.id);
  if(!quote)throw new AppError('Prix introuvable ou unité différente chez fal pour ce modèle. Vérifiez l’unité et le maximum.',409,'fal_price_unavailable');
  const items=(await load(env)).filter(existing=>existing.id!==item.id);
- if(items.length>=40)throw new AppError('Catalogue complet (40 modèles). Retirez un modèle d’abord.',409);
+ if(items.length>=60)throw new AppError('Catalogue complet (60 modèles). Retirez un modèle d’abord.',409);
  const approved={...item,approvedAt:new Date().toISOString(),approvedBy:adminId,quote};
  await store(env,[...items,approved]);return approved;
 }

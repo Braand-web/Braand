@@ -2,17 +2,19 @@ name: Activate fal.ai media generation
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+  actions: write
 concurrency:
-  group: braand-production
+  group: braand-fal-activation
   cancel-in-progress: false
 jobs:
   activate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
       CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +22,14 @@ jobs:
           node-version: 24
       - name: Mark the funded fal.ai account as ready
         run: node scripts/activate-fal.mjs
-      - name: Check production health
+      - name: Rebuild bounded premium models from fal's OpenAPI schemas
+        run: node scripts/build-fal-approved.mjs
+      - name: Commit the model list and redeploy through the verified pipeline
         run: |
-          sleep 10
-          curl --fail --silent --show-error https://braand.fun/api/health
+          if git diff --quiet -- lib/fal-approved.generated.mjs; then echo "Model list unchanged"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/fal-approved.generated.mjs
+          git commit -m "Refresh validated fal.ai models from their OpenAPI schemas"
+          git push origin HEAD:main
+          gh workflow run ci.yml --ref main
