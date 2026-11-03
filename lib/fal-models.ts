@@ -128,3 +128,25 @@ export async function approveFalModel(env:Bindings,adminId:string,raw:unknown){
  await store(env,[...items,approved]);return approved;
 }
 export async function removeFalModel(env:Bindings,id:string){const items=await load(env);removedIds.add(id);await store(env,items.filter(item=>item.id!==id));}
+
+/** Enable a fal.ai model immediately, without an administrator: inputs are
+ * rebuilt from fal's OpenAPI schema and bounded, and the model must have a
+ * current fal price for one of its bounded units before it is usable. */
+export async function enableFalModel(env:Bindings,raw:unknown){
+ const p=z.object({endpointId:z.string().regex(/^[a-zA-Z0-9/._-]{1,180}$/),task:z.string().refine(task=>Object.hasOwn(MEDIA_TASKS,task),'Tâche inconnue'),name:z.string().max(120).optional()}).strict().parse(raw);
+ if(!env.FAL_KEY)throw new AppError('fal.ai n’est pas configuré.',503,'fal_not_ready');
+ const known=(await load(env)).find(item=>item.id===p.endpointId&&item.quote&&Date.now()-Date.parse(item.quote.verifiedAt)<=DAY);
+ if(known)return {id:known.id,credits:known.quote!.credits,status:'ready',replayed:true};
+ const response=await fetch('https://fal.ai/api/openapi/queue/openapi.json?endpoint_id='+encodeURIComponent(p.endpointId),{signal:AbortSignal.timeout(20000)});
+ if(!response.ok)throw new AppError('Ce modèle est introuvable sur fal.ai.',404,'fal_model_not_found');
+ const kind=p.task.startsWith('video_')?'video':p.task.startsWith('audio_')?'audio':'image';
+ const {boundedModel}=await import('./fal-bounds.mjs');
+ const built=boundedModel({id:p.endpointId,name:p.name||p.endpointId,kind,tasks:[p.task]},await response.json()) as {skip?:string;model?:Record<string,unknown>};
+ if(built.skip||!built.model)throw new AppError('Ce modèle ne peut pas être utilisé en toute sécurité : '+(built.skip||'schéma inexploitable')+'. Choisis-en un autre.',409,'fal_model_unbounded');
+ const model=approvedModelSchema.omit({quote:true}).parse({...built.model,approvedAt:new Date().toISOString(),approvedBy:'agent'});
+ const quote=(await priceModels(String(env.FAL_KEY),[model])).get(model.id);
+ if(!quote)throw new AppError('Le prix de ce modèle ne peut pas être vérifié chez fal. Choisis-en un autre.',409,'fal_price_unavailable');
+ const items=(await load(env)).filter(item=>item.id!==model.id);removedIds.delete(model.id);
+ await store(env,[...items,{...model,quote}].slice(-60));
+ return {id:model.id,credits:quote.credits,status:'ready',inputSchema:model.inputSchema};
+}

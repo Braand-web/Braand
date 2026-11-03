@@ -14,7 +14,8 @@ const today=new Date(),date=[today.getUTCDate(),today.getUTCMonth()+1,today.getU
 const beac=`USD/XAF</span></div></div><div id="middle"> 582.5503 </div><div id="right"> 600 </div><p>Date de valeur : ${date}</p>`;
 let price=0.05;const calls=[];
 globalThis.fetch=async url=>{const href=String(url);calls.push(href);
- if(href.startsWith('https://api.fal.ai/v1/models/pricing'))return Response.json({prices:[{endpoint_id:'fal-ai/clarity-upscaler',unit_price:price,unit:'images',currency:'USD'}]});
+ if(href.startsWith('https://api.fal.ai/v1/models/pricing')){const ids=new URL(href).searchParams.getAll('endpoint_id');return Response.json({prices:ids.filter(id=>id!=='fal-ai/unpriced').map(id=>({endpoint_id:id,unit_price:id==='fal-ai/clarity-upscaler'?price:0.04,unit:'images',currency:'USD'}))});}
+ if(href.startsWith('https://fal.ai/api/openapi/'))return Response.json({paths:{'/m':{post:{requestBody:{content:{'application/json':{schema:{type:'object',required:href.includes('unbounded')?['prompt','loras']:['prompt'],properties:{prompt:{type:'string'},aspect_ratio:{type:'string',enum:['1:1','9:16']},loras:{type:'array'}}}}}}}}}});
  if(href.startsWith('https://api.fal.ai/v1/models'))return Response.json({models:[{endpoint_id:'fal-ai/clarity-upscaler',metadata:{display_name:'Clarity Upscaler',category:'image-to-image',description:'Upscale images'}}]});
  if(href==='https://www.beac.int/')return new Response(beac);
  throw Error('Unexpected '+href);};
@@ -41,4 +42,10 @@ const clarity=()=>models.approvedModels().find(model=>model.id==='fal-ai/clarity
 assert.equal(clarity().quote.credits,15);
 const before=models.approvedModels().length;await models.removeFalModel(env,'fal-ai/clarity-upscaler');assert.equal(clarity(),undefined,'Removal also hides a model shipped with the code');assert.equal(models.approvedModels().length,before-1);
 await models.ensureApprovedFalModels(env,Date.now()+20*3600000);assert.equal(clarity(),undefined,'Removal survives a reload');
-console.log('PASS fal models: discovery with prices, admin approval priced from fal and BEAC, catalog merge, fail-closed and repriced quotes');
+// Agents enable a discovered model themselves: bounded from fal's schema, priced live, usable at once.
+const enabled=await models.enableFalModel(env,{endpointId:'fal-ai/new-image-model',task:'image'});
+assert.equal(enabled.status,'ready');assert.ok(enabled.credits>0);assert.deepEqual(Object.keys(enabled.inputSchema.properties).sort(),['aspect_ratio','prompt']);
+assert.ok(models.approvedCatalogItems().some(item=>item.id==='fal-ai/new-image-model'),'Immediately in the usable catalog');
+await assert.rejects(models.enableFalModel(env,{endpointId:'fal-ai/unbounded-model',task:'image'}),/en toute sécurité/);
+await assert.rejects(models.enableFalModel(env,{endpointId:'fal-ai/unpriced',task:'image'}),/prix de ce modèle/);
+console.log('PASS fal models: agents enable bounded, live-priced models without an administrator; discovery with prices, admin approval priced from fal and BEAC, catalog merge, fail-closed and repriced quotes');
