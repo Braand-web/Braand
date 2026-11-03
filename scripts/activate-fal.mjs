@@ -20,7 +20,6 @@ if(packed){
  bindings=settings.bindings.filter(binding=>!['FAL_GENERATION_ENABLED','FAL_ACCOUNT_STATUS'].includes(binding.name));
  bindings.push({type:'plain_text',name:'FAL_GENERATION_ENABLED',text:'true'},{type:'plain_text',name:'FAL_ACCOUNT_STATUS',text:'ready'});
 }
-const approved=[];
 const form=new FormData();form.set('settings',JSON.stringify({bindings}));
 await api('/workers/scripts/'+script+'/settings','PATCH',form);
 const after=await api('/workers/scripts/'+script+'/settings');
