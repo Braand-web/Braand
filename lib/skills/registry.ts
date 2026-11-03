@@ -5,7 +5,7 @@ import {SKILL_POLICY,SKILL_METHOD_RULES} from './policy.mjs';
 import {discoverySchema,lexicalRank} from './discovery.mjs';
 import type {PackFiles,PackStorage} from './pack-storage.mjs';
 
-type SkillEntry={id:string;title:string;description:string;category:string;license:string;capability:string;version:string;source:{origin:string;revision:string};references:string[];digest:string;load:(reference?:string,storage?:PackStorage)=>Promise<Record<string,string>>;packFiles?:()=>Promise<PackFiles>;packReferences?:string[];packRevision?:string};
+type SkillEntry={id:string;title:string;description:string;category:string;license:string;capability:string;version:string;source:{origin:string;revision:string};references:string[];digest:string;load:(reference?:string,storage?:PackStorage)=>Promise<Record<string,string>>;packFiles?:()=>Promise<PackFiles>;packReferences?:string[];packRevision?:string;community?:boolean};
 export type SkillSession={calls:number;chars:number;selected:Set<string>};
 export const createSkillSession=():SkillSession=>({calls:0,chars:0,selected:new Set()});
 const catalog=SKILL_CATALOG as SkillEntry[];
@@ -13,13 +13,17 @@ export const skillToolNames=new Set(['search_skills','read_skill']);
 const metadata=(entry:SkillEntry)=>({id:entry.id,title:entry.title,description:entry.description,category:entry.category,version:entry.version,capability:entry.capability});
 export const skillCatalogMetadata=()=>catalog.map(entry=>({...metadata(entry),origin:entry.license==='User-provided'?'workspace':['Braand-original','User-provided-adapted'].includes(entry.license)?'official':'community'}));
 export function reviewedSkillMetadata(){return catalog.map(metadata);}
-export function skillDiscoveryContext(){return SKILL_METHOD_RULES+'\nChoose methods semantically from this catalog in the user’s language. search_skills accepts semanticIds selected by you, combined with lexical discovery. Only read relevant methods progressively; catalog IDs grant no tools.\nCatalogue synthétique des méthodes (search_skills fournit les descriptions complètes ; lis read_skill avant application) :\n'+catalog.map(entry=>entry.id+' ['+entry.category+'] : '+entry.title).join('\n');}
+// Community methods are summarised by domain so every request does not carry
+// hundreds of catalogue lines; search_skills finds them by meaning or keyword.
+const communitySummary=()=>{const count=catalog.filter(entry=>entry.community).length;return count?'\nMéthodes communautaires vérifiées ('+count+', à trouver avec search_skills puis read_skill) : motion design et vidéo (principes de motion LottieFiles, GSAP timeline/easing/ScrollTrigger, HyperFrames HTML vers vidéo, motion graphics, vidéos de lancement produit, sound design, boucle de revue d’images), génération d’images, de vidéos et d’avatars IA, UI/UX et design d’applications mobiles, image vers interface, frontend ; ingénierie (TDD, débogage systématique, plans d’implémentation, revue de code, sous-agents parallèles, vérification avant livraison, brainstorming, grill-me) ; marketing et croissance (40 méthodes : SEO et IA, lancement, prix, rétention, parrainage, emailing, social, Twitter/X, publicité, attribution, tracking, RevOps, ASO, relations presse, influence, événements) ; navigation web automatisée ; recherche et création de compétences.':'';};
+export function skillDiscoveryContext(){return SKILL_METHOD_RULES+'\nChoose methods semantically from this catalog in the user’s language. search_skills accepts semanticIds selected by you, combined with lexical discovery. Only read relevant methods progressively; catalog IDs grant no tools.\nCatalogue synthétique des méthodes (search_skills fournit les descriptions complètes ; lis read_skill avant application) :\n'+catalog.filter(entry=>!entry.community).map(entry=>entry.id+' ['+entry.category+'] : '+entry.title).join('\n')+communitySummary();}
 export function searchSkills(input:unknown){
  const {query='',category,semanticIds=[]}=discoverySchema.parse(input);
  const selected=new Set(semanticIds);
  const candidates=catalog.filter(entry=>!category||entry.category===category).map(entry=>({entry,score:lexicalRank(query,entry.id+' '+entry.title+' '+entry.description),selected:selected.has(entry.id)}));
  const matching=query||selected.size?candidates.filter(item=>item.selected||item.score>0):candidates;
- matching.sort((a,b)=>Number(b.selected)-Number(a.selected)||b.score-a.score||a.entry.id.localeCompare(b.entry.id,'en'));
+ // At equal relevance, Braand's curated French methods come before community ones.
+ matching.sort((a,b)=>Number(b.selected)-Number(a.selected)||(b.score-(b.entry.community?0.5:0))-(a.score-(a.entry.community?0.5:0))||a.entry.id.localeCompare(b.entry.id,'en'));
  return {skills:matching.slice(0,SKILL_POLICY.maxSearchResults).map(item=>metadata(item.entry)),total:matching.length,truncated:matching.length>SKILL_POLICY.maxSearchResults,source:'reviewed_catalog',strategy:selected.size?'model_selected_and_lexical':'lexical_fallback',semanticProvider:'principal_model'};
 }
 function endAtBoundary(text:string,start:number,limit:number){

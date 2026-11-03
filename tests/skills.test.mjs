@@ -93,7 +93,7 @@ test('adapted methods support model-led multilingual selection and progressive r
 
 test('settings metadata matches the reviewed registry and rejects private prose or extra executable fields',()=>{
  const skills=reviewedSkillMetadata();const dto=reviewedSkillCatalogSchema.parse({skills});
- assert.equal(dto.skills.length,166);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,166);
+ assert.equal(dto.skills.length,292);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,292);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],content:'private instructions'}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],tools:['shell']}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],id:'../unreviewed'}]}).success,false);
@@ -134,4 +134,25 @@ test('video methods expose reviewed references and templates, with no executable
  for(const reference of ['scripts/build_timeline.py','INSTALL.md','assets/remotion-starter/package.json'])
   await assert.rejects(()=>readSkill({id:'video-motion-studio',reference},session),error=>error.code==='skill_not_found');
  const publicResult=publicSkillResult('read_skill',entry);assert.equal('provenance' in publicResult,false);assert.equal('content' in publicResult,false);
+});
+
+test('community skills are pinned, hash-verified, searchable and summarised instead of listed in every prompt',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const verified=spawnSync(process.execPath,['scripts/import-community-skills.mjs','--verify'],{encoding:'utf8'});assert.equal(verified.status,0,verified.stderr);assert.match(verified.stdout,/Verified 122 community skills/);
+ const community=reviewedSkillMetadata().filter(skill=>['motion-design','gsap-timeline','systematic-debugging','brainstorming','grill-me','hyperframes','image-to-ui','design-mobile-apps','ai-video-generation','find-skills'].includes(skill.id));
+ assert.equal(community.length,10);
+ const discovery=skillDiscoveryContext();assert.match(discovery,/Méthodes communautaires vérifiées \(122/);assert.ok(!discovery.includes('gsap-timeline ['));assert.ok(discovery.length<16000);
+ const found=searchSkills({query:'GSAP timeline easing'});assert.ok(found.skills.some(skill=>skill.id.startsWith('gsap')));
+ const motion=searchSkills({query:'motion design animation principles'});assert.ok(motion.skills.some(skill=>/motion/.test(skill.id)));
+ const session=createSkillSession(),read=await readSkill({id:'systematic-debugging'},session);assert.match(read.content,/debug/i);assert.equal(read.provenance.origin,'https://github.com/obra/superpowers');assert.equal(read.provenance.license,'MIT');
+});
+
+test('Braand adds its own campaign, motion, editing and orchestration methods and lists them in discovery',async()=>{
+ const discovery=skillDiscoveryContext();
+ for(const id of ['braand-brief-to-campaign','braand-motion-production','braand-video-editing','braand-subagent-orchestration']){
+  assert.ok(discovery.includes(id),id);
+  const read=await readSkill({id},createSkillSession());assert.equal(read.provenance.origin,'Braand');assert.ok(read.content.startsWith('---\nname: '+id+'\n'));
+ }
+ assert.ok(searchSkills({query:'monter vidéo rushs sous-titres'}).skills.some(skill=>skill.id==='braand-video-editing'));
+ assert.ok(searchSkills({query:'sous-agents nommés parallèle'}).skills.some(skill=>skill.id==='braand-subagent-orchestration'));
 });
