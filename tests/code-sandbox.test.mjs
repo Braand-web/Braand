@@ -83,3 +83,30 @@ test('sandbox deployment manifest is isolated, disabled and offline by default',
  assert.equal(sandboxDeploymentConfig('production',{BRAAND_PRODUCTION_CODE_SANDBOX_INTERNET:'true'},'/braand').vars.CODE_SANDBOX_INTERNET,'true');
  assert.throws(()=>sandboxDeploymentConfig('dev',{},'/braand'));assert.throws(()=>sandboxDeploymentConfig('staging',{BRAAND_STAGING_CODE_SANDBOX_INSTANCE:'huge'},'/braand'));
 });
+
+test('binary transfers deliver rendered media and accept uploads with type, size and path limits',async()=>{
+ const written=new Map(),backend={async exec(){return {exitCode:0,stdout:'',stderr:''};},async writeFile(){},async readFile(){return '';},async list(){return [];},async reset(){},
+  async size(path){return path.endsWith('empty.mp4')?0:path.endsWith('huge.mp4')?SANDBOX_LIMITS.transferBytes+1:4;},
+  async readBinary(){return new Blob([new Uint8Array([1,2,3,4])]).stream();},
+  async writeBinary(path,body){written.set(path,new Uint8Array(await new Response(body).arrayBuffer()));}};
+ const post=(route,body,headers={})=>handleSandboxRequest(new Request('https://sandbox.internal'+route,{method:'POST',headers:{authorization:'Bearer '+token,'x-sandbox-name':name,...headers},body}),env,()=>backend);
+ const video=await post('/download?path=out/promo.mp4');assert.equal(video.status,200);assert.equal(video.headers.get('content-type'),'video/mp4');assert.deepEqual([...new Uint8Array(await video.arrayBuffer())],[1,2,3,4]);
+ assert.equal((await post('/download?path=out/script.sh')).status,400);
+ assert.equal((await post('/download?path=../etc/passwd.mp4')).status,400);
+ assert.equal((await post('/download?path=out/empty.mp4')).status,422);
+ assert.equal((await post('/download?path=out/huge.mp4')).status,413);
+ const uploaded=await post('/upload?path=rushes/clip.mp4',new Uint8Array([9,8,7]),{'content-length':'3'});assert.equal(uploaded.status,200);assert.deepEqual([...written.get('/workspace/rushes/clip.mp4')],[9,8,7]);
+ assert.equal((await post('/upload?path=rushes/clip.mp4',new Uint8Array([1]),{'content-length':String(SANDBOX_LIMITS.transferBytes+1)})).status,413);
+ assert.equal((await handleSandboxRequest(new Request('https://sandbox.internal/download?path=out/promo.mp4',{method:'POST',headers:{authorization:'Bearer wrong','x-sandbox-name':name}}),env,()=>backend)).status,403);
+});
+
+test('render_motion builds a quoted renderer command with a bounded timeout',async()=>{
+ const requests=[];const fetcher={fetch:async(url,init)=>{requests.push(JSON.parse(init.body));return Response.json({exitCode:0,durationMs:30000});}};
+ const session=await codeSandboxSession('t','motion');
+ await runCodeSandboxTool({CODE_SANDBOX:fetcher,...env},session,'render_motion',{input:"it's.html",output:'out/a.mp4',durationSeconds:10,fps:30,width:1080,height:1350});
+ assert.equal(requests[0].command,"render-motion --input 'it'\\''s.html' --output 'out/a.mp4' --width 1080 --height 1350 --fps 30 --duration 10 --quality high");
+ assert.ok(requests[0].timeoutSeconds>=60&&requests[0].timeoutSeconds<=300);
+ await assert.rejects(()=>runCodeSandboxTool({CODE_SANDBOX:fetcher,...env},session,'render_motion',{input:'a.html',output:'a.mov',durationSeconds:5}));
+ await assert.rejects(()=>runCodeSandboxTool({CODE_SANDBOX:fetcher,...env},session,'render_motion',{input:'a.html',output:'a.mp4',durationSeconds:5,width:1081}));
+ await assert.rejects(()=>runCodeSandboxTool({CODE_SANDBOX:fetcher,...env},session,'code_export_file',{path:'out/a.mp4'}),e=>e.code==='sandbox_storage_unavailable');
+});

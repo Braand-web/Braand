@@ -6,14 +6,18 @@ import type {Resource} from './contracts';
 
 // One private persistence path for native report, data and source exports.
 // No generated file is served as executable application content.
-export async function saveGeneratedFile(who:BillingIdentity,input:{source:Resource;name:string;mime:string;format:string;bytes:Uint8Array;audit?:string}){
+// Rendered media (video, images, audio, subtitles) from the code sandbox use a
+// larger, explicit limit and their own allowlist.
+export const MEDIA_EXPORT=Object.freeze({maxBytes:100*1024*1024,mimes:['video/mp4','video/webm','video/quicktime','image/gif','image/png','image/jpeg','image/webp','audio/mpeg','audio/wav','audio/mp4','text/vtt']});
+export async function saveGeneratedFile(who:BillingIdentity,input:{source:Resource;name:string;mime:string;format:string;bytes:Uint8Array;audit?:string;media?:boolean}){
  await authorize(who.tenant,who.user.userId,'write');
  const current=await getResource(who.tenant,input.source.id);
  if(current.workspace_id!==who.tenant||current.status==='deleted'||current.version!==input.source.version)throw new AppError('La source a changé. Actualisez avant de l’exporter.',409,'stale_version');
  const bucket=config().BUCKET;if(!bucket)throw new AppError('Stockage des fichiers indisponible.',503);
- if(!input.bytes.length||input.bytes.length>2*1024*1024)throw new AppError('Ce fichier généré dépasse 2 Mio.',413,'generated_file_limit');
+ const maxBytes=input.media?MEDIA_EXPORT.maxBytes:2*1024*1024;
+ if(!input.bytes.length||input.bytes.length>maxBytes)throw new AppError(input.media?'Ce rendu dépasse 100 Mio.':'Ce fichier généré dépasse 2 Mio.',413,'generated_file_limit');
  const name=safeFilename(input.name),mime=input.mime;
- if(!['text/plain','application/zip','application/json','application/pdf',...Object.values({docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation'})].includes(mime))throw new AppError('Type de fichier généré non autorisé.',400);
+ if(!(input.media&&MEDIA_EXPORT.mimes.includes(mime))&&!['text/plain','application/zip','application/json','application/pdf',...Object.values({docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation'})].includes(mime))throw new AppError('Type de fichier généré non autorisé.',400);
  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',input.bytes.slice().buffer as ArrayBuffer)),n=>n.toString(16).padStart(2,'0')).join('');
  const duplicate=()=>db().prepare("SELECT id FROM files WHERE workspace_id=? AND sha256=? AND status='ready'").bind(who.tenant,hash).first<{id:string}>();
  const existing=await duplicate();if(existing)return getClientResource(who.tenant,existing.id);

@@ -57,6 +57,28 @@ await check('project search isolates memory and explicit cross-project reuse ret
  await assert.rejects(()=>context.searchProjectContext(who.tenant,scope,{query:'Stratégie',projectId:a.id}),e=>e.status===403);
  const borrowed=await context.searchProjectContext(who.tenant,{...scope,referenceProjectIds:[a.id]},{query:'Stratégie',projectId:a.id});assert.equal(borrowed.methodOnly,true);assert.equal(borrowed.items[0].sourceProjectId,a.id);assert.doesNotMatch(JSON.stringify(borrowed),/CONFIDENTIAL/);assert.deepEqual(borrowed.messages,[]);
 });
+await check('the creative specialist composes motion design, renders it in the sandbox and delivers a downloadable MP4 to the library',async()=>{
+ const calls=[],stored=new Map(),mp4=new Uint8Array([0,0,0,24,102,116,121,112,105,115,111,109,0,0,2,0,105,115,111,109,105,115,111,50]);
+ fixture.env.BUCKET={put:async(key,bytes)=>{stored.set(key,bytes);},get:async key=>stored.has(key)?{body:new Blob([stored.get(key)]).stream()}:null,delete:async key=>{stored.delete(key);}};
+ fixture.env.CODE_SANDBOX={fetch:async(url,init)=>{const u=new URL(url);calls.push({op:u.pathname.slice(1),path:u.searchParams.get('path'),body:init.body&&typeof init.body==='string'?JSON.parse(init.body):null});if(u.pathname==='/download')return new Response(mp4,{headers:{'content-type':'video/mp4','content-length':String(mp4.length)}});if(u.pathname==='/exec')return Response.json({exitCode:0,timedOut:false,durationMs:42000,stdout:'{"format":"mp4"}',stderr:'',truncated:false});return Response.json({path:'/workspace/scene.html',bytes:10});}};
+ fixture.env.CODE_SANDBOX_ENABLED='true';fixture.env.CODE_SANDBOX_CALL_TOKEN='m'.repeat(40);
+ try{
+  const execution=await setup();
+  fixture.responses=[
+   stream([{type:'tool_use',id:'w',name:'code_write_file',input:{path:'scene.html',content:'<html><body style="width:1080px;height:1920px"></body></html>'}}]),
+   stream([{type:'tool_use',id:'r',name:'render_motion',input:{input:'scene.html',output:'out/promo.mp4',width:1080,height:1920,fps:30,durationSeconds:8}}]),
+   stream([{type:'tool_use',id:'e',name:'code_export_file',input:{path:'out/promo.mp4',title:'Promo produit 9:16'}}]),
+   text('Vidéo 9:16 de 8 s livrée dans votre bibliothèque.'),
+  ];
+  const result=await agent.runSpecialist(who.tenant,execution.runId,{role:'creative',task:'Motion design produit 9:16',context:'Brief fourni'},emit,signal(),execution.budget);
+  assert.equal(result.status,'report_ready');
+  const first=fixture.requests[0];assert.equal(first.body.max_tokens,8192);assert.ok(first.body.tools.some(t=>t.name==='render_motion')&&first.body.tools.some(t=>t.name==='code_export_file'));assert.match(first.body.system,/MOTION DESIGN/);
+  const exec=calls.find(c=>c.op==='exec');assert.match(exec.body.command,/^render-motion --input 'scene.html' --output 'out\/promo.mp4' --width 1080 --height 1920 --fps 30 --duration 8 --quality high$/);assert.ok(exec.body.timeoutSeconds>=60&&exec.body.timeoutSeconds<=300);
+  const file=(await server.list(who.tenant,'file')).find(f=>f.title==='Promo_produit_9_16.mp4');
+  assert.ok(file,'rendered file saved in the library');assert.equal(file.data.mime,'video/mp4');assert.equal(file.data.size,mp4.length);assert.equal(stored.size,1);
+  const shown=fixture.events.find(e=>e.type==='tool_result'&&e.data.name==='code_export_file');assert.equal(shown.data.result.kind,'file');
+ }finally{delete fixture.env.CODE_SANDBOX;delete fixture.env.CODE_SANDBOX_ENABLED;delete fixture.env.CODE_SANDBOX_CALL_TOKEN;delete fixture.env.BUCKET;}
+});
 await check('conversation-first reads answer campaigns and activity in chat and offer a contextual view without any mutation',async()=>{
  const execution=await setup();
  await server.createResource(who.tenant,'campaign','Noël',{objective:'sales',country:'Cameroun',currency:'XAF',dailyBudget:5000,destination:'https://exemple.test',message:'m',tracking:'t',projectId:null},'draft');
@@ -446,7 +468,7 @@ await check('the coding specialist writes, runs, fixes and re-runs code in its i
   ];
   const result=await specialist(execution,'coding'),first=fixture.requests[0];
   assert.equal(first.routing.task,'coding');assert.equal(first.body.max_tokens,8192);
-  assert.deepEqual(first.body.tools.map(tool=>tool.name),['search_skills','read_skill','search_workspace','code_run','code_write_file','code_read_file','code_list_files','code_reset']);
+  assert.deepEqual(first.body.tools.map(tool=>tool.name),['search_skills','read_skill','search_workspace','code_run','code_write_file','code_read_file','code_list_files','render_motion','code_import_file','code_export_file','code_reset']);
   assert.match(first.body.system,/BAC À SABLE/);
   assert.deepEqual(sandboxCalls.map(call=>call.operation),['write','exec','write','exec']);
   assert.ok(sandboxCalls.every(call=>/^[a-f0-9]{40}$/.test(call.name)&&call.name===sandboxCalls[0].name&&call.auth==='Bearer '+'s'.repeat(40)));

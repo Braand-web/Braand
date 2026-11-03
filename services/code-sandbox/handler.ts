@@ -12,7 +12,10 @@ export const SANDBOX_LIMITS=Object.freeze({
  fileBytes:512*1024,
  readChars:60000,
  listEntries:500,
+ transferBytes:200*1024*1024,
 });
+export const MEDIA_TYPES:Record<string,string>={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm',gif:'image/gif',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',mp3:'audio/mpeg',wav:'audio/wav',m4a:'audio/mp4',srt:'text/plain',vtt:'text/vtt',pdf:'application/pdf',zip:'application/zip',json:'application/json',txt:'text/plain',md:'text/plain',csv:'text/plain',html:'text/plain'};
+export const mediaType=(path:string)=>MEDIA_TYPES[(path.split('.').pop()||'').toLowerCase()];
 
 export type ExecResult={exitCode:number;stdout:string;stderr:string};
 export type ListEntry={name:string;type:string};
@@ -22,6 +25,9 @@ export interface SandboxBackend{
  readFile(path:string):Promise<string>;
  list(path:string):Promise<ListEntry[]>;
  reset():Promise<void>;
+ size(path:string):Promise<number>;
+ readBinary(path:string):Promise<ReadableStream<Uint8Array>|null>;
+ writeBinary(path:string,body:ReadableStream<Uint8Array>):Promise<void>;
 }
 export interface SandboxPolicyEnv{CODE_SANDBOX_ENABLED?:string;CODE_SANDBOX_CALL_TOKEN?:string}
 
@@ -64,6 +70,28 @@ export async function handleSandboxRequest(request:Request,env:SandboxPolicyEnv,
  if(url.hostname!=='sandbox.internal'||request.method!=='POST'||request.headers.get('authorization')!=='Bearer '+token)return json({code:'sandbox_denied'},403);
  const name=request.headers.get('x-sandbox-name')||'';
  if(!SANDBOX_NAME.test(name))return json({code:'sandbox_denied'},403);
+ const binary=url.pathname==='/download'||url.pathname==='/upload';
+ if(binary){
+  const path=workspacePath(url.searchParams.get('path')||'');
+  if(!path)return json({code:'sandbox_input_invalid',issues:['path_outside_workspace']},400);
+  const type=mediaType(path);if(!type)return json({code:'sandbox_input_invalid',issues:['file_type_not_allowed']},400);
+  const backend=backendFor(name);
+  try{
+   if(url.pathname==='/download'){
+    const size=await backend.size(path);if(size<=0)return json({code:'sandbox_file_error',errno:'EEMPTY'},422);if(size>SANDBOX_LIMITS.transferBytes)return json({code:'sandbox_input_too_large'},413);
+    const body=await backend.readBinary(path);if(!body)return json({code:'sandbox_file_error',errno:'ENOENT'},422);
+    return new Response(body,{headers:{'content-type':type,'content-length':String(size),'x-sandbox-path':path,'cache-control':'no-store'}});
+   }
+   const length=Number(request.headers.get('content-length')||0);
+   if(!request.body||!Number.isSafeInteger(length)||length<=0||length>SANDBOX_LIMITS.transferBytes)return json({code:'sandbox_input_too_large'},413);
+   await backend.writeBinary(path,request.body);
+   return json({path,bytes:length});
+  }catch(error){
+   const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'?error.code:'';
+   if(/^E[A-Z]+$/.test(code))return json({code:'sandbox_file_error',errno:code},422);
+   return json({code:'sandbox_failed'},502);
+  }
+ }
  const operation=url.pathname.slice(1) as keyof typeof schemas;
  if(!Object.hasOwn(schemas,operation))return json({code:'sandbox_not_found'},404);
  if(Number(request.headers.get('content-length')||0)>SANDBOX_LIMITS.fileBytes*2)return json({code:'sandbox_input_too_large'},413);

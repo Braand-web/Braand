@@ -40,6 +40,24 @@ Worker principal ──(liaison de service CODE_SANDBOX + jeton)──▶ braand
 Les chemins hors de `/workspace` sont refusés. Les commandes sont enveloppées par
 `timeout -k 5`, qui arrête tout l’arbre de processus.
 
+## Vidéo et motion design
+
+L’image contient aussi FFmpeg, Chromium et les polices Inter et Noto (avec emoji). Le spécialiste `creative`
+reçoit le bac à sable en plus du spécialiste `coding`.
+
+| Outil | Rôle |
+| --- | --- |
+| `code_import_file` | Copie un fichier de l’espace (photo produit, logo, rushs, musique) dans `/workspace`, 200 Mio max |
+| `render_motion` | Rend une composition HTML/CSS/JS en MP4 H.264 (yuv420p, faststart) ou en GIF, image par image avec une horloge virtuelle : animations CSS, Web Animations, `requestAnimationFrame` (GSAP, anime.js, canvas). Audio optionnel, normalisé à -14 LUFS |
+| `code_export_file` | Livre un fichier fini dans la Bibliothèque, téléchargeable (100 Mio max pour les médias) et affiché dans la conversation |
+
+Le moteur est `services/code-sandbox/motion/render-motion.mjs` (commande `render-motion` dans l’image). Il a été vérifié
+localement : composition 1080×1920 de 4 s à 30 i/s rendue en MP4 H.264 conforme (`ffprobe`), avec textes décalés,
+dégradé animé et produit piloté par `requestAnimationFrame` capturés aux bons instants. Compter environ 0,3 à 0,5 s
+par image selon l’instance ; `quality: draft` accélère les essais.
+
+Le montage (couper, recadrer, enchaîner, sous-titrer, mixer) passe par `code_run` avec FFmpeg.
+
 ## Limites par réponse
 
 - 60 opérations de bac à sable et 900 secondes de commandes au total (`lib/code-sandbox.ts`).

@@ -49,6 +49,9 @@ export class CodeSandbox extends DurableObject<SandboxEnv> implements SandboxBac
  async readFile(path:string){await this.running();return (await this.files.readFile(path)).text();}
  async list(path:string):Promise<ListEntry[]>{await this.running();return (await this.files.readDirectory(path)).map(entry=>({name:entry.name,type:entry.type}));}
  async reset(){const container=this.container();if(container.running)await container.destroy();}
+ async size(path:string){await this.running();return Number((await this.files.stat(path)).size);}
+ async readBinary(path:string){await this.running();return (await this.files.readFile(path)).body;}
+ async writeBinary(path:string,body:ReadableStream<Uint8Array>){await this.running();const parent=path.slice(0,path.lastIndexOf('/'));if(parent&&parent!==WORKSPACE)await this.files.mkdir(parent,{recursive:true});await this.files.writeFile(path,body);}
  private async running(){
   const container=this.container();
   if(!container.running){
