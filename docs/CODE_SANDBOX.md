@@ -66,10 +66,11 @@ ancienne pour le format de conteneur du SDK 1.0).
    ```sh
    npx wrangler@4.151.3 deploy --config .wrangler/deploy/code-sandbox-staging.json
    ```
-3. Créer un jeton aléatoire d’au moins 32 caractères et le poser sur **les deux** Workers :
+3. Créer un jeton aléatoire d’au moins 32 caractères et le poser sur **les deux** Workers
+   (le Worker principal s’appelle `aira-staging` en staging et `aira-production` en production) :
    ```sh
    npx wrangler secret put CODE_SANDBOX_CALL_TOKEN --name braand-code-sandbox-staging
-   npx wrangler secret put CODE_SANDBOX_CALL_TOKEN --name braand-staging
+   npx wrangler secret put CODE_SANDBOX_CALL_TOKEN --name aira-staging
    ```
 4. Relier le Worker principal : `BRAAND_STAGING_CODE_SANDBOX_SERVICE=braand-code-sandbox-staging`
    puis `npm run cloudflare:config -- staging` et redéployer le Worker principal.
