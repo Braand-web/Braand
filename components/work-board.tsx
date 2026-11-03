@@ -6,6 +6,7 @@ import { WORK_LABELS, type WorkDTO } from '@/lib/platform-contracts';
 import type { Resource } from '@/lib/contracts';
 import './platform.css';
 import {RoutinesPanel} from './routines-panel';
+import {LoadingSkeleton} from "@/components/ds/loading";
 const credits = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
 const active = new Set(['running', 'waiting_approval', 'waiting_external']);
 export function WorkBoard({ conversationId, compact = false, role, ready = true, legacy = [], onAsk, onOpen, title = "Missions", hideSectionTabs = false }: {
@@ -72,7 +73,7 @@ export function WorkBoard({ conversationId, compact = false, role, ready = true,
   {!compact && <header className="platform-heading"><div><h1>{title}</h1><p>Vos objectifs, les livrables et les décisions à prendre.</p></div><div className="platform-actions"><button type="button" className="platform-button" onClick={() => void load()} disabled={loading || !!busy}><RefreshCw size={16} aria-hidden="true"/>Actualiser</button>{canWrite && <button type="button" className="platform-button primary" onClick={() => onAsk('Je souhaite confier un objectif à Braand. Aide-moi à préciser le résultat attendu, puis prépare un travail borné avec des étapes et un plafond de crédits à examiner avant activation.')}>Confier un objectif<ArrowRight size={16} aria-hidden="true"/></button>}</div></header>}
   {error && <div className="platform-notice error" role="alert"><p>{error}</p><button type="button" className="platform-button" onClick={() => void load()}>Réessayer</button></div>}
   {tabs}
-  {!compact && loading && !items.length ? <p className="platform-muted" role="status">Chargement des travaux…</p> : null}
+  {!compact && loading && !items.length ? <LoadingSkeleton label="Chargement des travaux…" shape="list"/> : null}
   {!compact && !loading && !items.length && !legacy.length && <div className="platform-empty"><Clock3 size={28} aria-hidden="true"/><h2>Un objectif. Une suite claire.</h2><p>Confiez un résultat à Braand. Le plan, le budget et les validations resteront consultables ici.</p>{!enabled && <p>Les plans peuvent être préparés. L’exécution en arrière-plan attend sa validation de mise en service.</p>}</div>}
   <div className="platform-work-list">{visible.map(item => {
             const show = expanded === item.id, waiting = item.status === 'waiting_approval';

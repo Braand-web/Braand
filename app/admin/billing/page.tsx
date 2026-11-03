@@ -1,6 +1,7 @@
 "use client";
 import {useState,useEffect,useCallback} from 'react';
 import {api,post} from '../../../lib/client-api';
+import {LoadingSkeleton} from "@/components/ds/loading";
 type Refund={id:string;order_id:string;amount:number;status:string;reason:string};
 type Preview={id:string;amount:number;currency:'XAF';environment:'sandbox'|'live';expiresAt:number;plan:{revokedCredits:number;consumedCredits:number;cancelSubscription:boolean;refundTotal:number}};
 type AdminData={readiness:{checks:Record<string,boolean>};orders:{id:string;organization_id:string;amount:number;status:string}[];usage:{provider:string;role:string;status:string;requests:number;cost:number|null}[];refunds:Refund[];events:{id:string;status:string;attempts:number}[];creditNotes:{id:string;number:string;document:string}[]};
@@ -16,7 +17,7 @@ export default function Administration(){
  return <main className="billing-page" style={{height:'100dvh'}}>
   <header className="billing-heading"><div><h1>Administration financière</h1><p>Accès réservé aux responsables configurés côté serveur.</p></div><button className="button secondary" disabled={busy} onClick={()=>void load()}>Actualiser</button></header>
   {error&&<p className="billing-alert error" role="alert">{error}</p>}{notice&&<p className="billing-alert" role="status">{notice}</p>}
-  {!data&&!error&&<p role="status">Chargement de la facturation…</p>}
+  {!data&&!error&&<LoadingSkeleton label="Chargement de la facturation…" shape="table" count={6}/>}
   {data&&<>
    <h2 className="billing-subtitle">Conditions de lancement</h2>{Object.entries(data.readiness.checks).map(([key,value])=><div className="billing-line" key={key}><span>{key}</span><strong>{value?'Validé':'À vérifier'}</strong></div>)}
    <h2 className="billing-subtitle">Commandes récentes</h2><label className="billing-field">Commande ou organisation<input value={search} onChange={event=>setSearch(event.target.value)}/></label>

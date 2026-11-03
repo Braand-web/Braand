@@ -6,6 +6,7 @@ import {api} from '@/lib/client-api';
 import {userFacingError} from '@/lib/user-facing-errors';
 import {ANALYTICS_DAYS,analyticsCSV,dailyAnalytics,metricChange,summarizeAnalytics,type AnalyticsAccount,type AnalyticsMetric,type AnalyticsMetrics,type AnalyticsReport,type AnalyticsRow} from '@/lib/analytics.mjs';
 import styles from './analytics-dashboard.module.css';
+import {LoadingSkeleton} from "@/components/ds/loading";
 
 const OrganicInsights=lazy(()=>import('./organic-insights'));
 const labels:Record<AnalyticsMetric,string>={spend:'Dépenses',impressions:'Impressions',clicks:'Clics',ctr:'Taux de clic',cpc:'Coût par clic',cpm:'Coût / 1 000 impressions'};
@@ -93,7 +94,7 @@ export default function AnalyticsDashboard({ready,connected,onConnect,onAnalyze,
     </section>
    </>:!activeError&&!accounts.length?<section className={styles.empty}><h2>Aucun compte publicitaire disponible</h2><p>Vérifiez les accès de votre connexion, puis actualisez le tableau de bord.</p><button type="button" className="button secondary" onClick={onConnect}>Vérifier mes connexions</button></section>:null}
   </>}
-<Suspense fallback={<p role="status">Chargement des relevés organiques…</p>}><OrganicInsights ready={ready} onAsk={onAnalyze}/></Suspense>
+<Suspense fallback={<LoadingSkeleton label="Chargement des relevés organiques…" shape="chart"/>}><OrganicInsights ready={ready} onAsk={onAnalyze}/></Suspense>
  </div>;
 }
 

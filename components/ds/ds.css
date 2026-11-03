@@ -169,3 +169,27 @@ select.ds-field-control { appearance: none; padding-right: var(--space-10); back
   .ds-skeleton { animation: none; }
   .ds-spinner { animation-duration: 1.6s; }
 }
+
+/* Skeleton layouts (LoadingSkeleton) */
+.ds-loading { width: 100%; animation: ds-fade var(--duration-base) var(--ease-out) both; }
+.ds-loading-body { display: grid; gap: var(--space-3); }
+.ds-loading .ds-skeleton-text { border-radius: var(--radius-xs); }
+.ds-loading-list, .ds-loading-rows { display: grid; gap: var(--space-2); }
+.ds-loading-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.ds-loading-thumb { width: 40px; height: 40px; flex: none; border-radius: var(--radius-sm); }
+.ds-loading-lines { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
+.ds-loading-pill { width: 64px; height: 24px; flex: none; border-radius: var(--radius-pill); }
+.ds-loading-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.ds-loading-plans { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+.ds-loading-card { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.ds-loading-media { aspect-ratio: 4 / 3; width: 100%; border-radius: var(--radius-sm); margin-bottom: var(--space-1); }
+.ds-loading-plans .ds-loading-media { aspect-ratio: 16 / 7; }
+.ds-loading-kpis { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+.ds-loading-chart { height: 220px; border-radius: var(--radius-md); }
+.ds-loading-document { width: 100%; display: grid; gap: var(--space-3); max-width: 720px; margin: 0 auto; padding: var(--space-6) var(--space-4); }
+.ds-loading-gap { height: var(--space-2); }
+.ds-loading-kv { display: flex; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--color-surface); }
+.ds-loading-kv > :first-child { flex: 0 1 auto; }
+.ds-loading-kv > * { min-width: 0; }
+.ds-loading-kv > .ds-skeleton:nth-child(2) { margin-left: auto; }
+.recent-state-loading { display: grid; gap: var(--space-3); padding: var(--space-2) var(--space-3); }

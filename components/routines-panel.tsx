@@ -5,6 +5,7 @@ import {api,post} from '@/lib/client-api';
 import {ROUTINE_LABELS,type RoutineDTO} from '@/lib/routine-contracts';
 import {WORK_LABELS,type WorkState} from '@/lib/platform-contracts';
 import './routines.css';
+import {LoadingSkeleton} from "@/components/ds/loading";
 const number=(n:number)=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(n);
 const date=(value:number,timezone:string)=>new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short',timeZone:timezone}).format(value);
 export function RoutinesPanel({role,ready,onAsk}:{role?:string;ready:boolean;onAsk:(text:string)=>void}){
@@ -16,7 +17,7 @@ export function RoutinesPanel({role,ready,onAsk}:{role?:string;ready:boolean;onA
     return <section aria-label="Routines" className="routines-panel">
         <div className="platform-actions"><button type="button" className="platform-button" disabled={loading||!!busy} onClick={()=>void load()}><RefreshCw size={16} aria-hidden="true"/>Actualiser</button>{canWrite&&<button type="button" className="platform-button" onClick={()=>onAsk('Je souhaite répéter un travail avec Braand. Définissons le résultat, la fréquence, la première date, le nombre de répétitions et le budget total. Commençons par réaliser et vérifier un premier travail, puis prépare une routine à mon approbation.')}><Repeat2 size={16} aria-hidden="true"/>Préparer une routine</button>}</div>
         {error&&<div className="platform-notice error" role="alert"><p>{error}</p><button type="button" className="platform-button" onClick={()=>void load()}>Réessayer</button></div>}
-        {loading&&!items.length&&<p role="status" className="platform-muted">Chargement des routines…</p>}
+        {loading&&!items.length&&<LoadingSkeleton label="Chargement des routines…" shape="list" count={3}/>}
         {!loading&&!items.length&&!error&&<div className="platform-empty"><Repeat2 size={28} aria-hidden="true"/><h2>Un travail utile, à renouveler.</h2><p>Demandez un bilan, une veille ou un rapport récurrent dans le chat. Après un premier résultat vérifié, examinez ici le calendrier et le plafond de crédits avant de l’activer.</p></div>}
         {!enabled&&<p className="platform-muted">Les brouillons restent disponibles. Le calendrier attend sa validation de mise en service.</p>}
         <div className="platform-work-list">{items.map(item=>{const expanded=open===item.id,approval=['draft','paused','blocked'].includes(item.status),terminal=['completed','cancelled','expired'].includes(item.status);return <article key={item.id} className="platform-work-item">
