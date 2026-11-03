@@ -4,7 +4,7 @@ import {modelRateEnvironment} from './model-rate-refresh';
 import {AppError} from './core.mjs';
 import {modelRateSchema,type ModelRate} from './model-protocol';
 
-export const MODEL_TASKS=['conversation','orchestration','creative','campaigns','extraction','analysis','review','browser','video_motion'] as const;
+export const MODEL_TASKS=['conversation','orchestration','creative','campaigns','extraction','analysis','review','coding','browser','video_motion'] as const;
 export type ModelTask=typeof MODEL_TASKS[number];
 export const MODEL_TIERS=['light','standard','advanced'] as const;
 export type ModelTier=typeof MODEL_TIERS[number];
@@ -20,8 +20,8 @@ export const REASONING_MODELS={
  fable:{provider:'openrouter',model:'anthropic/claude-fable-5.1'},
 } as const;
 export type ModelKey=keyof typeof REASONING_MODELS;
-const taskModel:Record<ModelTask,ModelKey>={conversation:'sol',orchestration:'sol',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'astra',review:'opus',browser:'sonnet',video_motion:'opus'};
-const adaptiveTaskModel:Record<ModelTask,ModelKey>={conversation:'haiku',orchestration:'sonnet',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'opus',review:'opus',browser:'sonnet',video_motion:'opus'};
+const taskModel:Record<ModelTask,ModelKey>={conversation:'sol',orchestration:'sol',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'astra',review:'opus',coding:'opus',browser:'sonnet',video_motion:'opus'};
+const adaptiveTaskModel:Record<ModelTask,ModelKey>={conversation:'haiku',orchestration:'sonnet',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'opus',review:'opus',coding:'opus',browser:'sonnet',video_motion:'opus'};
 const tierModel:Record<ModelTier,ModelKey>={light:'haiku',standard:'sonnet',advanced:'opus'};
 const openRouterModels:Partial<Record<ModelKey,string>>={solpro:'openai/gpt-6.1-sol-pro',terra:'openai/gpt-6.1-terra',fable:'anthropic/claude-fable-5.1',haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5'};
 const routingSchema=z.object({task:z.enum(MODEL_TASKS),modelKey:z.enum(['sol','solpro','terra','fable','haiku','sonnet','astra','opus']).optional(),tier:z.enum(MODEL_TIERS).optional(),escalation:z.object({reason:z.enum(['validation_failed','contradictory_evidence','incomplete_result']),attempt:z.literal(1)}).strict().optional()}).strict();

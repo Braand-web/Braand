@@ -15,6 +15,12 @@ test('event batching preserves first output, Unicode, exact text and boundaries 
 test('event persistence failures are propagated instead of producing a false completion',async()=>{
  const buffered=bufferedAgentEvents(async()=>{throw Error('D1 unavailable');});await assert.rejects(()=>buffered.emit('text_delta',{text:'Partial'}),/D1 unavailable/);await assert.rejects(()=>buffered.emit('done',{}),/D1 unavailable/);
 });
+test('background text flushes keep order and surface a later persistence failure',async()=>{
+ const written=[];let fail=false;const buffered=bufferedAgentEvents(async(type,data)=>{if(fail)throw Error('D1 unavailable');written.push(data.text);},10000,4);
+ await buffered.emit('text_delta',{text:'A'});await buffered.emit('text_delta',{text:'BCDE'});await buffered.emit('text_delta',{text:'FG'});await buffered.flush();
+ assert.equal(written.join(''),'ABCDEFG');
+ fail=true;await buffered.emit('text_delta',{text:'HIJK'});await assert.rejects(()=>buffered.flush(),/D1 unavailable/);await assert.rejects(()=>buffered.emit('done',{}),/D1 unavailable/);
+});
 test('recovery replays only unseen event IDs and never submits another generation',async()=>{
  const calls=[];const initial=stream(frame(1,'run',{runId:'r'})+frame(2,'text_delta',{text:'Bon'}));
  const events=[];for await(const event of recoverChatEvents(initial,async(id,after)=>{calls.push({id,after});return {run:{status:'completed'},events:[{seq:2,type:'text_delta',data:{text:'Bon'}},{seq:3,type:'text_delta',data:{text:'jour'}},{seq:4,type:'done',data:{runId:id}}]};},new AbortController().signal))events.push(event);

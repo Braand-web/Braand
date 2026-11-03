@@ -266,7 +266,7 @@ export default function Studio(){
   responseInFlight.current=true;setError("");shouldFollowMessages.current=true;setShowLatest(false);const text=draft.trim(),sentAttachments=attachments,attached=sentAttachments.map(a=>a.id);setBusy(true);setActivity("Connexion au modèle");controller.current=new AbortController();let started=false,confirmedDone=false;const assistantId=crypto.randomUUID();setResponseStatus(startAgentStatus(assistantId));
   let streamText="",streamFlushTimer:ReturnType<typeof setTimeout>|null=null,release:(()=>void)|undefined;
   const flushStreamText=()=>{if(streamFlushTimer!==null)clearTimeout(streamFlushTimer);streamFlushTimer=null;const chunk=streamText;streamText="";if(chunk)setMessages(current=>current.map(message=>message.id===assistantId?{...message,text:message.text+chunk}:message));};
-  const queueStreamText=(_id:string,chunk:string)=>{streamText+=chunk;if(streamFlushTimer===null)streamFlushTimer=setTimeout(flushStreamText,40);};
+  const queueStreamText=(_id:string,chunk:string)=>{streamText+=chunk;if(streamFlushTimer===null)streamFlushTimer=setTimeout(flushStreamText,24);};
   flushRef.current=flushStreamText;void draftStore.clear();setDraft("");setAttachments([]);
   try{
     setActivity("Demande en attente");release=await chat.queue.acquire(controller.current.signal);setActivity("Connexion au modèle");

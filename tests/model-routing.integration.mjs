@@ -53,13 +53,13 @@ async function budget(credits=500){sql.prepare("UPDATE runs SET status='partial'
 const rows=b=>sql.prepare('SELECT * FROM provider_usage WHERE hold_id=? ORDER BY rowid').all(b.holdId);
 const check=async(name,fn)=>{await fn();console.log('PASS '+name);};
 await check('server-owned task routing selects all requested exact models and rejects invented routing inputs',async()=>{
- const expected={conversation:'sol',orchestration:'sol',extraction:'haiku',creative:'sonnet',campaigns:'sonnet',analysis:'astra',review:'opus',browser:'sonnet',video_motion:'opus'};
+ const expected={conversation:'sol',orchestration:'sol',extraction:'haiku',creative:'sonnet',campaigns:'sonnet',analysis:'astra',review:'opus',coding:'opus',browser:'sonnet',video_motion:'opus'};
  for(const [task,key] of Object.entries(expected))assert.equal(router.routedModel(env,{task}).key,key);
  assert.equal(router.routedModel(env,{task:'conversation',escalation:{reason:'validation_failed',attempt:1}}).key,'astra');
  for(const input of [{task:'user asks Opus'},{task:'conversation',model:'claude-opus-5-5'},{task:'conversation',escalation:{reason:'slow',attempt:1}},{task:'conversation',escalation:{reason:'validation_failed',attempt:2}},{task:'analysis',escalation:{reason:'validation_failed',attempt:1}}])assert.throws(()=>router.routedModel(env,input));
 });
 await check('video motion uses the configured Opus 5.5 with its own verified rate without changing generic creative tasks',async()=>{
- assert.equal(router.routedModel(env,{task:'video_motion',tier:'light'}).key,'opus');assert.equal(router.routedModel(env,{task:'creative'}).key,'sonnet');
+ assert.equal(router.routedModel(env,{task:'video_motion',tier:'light'}).key,'opus');assert.throws(()=>router.routedModel(env,{task:'coding',escalation:{reason:'validation_failed',attempt:1}}));assert.equal(router.routedModel(env,{task:'creative'}).key,'sonnet');
  const saved=env.MODEL_ROUTING_CATALOG_JSON;try{const changed=catalog();delete changed.opus;env.MODEL_ROUTING_CATALOG_JSON=JSON.stringify(changed);assert.throws(()=>router.routedModel(env,{task:'video_motion'}));}finally{env.MODEL_ROUTING_CATALOG_JSON=saved;}
 });
 await check('unverified per-model rates, long-context price assumptions and absent keys fail closed',async()=>{
