@@ -28,9 +28,16 @@ for(const candidate of CANDIDATES){
   const result=boundedModel(candidate,await response.json());if(result.skip){console.log('skip',candidate.id,result.skip);continue;}approved.push(result.model);console.log('ok',candidate.id,Object.keys(result.model.inputSchema.properties).join(','));}
  catch(error){console.log('skip',candidate.id,String(error).slice(0,120));}
 }
+// Store premium models in the production R2 bucket the Worker already reads
+// (internal/fal-approved-models.json); Worker variables are at their limit.
+const bucket=settings.bindings.find(binding=>binding.name==='BUCKET'&&binding.type==='r2_bucket')?.bucket_name;
+if(!bucket)throw Error('Production BUCKET binding not found');
+const objectPath='/r2/buckets/'+encodeURIComponent(bucket)+'/objects/'+encodeURIComponent('internal/fal-approved-models.json');
+let existing=[];
+{const response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+account+objectPath,{headers:{authorization:'Bearer '+token}});if(response.ok){try{existing=JSON.parse(await response.text()).items||[];}catch{existing=[];}}else if(response.status!==404)throw Error('R2 read failed '+response.status+': '+(await response.text()).slice(0,200));}
+const merged=new Map(existing.map(item=>[item.id,item]));for(const model of approved)merged.set(model.id,{...model,quote:merged.get(model.id)?.quote});
+if(approved.length){const response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+account+objectPath,{method:'PUT',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({version:1,items:[...merged.values()].slice(0,40)})});if(!response.ok)throw Error('R2 write failed '+response.status+': '+(await response.text()).slice(0,200));console.log('Stored',merged.size,'approved models in R2');}
 bindings=bindings.filter(binding=>binding.name!=='FAL_APPROVED_MODELS_JSON');
-if(approved.length)bindings.push({type:'plain_text',name:'FAL_APPROVED_MODELS_JSON',text:JSON.stringify(approved)});
-if(bindings.filter(binding=>['plain_text','secret_text'].includes(binding.type)).length>64)throw Error('Cloudflare variable limit reached; nothing changed');
 const form=new FormData();form.set('settings',JSON.stringify({bindings}));
 await api('/workers/scripts/'+script+'/settings','PATCH',form);
 const after=await api('/workers/scripts/'+script+'/settings');

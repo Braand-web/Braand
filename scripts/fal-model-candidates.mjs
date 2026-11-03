@@ -8,7 +8,18 @@ export const CANDIDATES=[
  {id:'fal-ai/bytedance/seedream/v4/edit',name:'Seedream 4 Retouche',kind:'image',tasks:['image_edit']},
  {id:'fal-ai/flux-pro/v1.1-ultra',name:'FLUX 1.1 Pro Ultra',kind:'image',tasks:['image_precision','image']},
  {id:'fal-ai/flux-pro/kontext',name:'FLUX Kontext Pro',kind:'image',tasks:['image_edit_precision','image_edit']},
- {id:'fal-ai/imagen4/preview',name:'Imagen 4',kind:'image',tasks:['image_precision']},
+ {id:'fal-ai/imagen4/preview/ultra',name:'Imagen 4 Ultra',kind:'image',tasks:['image_precision']},
+ {id:'fal-ai/imagen4/preview/fast',name:'Imagen 4 Fast',kind:'image',tasks:['image']},
+ {id:'openai/gpt-image-2.5/sunburst/text-to-image',name:'GPT Image 2.5 Sunburst',kind:'image',tasks:['image_precision','image']},
+ {id:'openai/gpt-image-2.5/sunburst/edit',name:'GPT Image 2.5 Sunburst Retouche',kind:'image',tasks:['image_edit_precision','image_edit']},
+ {id:'openai/gpt-image-2.5/flare/text-to-image',name:'GPT Image 2.5 Flare',kind:'image',tasks:['image','image_precision']},
+ {id:'openai/gpt-image-2.5/flare/edit',name:'GPT Image 2.5 Flare Retouche',kind:'image',tasks:['image_edit','image_edit_precision']},
+ {id:'openai/gpt-image-2',name:'GPT Image 2',kind:'image',tasks:['image']},
+ {id:'openai/gpt-image-2/edit',name:'GPT Image 2 Retouche',kind:'image',tasks:['image_edit']},
+ {id:'fal-ai/gpt-image-1/text-to-image',name:'GPT Image 1',kind:'image',tasks:['image']},
+ {id:'fal-ai/sora-2/text-to-video',name:'Sora 2',kind:'video',tasks:['video_narrative','video_short']},
+ {id:'fal-ai/sora-2/image-to-video',name:'Sora 2 (image)',kind:'video',tasks:['video_from_image','video_reference']},
+ {id:'fal-ai/sora-2/text-to-video/pro',name:'Sora 2 Pro',kind:'video',tasks:['video_narrative']},
  {id:'fal-ai/ideogram/v3',name:'Ideogram 3 (texte dans l’image)',kind:'image',tasks:['image_precision']},
  {id:'fal-ai/kling-video/v2.1/master/text-to-video',name:'Kling 2.1 Master',kind:'video',tasks:['video_narrative','video_short']},
  {id:'fal-ai/kling-video/v2.1/master/image-to-video',name:'Kling 2.1 Master (image)',kind:'video',tasks:['video_from_image','video_reference']},
@@ -23,7 +34,7 @@ export const CANDIDATES=[
 
 const TEXT={prompt:4000,negative_prompt:1000,text:2000};
 const URLS=['image_url','audio_url','video_url','end_image_url','mask_url'];
-const ENUMS=['aspect_ratio','resolution','image_size','duration','output_format','style','safety_tolerance','acceleration','rendering_speed'];
+const ENUMS=['aspect_ratio','resolution','image_size','duration','output_format','style','safety_tolerance','acceleration','rendering_speed','quality','background','size'];
 const BOOLEANS=['camera_fixed','generate_audio','enhance_prompt','expand_prompt','raw','sync_mode'];
 const NUMBERS={seed:{type:'integer',minimum:0,maximum:2147483647},guidance_scale:{type:'number',minimum:0,maximum:20},cfg_scale:{type:'number',minimum:0,maximum:1},upscale_factor:{type:'number',minimum:1,maximum:2},creativity:{type:'number',minimum:0,maximum:1},resemblance:{type:'number',minimum:0,maximum:1},num_inference_steps:{type:'integer',minimum:1,maximum:30}};
 
@@ -60,7 +71,7 @@ export function boundedModel(candidate,spec){
  for(const name of input.required||[]){if(!properties[name])return {skip:'paramètre obligatoire non borné : '+name};required.push(name);}
  if(!required.length&&!properties.prompt&&!properties.image_url)return {skip:'aucune entrée exploitable'};
  // Quantity limits per possible billing unit.
- const durations=(properties.duration?.enum||[]).map(Number).filter(Number.isFinite);
+ const durations=(properties.duration?.enum||[]).map(value=>parseFloat(String(value))).filter(Number.isFinite);
  const seconds=durations.length?Math.max(...durations)+1:candidate.kind==='video'?(candidate.tasks.includes('video_ugc')?30:10):undefined;
  if(candidate.kind==='video'&&!durations.length&&!candidate.tasks.includes('video_ugc')&&properties.duration)return {skip:'durée non bornée'};
  // Ambiguous units ("units", "requests") are left out on purpose: such a model stays closed.
