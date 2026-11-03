@@ -282,7 +282,7 @@ export default function Studio(){
     if(event.event==="text_delta")queueStreamText(assistantId,textValue(data.text));
     if(event.event==="specialist_start")setActivity(data.role==="review"?"Vérification du livrable":"Analyse spécialisée en cours");
     if(event.event==="specialist_done"){setActivity("");void refresh();}
-    if(event.event==="tool_start"){const toolLabels:Record<string,string>={create_page:"création de la page",revise_page:"modification de la page",search_workspace:"lecture du projet",media_catalog:"catalogue média",read_meta:"lecture Meta",plan_mission:"préparation de la mission"};setActivity("Outil en cours · "+(toolLabels[textValue(data.name)]||"action dans une application"));}
+    if(event.event==="tool_start"){const toolLabels:Record<string,string>={create_page:"création de la page",revise_page:"modification de la page",search_workspace:"lecture du projet",media_catalog:"catalogue média",read_meta:"lecture Meta",plan_mission:"préparation de la mission",code_run:"exécution du code",code_write_file:"écriture du code",code_read_file:"lecture du code",code_list_files:"exploration des fichiers",code_reset:"réinitialisation du bac à sable"};setActivity("Outil en cours · "+(toolLabels[textValue(data.name)]||"action dans une application"));}
     if(event.event==="tool_result"){
      if(chat.isCurrent()&&record(data.result).kind==='secure_login_request'){setSettingsTab('permissions');setModal('settings');}
      setActivity("");if(chat.isCurrent()&&getRouteView()==="chat"&&record(data.result).kind==="browser_session"){setPanel(true);setPanelTab("browser");}

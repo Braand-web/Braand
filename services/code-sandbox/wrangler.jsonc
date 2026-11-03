@@ -1,0 +1,15 @@
+// Template only. Generate an environment-specific manifest with prepare-config.mjs.
+// Requires Cloudflare Containers (Workers Paid) and Docker on the deploying machine.
+{
+ "name":"braand-code-sandbox",
+ "main":"worker.ts",
+ "compatibility_date":"2026-09-02",
+ "compatibility_flags":["nodejs_compat"],
+ "workers_dev":false,
+ "preview_urls":false,
+ "observability":{"enabled":false},
+ "vars":{"CODE_SANDBOX_ENABLED":"false","CODE_SANDBOX_INTERNET":"false","CODE_SANDBOX_INSTANCE":"basic"},
+ "durable_objects":{"bindings":[{"name":"SANDBOX","class_name":"CodeSandbox"}]},
+ "containers":[{"class_name":"CodeSandbox","scheduling_policy":"durable_object","images":{"sandbox":{"dockerfile":"./Dockerfile"}}}],
+ "migrations":[{"tag":"code-sandbox-v1","new_sqlite_classes":["CodeSandbox"]}]
+}

@@ -27,6 +27,9 @@ declare namespace Cloudflare {
     RESEARCH_ENABLED?: string;
     BROWSER?: Fetcher;
     CREDENTIAL_VAULT?: Fetcher;
+    CODE_SANDBOX?: Fetcher;
+    CODE_SANDBOX_ENABLED?: string;
+    CODE_SANDBOX_CALL_TOKEN?: string;
     VAULT_ENABLED?: string;
     VAULT_CALL_TOKEN?: string;
     VAULT_BROWSER_TOKEN?: string;

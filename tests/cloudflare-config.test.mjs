@@ -24,3 +24,9 @@ test('database-only mode cannot bypass the complete production storage configura
 });
 
 test('public production routing and queues are explicit and isolated',()=>{const c=deploymentConfig('production',{...input,BRAAND_PRODUCTION_D1_ID:'22345678-1234-4234-8234-123456789abc',BRAAND_PRODUCTION_FILES_BUCKET:'aira-production-files',BRAAND_PRODUCTION_BACKUPS_BUCKET:'aira-production-backups',BRAAND_PRODUCTION_PUBLIC_ZONE_ID:'a'.repeat(32),BRAAND_PRODUCTION_WORK_QUEUE:'braand-work-production',BRAAND_PRODUCTION_WORK_DEAD_LETTER_QUEUE:'braand-work-production-failed'},built,'/braand');assert.deepEqual(c.routes,[{pattern:'braand.fun/*',zone_id:'a'.repeat(32)}]);assert.equal(c.queues.producers[0].binding,'WORK_QUEUE');assert.equal(c.queues.consumers[0].max_retries,3);assert.equal(c.vars.WORK_ENABLED,'false');});
+test('the code sandbox is an optional, environment-matched service binding that starts disabled',()=>{
+  const plain=deploymentConfig('staging',input,built,'/braand');assert.equal(plain.vars.CODE_SANDBOX_ENABLED,'false');assert.equal(plain.services,undefined);
+  const bound=deploymentConfig('staging',{...input,BRAAND_STAGING_CODE_SANDBOX_SERVICE:'braand-code-sandbox-staging',BRAAND_STAGING_VAULT_SERVICE:'braand-vault-staging'},built,'/braand');
+  assert.deepEqual(bound.services,[{binding:'CREDENTIAL_VAULT',service:'braand-vault-staging'},{binding:'CODE_SANDBOX',service:'braand-code-sandbox-staging'}]);assert.equal(bound.vars.CODE_SANDBOX_ENABLED,'false');
+  assert.throws(()=>deploymentConfig('staging',{...input,BRAAND_STAGING_CODE_SANDBOX_SERVICE:'braand-code-sandbox-production'},built,'/braand'));
+});

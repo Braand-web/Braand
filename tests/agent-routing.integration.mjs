@@ -380,4 +380,33 @@ await check('video production preference stays silent, carries to creative speci
  }finally{delete fixture.env.MODEL_ROUTING_ENABLED;delete fixture.env.MODEL_ROUTING_POLICY;}
 });
 
+await check('the coding specialist writes, runs, fixes and re-runs code in its isolated per-conversation sandbox',async()=>{
+ const sandboxCalls=[];let runs=0;
+ fixture.env.CODE_SANDBOX={fetch:async(url,init)=>{const body=JSON.parse(init.body);sandboxCalls.push({operation:new URL(url).pathname.slice(1),body,name:init.headers['x-sandbox-name'],auth:init.headers.authorization});if(url.endsWith('/exec')){runs++;return Response.json(runs===1?{exitCode:1,timedOut:false,durationMs:900,stdout:'',stderr:'AssertionError: 2 !== 3',truncated:false}:{exitCode:0,timedOut:false,durationMs:800,stdout:'1 test passed',stderr:'',truncated:false});}return Response.json({path:'/workspace/'+body.path,bytes:body.content.length});}};
+ fixture.env.CODE_SANDBOX_ENABLED='true';fixture.env.CODE_SANDBOX_CALL_TOKEN='s'.repeat(40);
+ try{
+  const execution=await setup();
+  fixture.responses=[
+   stream([{type:'tool_use',id:'w1',name:'code_write_file',input:{path:'add.test.mjs',content:'assert.equal(1+1,3)'}}]),
+   stream([{type:'tool_use',id:'r1',name:'code_run',input:{command:'node --test',timeoutSeconds:30}}]),
+   stream([{type:'tool_use',id:'w2',name:'code_write_file',input:{path:'add.test.mjs',content:'assert.equal(1+1,2)'}}]),
+   stream([{type:'tool_use',id:'r2',name:'code_run',input:{command:'node --test',timeoutSeconds:30}}]),
+   text('Correction vérifiée : `node --test` passe (code de sortie 0, « 1 test passed »).'),
+  ];
+  const result=await specialist(execution,'coding'),first=fixture.requests[0];
+  assert.equal(first.routing.task,'coding');assert.equal(first.body.max_tokens,8192);
+  assert.deepEqual(first.body.tools.map(tool=>tool.name),['search_skills','read_skill','search_workspace','code_run','code_write_file','code_read_file','code_list_files','code_reset']);
+  assert.match(first.body.system,/BAC À SABLE/);
+  assert.deepEqual(sandboxCalls.map(call=>call.operation),['write','exec','write','exec']);
+  assert.ok(sandboxCalls.every(call=>/^[a-f0-9]{40}$/.test(call.name)&&call.name===sandboxCalls[0].name&&call.auth==='Bearer '+'s'.repeat(40)));
+  const toolResults=fixture.requests[2].body.messages.at(-1).content;assert.match(toolResults[0].content,/AssertionError/);
+  assert.equal(result.status,'report_ready');assert.equal(fixture.external.length,0);
+  assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM audit WHERE action LIKE 'sandbox.%'").get().n>=4,true);
+  const other=await setup();fixture.responses=[text('Analyse sans exécution.')];await specialist(other,'analysis');
+  assert.ok(!fixture.requests[0].body.tools.some(tool=>tool.name.startsWith('code_')));
+  delete fixture.env.CODE_SANDBOX;const offline=await setup();fixture.responses=[text('Code proposé sans exécution.')];await specialist(offline,'coding');
+  assert.ok(!fixture.requests[0].body.tools.some(tool=>tool.name.startsWith('code_')));assert.doesNotMatch(fixture.requests[0].body.system,/BAC À SABLE/);
+ }finally{delete fixture.env.CODE_SANDBOX;delete fixture.env.CODE_SANDBOX_ENABLED;delete fixture.env.CODE_SANDBOX_CALL_TOKEN;}
+});
+
 console.log(count+' agent routing integration checks passed; no external model or provider calls.');
