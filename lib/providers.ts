@@ -2,8 +2,11 @@ import {z} from "zod";
 import {AppError,validateMediaInput} from "./core.mjs";
 import {config,db,unseal} from "./server";
 import {MEDIA_TASKS,chooseMediaRoute} from './media-routing.mjs';
+import {approvedCatalogItems} from './fal-models';
 const catalogItem=z.object({id:z.string().regex(/^[a-zA-Z0-9/._-]+$/),name:z.string(),kind:z.enum(["image","video","audio"]),credits:z.number().int().positive(),costCeilingXaf:z.number().positive().optional(),verifiedAt:z.string().datetime().optional(),inputSchema:z.record(z.unknown()),description:z.string(),tasks:z.array(z.string().refine(value=>Object.hasOwn(MEDIA_TASKS,value))).max(7).optional(),priority:z.number().int().min(0).max(1000).optional()});
-export function falCatalog(){try{return z.array(catalogItem).max(50).parse(JSON.parse(config().FAL_CATALOG_JSON||"[]"));}catch{throw new AppError("Catalogue média invalide. Contactez l’administrateur.",503);}}
+export function falCatalog(){let base:z.infer<typeof catalogItem>[];try{base=z.array(catalogItem).max(50).parse(JSON.parse(config().FAL_CATALOG_JSON||"[]"));}catch{throw new AppError("Catalogue média invalide. Contactez l’administrateur.",503);}
+ // Administrator-approved models complete the configured catalog; configured entries win.
+ if(config().FAL_GENERATION_ENABLED==='false')return base;const ids=new Set(base.map(item=>item.id));return [...base,...approvedCatalogItems().filter(item=>!ids.has(item.id)).map(item=>catalogItem.parse(item))];}
 export function falAvailability(){const c=config();return !c.FAL_KEY?{ready:false,reason:'configuration_pending'}:c.FAL_GENERATION_ENABLED==='false'?{ready:false,reason:c.FAL_ACCOUNT_STATUS==='needs_funding'?'provider_funding_required':'activation_pending'}:{ready:true,reason:null};}
 export function assertFalReady(){const state=falAvailability();if(!state.ready)throw new AppError(state.reason==='provider_funding_required'?'Le compte fournisseur Fal doit être crédité avant la génération. Votre demande peut rester en brouillon.':'La génération média attend sa configuration ou son activation.',503,'fal_not_ready');}
 export function mediaRoute(task:string,input:Record<string,unknown>,maxCredits?:number){assertFalReady();return chooseMediaRoute(falCatalog(),task,input,maxCredits) as z.infer<typeof catalogItem>;}

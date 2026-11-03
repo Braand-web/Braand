@@ -10,6 +10,7 @@ import {mediaQuoteFingerprint} from '@/lib/media-routing.mjs';
 import {approveAssembly,assemblyState} from '@/lib/media-render';
 import {pollMediaProposal} from '@/lib/media-jobs';
 import {linkMediaWork,wakeWorkForResource} from '@/lib/work';
+import {advanceMediaPlan,approveMediaPlan,mediaPlanState} from '@/lib/media-plans';
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){try{
  const who=await identity(request,'approve'),{tenant}=who,{id}=await context.params;
  const {version}=z.object({version:z.number().int()}).parse(await privateJSON(request,1048576));
@@ -18,6 +19,7 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
  if(previous)return Response.json({operation:previous,replayed:true});
  assertVersion(resource.version,version);
  if(resource.kind==='proposal'&&resource.data.kind==='assembly')return Response.json(await approveAssembly(who,id,version));
+ if(resource.kind==='proposal'&&resource.data.kind==='media_plan'){const approved=await approveMediaPlan(who,id,version);try{await advanceMediaPlan(tenant,id);}catch{/* The background tick continues. */}return Response.json(approved);}
  if(resource.kind!=='proposal'||resource.data.kind!=='media'||resource.status!=='awaiting_approval')throw new AppError('Proposition média à valider requise.',409);
  if(!config().FAL_KEY)throw new AppError('La génération de médias n’est pas encore configurée.',503);
  assertFalReady();
@@ -52,5 +54,6 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
 export async function GET(request:Request,context:{params:Promise<{id:string}>}){try{
  const {tenant}=await identity(request),{id}=await context.params,resource=await getResource(tenant,id);
  if(resource.data.kind==='assembly')return Response.json(await assemblyState(tenant,id));
+ if(resource.data.kind==='media_plan')return Response.json(resource.status==='generating'?await advanceMediaPlan(tenant,id):mediaPlanState(resource));
  return Response.json(await pollMediaProposal(tenant,id));
  }catch(error){return failure(error);}}

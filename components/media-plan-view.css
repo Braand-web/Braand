@@ -1,0 +1,21 @@
+.media-plan { display: grid; gap: var(--space-4); }
+.plan-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.plan-step { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); animation: ds-rise var(--duration-base) var(--ease-out) both; }
+.plan-step > div { display: grid; gap: var(--space-1); min-width: 0; flex: 1; }
+.plan-step small { color: var(--color-text-muted); font-size: var(--text-xs); display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.plan-step-icon { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--color-surface-2); color: var(--color-text-muted); }
+.plan-step[data-status="done"] .plan-step-icon { background: var(--color-success-soft); color: var(--color-success); }
+.plan-step[data-status="failed"] .plan-step-icon { background: var(--color-danger-soft); color: var(--color-danger); }
+.plan-step[data-status="running"] .plan-step-icon { color: var(--color-accent); }
+.plan-outputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr)); gap: var(--space-2); margin-top: var(--space-1); }
+.plan-output { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm); background: var(--color-surface-2); animation: ds-fade var(--duration-slow) var(--ease-out) both; }
+video.plan-output { aspect-ratio: 9 / 16; max-height: 320px; }
+.plan-output-skeleton { width: 120px; aspect-ratio: 1; border-radius: var(--radius-sm); margin-top: var(--space-1); }
+.plan-progress { display: grid; gap: var(--space-2); }
+.plan-progress > div:first-child { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.plan-progress small { color: var(--color-text-muted); font-size: var(--text-xs); }
+.plan-meter { height: 6px; border-radius: var(--radius-pill); background: var(--color-surface-2); overflow: hidden; }
+.plan-meter > span { display: block; height: 100%; background: var(--color-action); border-radius: inherit; transition: width var(--duration-slow) var(--ease-out); }
+.plan-reason { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); color: var(--color-warning); margin: 0; }
+.plan-note { color: var(--color-danger); }
+@media (prefers-reduced-motion: reduce) { .plan-step, .plan-output { animation: none; } }

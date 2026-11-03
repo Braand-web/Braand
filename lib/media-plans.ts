@@ -21,7 +21,7 @@ const q=(sql:string,...args:(string|number|null)[])=>db().prepare(sql).bind(...a
 
 const refSchema=z.object({field:z.string().regex(/^[a-z0-9_]{1,60}$/),fromStep:z.string().max(40).optional(),fileId:z.string().max(160).optional(),output:z.number().int().min(0).max(9).optional()}).strict().refine(r=>!!r.fromStep!==!!r.fileId,'Une référence vient soit d’une étape précédente, soit de la bibliothèque.');
 const stepSchema=z.object({id:z.string().regex(/^[a-z0-9_-]{1,40}$/),label:z.string().min(1).max(160),task:z.string().refine(t=>Object.hasOwn(MEDIA_TASKS,t),'Type de création non pris en charge.'),input:z.record(z.unknown()),references:z.array(refSchema).max(4).default([]),review:z.array(z.string().min(1).max(300)).max(6).default([])}).strict();
-export const planInputSchema=z.object({title:z.string().min(1).max(160),rationale:z.string().max(3000),steps:z.array(stepSchema).min(1).max(8),budgetCredits:z.number().int().positive().max(100000).optional(),allowFallback:z.boolean().default(true)}).strict();
+export const planInputSchema=z.object({title:z.string().min(1).max(160),rationale:z.string().max(3000),steps:z.array(stepSchema).min(1).max(20),budgetCredits:z.number().int().positive().max(100000).optional(),allowFallback:z.boolean().default(true)}).strict();
 type Step=z.infer<typeof stepSchema>;
 type Quote={stepId:string;model:string;credits:number;fingerprint:string};
 type Attempt={model:string;requestId?:string;status:'submitted'|'completed'|'rejected'|'failed'|'review_failed';charged:number;note?:string;at:number};
@@ -145,64 +145,94 @@ async function finish(resource:Resource,payload:PlanPayload,status:'completed'|'
  try{const {wakeWorkForResource}=await import('./work');await wakeWorkForResource(resource.workspace_id,resource.id);}catch{/* No linked mission. */}
 }
 
-/** Advance a running plan by one bounded transition. Safe to call repeatedly and concurrently. */
-export async function advanceMediaPlan(tenant:string,id:string){
- const resource=await getResource(tenant,id);
- if(resource.kind!=='proposal'||resource.data.kind!=='media_plan')throw new AppError('Plan média introuvable.',404);
- const payload=structuredClone((resource.data as {payload:PlanPayload}).payload);
- const run=payload.run;if(!run||resource.status!=='generating'||run.status!=='running')return mediaPlanState(resource);
- const budget=Number(resource.data.maxCredits),left=()=>budget-run.spent;
- const step=payload.steps.find(item=>run.steps[item.id].status!=='done'&&run.steps[item.id].status!=='failed');
- if(!step){await finish(resource,payload,'completed');return mediaPlanState(await getResource(tenant,id));}
- const state=run.steps[step.id],last=state.attempts.at(-1);
+export const MAX_PARALLEL=6;
 
- // Waiting on fal: poll once.
- if(last?.status==='submitted'&&last.requestId){
-  let output:unknown;
-  try{const result=await falResult(last.model,last.requestId);if(result.status!=='COMPLETED')return mediaPlanState(resource);output=result.output;}
-  catch{last.status='failed';last.note='Le fournisseur n’a pas livré le résultat.';state.status='running';await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}
-  const urls=mediaOutputURLs(output);
-  if(!urls.length){last.status='failed';last.note='Aucun fichier dans la réponse.';await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}
-  if(step.review.length&&left()>=REVIEW_CREDITS){
-   const verdict=await reviewOutputs(urls,step.review,step.label);
-   if(verdict){run.spent+=REVIEW_CREDITS;state.review={pass:verdict.pass,issues:verdict.issues};
-    const retryModel=!verdict.pass&&state.attempts.length<MAX_ATTEMPTS_PER_STEP?nextModel(payload,step,{...state,attempts:[]},left()):null;
-    if(!verdict.pass&&retryModel){last.status='review_failed';last.note=verdict.issues.join(' · ').slice(0,400);const base=String(step.input.prompt||'');state.prompt=verdict.fix&&base?(base+'\n'+verdict.fix).slice(0,4000):state.prompt;state.outputs=urls;await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}
+/** Poll one in-flight attempt; review and accept, or schedule a corrected attempt. */
+async function pollStep(resource:Resource,payload:PlanPayload,step:Step,state:StepRun,last:Attempt,left:()=>number){
+ let output:unknown;
+ try{const result=await falResult(last.model,last.requestId!);if(result.status!=='COMPLETED')return false;output=result.output;}
+ catch{last.status='failed';last.note='Le fournisseur n’a pas livré le résultat.';return true;}
+ const urls=mediaOutputURLs(output);
+ if(!urls.length){last.status='failed';last.note='Aucun fichier dans la réponse.';return true;}
+ if(step.review.length&&left()>=REVIEW_CREDITS){
+  const verdict=await reviewOutputs(urls,step.review,step.label);
+  if(verdict){
+   payload.run!.spent+=REVIEW_CREDITS;state.review={pass:verdict.pass,issues:verdict.issues};
+   const canRetry=!verdict.pass&&state.attempts.length<MAX_ATTEMPTS_PER_STEP&&!!nextModel(payload,step,state,left());
+   if(canRetry){
+    last.status='review_failed';last.note=verdict.issues.join(' · ').slice(0,400);state.outputs=urls;
+    const base=String(state.prompt||step.input.prompt||'');if(verdict.fix&&base)state.prompt=(base+'\n'+verdict.fix).slice(0,4000);
+    return true;
    }
   }
-  await accept(resource,payload,step,state,last,urls);await save(resource,payload);return mediaPlanState(await getResource(tenant,id));
  }
+ await accept(resource,payload,step,state,last,urls);return true;
+}
 
- // Submit (first attempt, correction or fallback) when the budget allows it.
+/** Submit the next attempt of a step (first try, correction or validated fallback). */
+async function submitStep(resource:Resource,payload:PlanPayload,step:Step,state:StepRun,left:()=>number){
+ const run=payload.run!,tenant=resource.workspace_id,id=resource.id,attemptNo=state.attempts.length;
  const reviewed=[...state.attempts].reverse().find(a=>a.status==='review_failed');
- if(state.attempts.length>=MAX_ATTEMPTS_PER_STEP){if(reviewed&&state.outputs.length){await accept(resource,payload,step,state,reviewed,state.outputs);await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}state.status='failed';await finish(resource,payload,'stopped','L’étape « '+step.label+' » a échoué après plusieurs tentatives.');return mediaPlanState(await getResource(tenant,id));}
- const model=nextModel(payload,step,state,left());
+ const model=attemptNo<MAX_ATTEMPTS_PER_STEP?nextModel(payload,step,state,left()):null;
  if(!model){
-  if(reviewed&&state.outputs.length){await accept(resource,payload,step,state,reviewed,state.outputs);await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}
-  await finish(resource,payload,'stopped',left()<1?'Budget atteint.':'Aucun modèle validé disponible dans le budget restant pour « '+step.label+' ».');return mediaPlanState(await getResource(tenant,id));
+  if(reviewed&&state.outputs.length){await accept(resource,payload,step,state,reviewed,state.outputs);return true;}
+  state.status='failed';state.attempts.push({model:'-',status:'failed',charged:0,note:left()<1?'Budget atteint.':attemptNo>=MAX_ATTEMPTS_PER_STEP?'Échec après plusieurs tentatives.':'Aucun modèle validé disponible dans le budget restant.',at:Date.now()});return true;
  }
- const attemptNo=state.attempts.length,opId='plan:'+id+':'+step.id+':'+attemptNo;
+ const opId='plan:'+id+':'+step.id+':'+attemptNo;
  const claim=await q("INSERT OR IGNORE INTO operations (id,workspace_id,resource_id,status,amount,detail,created_at,updated_at) VALUES (?,?,?,'plan_submitting',?,?,?,?)",opId,tenant,id,model.credits,JSON.stringify({holdId:run.holdId,model:model.id}),Date.now(),Date.now()).run();
- if(!claim.meta.changes)return mediaPlanState(resource);
+ if(!claim.meta.changes){
+  // Another advance already submitted this attempt: recover its receipt instead of resubmitting.
+  const row=await q('SELECT status,external_id,amount,detail FROM operations WHERE id=?',opId).first<{status:string;external_id:string|null;amount:number;detail:string}>();
+  if(row?.status==='plan_waiting'&&row.external_id){run.spent+=Number(row.amount);state.status='running';state.attempts.push({model:String(JSON.parse(row.detail||'{}').model||model.id),requestId:row.external_id,status:'submitted',charged:Number(row.amount),at:Date.now()});return true;}
+  if(row?.status==='rejected'){state.attempts.push({model:model.id,status:'rejected',charged:0,note:'Refusé par le fournisseur.',at:Date.now()});return true;}
+  return false;
+ }
  let input:Record<string,unknown>;
  try{input=await resolveInput(tenant,step,run.steps,state.prompt);validateMediaInput(input,model.inputSchema);}
- catch(error){state.attempts.push({model:model.id,status:'rejected',charged:0,note:error instanceof AppError?error.message:'Paramètres invalides.',at:Date.now()});await q("UPDATE operations SET status='rejected',updated_at=? WHERE id=?",Date.now(),opId).run();await save(resource,payload);return mediaPlanState(await getResource(tenant,id));}
+ catch(error){state.attempts.push({model:model.id,status:'rejected',charged:0,note:error instanceof AppError?error.message:'Paramètres invalides.',at:Date.now()});await q("UPDATE operations SET status='rejected',updated_at=? WHERE id=?",Date.now(),opId).run();return true;}
  try{
   const requestId=await submitFal(model.id,input);
   run.spent+=model.credits;state.status='running';
   state.attempts.push({model:model.id,requestId,status:'submitted',charged:model.credits,at:Date.now()});
   await q("UPDATE operations SET status='plan_waiting',external_id=?,updated_at=? WHERE id=?",requestId,Date.now(),opId).run();
  }catch(error){
-  const rejected=error instanceof AppError&&(error.code==='fal_rejected'||error.status===403||error.status===400);
-  if(!rejected){
-   // Unknown provider outcome: keep the reservation and stop for reconciliation.
+  if(!(error instanceof AppError&&(error.code==='fal_rejected'||error.status===403||error.status===400))){
+   // Unknown provider outcome: the reservation is kept and the step waits for reconciliation.
    await q("UPDATE operations SET status='needs_reconciliation',updated_at=? WHERE id=?",Date.now(),opId).run();
-   await save(resource,payload,{status:'uncertain'});return mediaPlanState(await getResource(tenant,id));
+   state.status='failed';state.attempts.push({model:model.id,status:'failed',charged:0,note:'Réponse du fournisseur incertaine : à vérifier avant tout nouvel envoi.',at:Date.now()});return true;
   }
-  state.attempts.push({model:model.id,status:'rejected',charged:0,note:(error as Error).message.slice(0,300),at:Date.now()});
+  state.attempts.push({model:model.id,status:'rejected',charged:0,note:error.message.slice(0,300),at:Date.now()});
   await q("UPDATE operations SET status='rejected',updated_at=? WHERE id=?",Date.now(),opId).run();
  }
- await save(resource,payload);return mediaPlanState(await getResource(tenant,id));
+ return true;
+}
+
+/** Advance a running plan: poll every in-flight step and start independent steps in parallel. */
+export async function advanceMediaPlan(tenant:string,id:string){
+ const resource=await getResource(tenant,id);
+ if(resource.kind!=='proposal'||resource.data.kind!=='media_plan')throw new AppError('Plan média introuvable.',404);
+ const payload=structuredClone((resource.data as {payload:PlanPayload}).payload),run=payload.run;
+ if(!run||resource.status!=='generating'||run.status!=='running')return mediaPlanState(resource);
+ const budget=Number(resource.data.maxCredits),left=()=>budget-run.spent;
+ let changed=false,inFlight=0;
+ for(const step of payload.steps){const last=run.steps[step.id].attempts.at(-1);if(last?.status==='submitted')inFlight++;}
+ for(const step of payload.steps){
+  const state=run.steps[step.id];if(state.status==='done'||state.status==='failed')continue;
+  const last=state.attempts.at(-1);
+  if(last?.status==='submitted'&&last.requestId){if(await pollStep(resource,payload,step,state,last,left)){changed=true;inFlight--;}continue;}
+  const deps=step.references.filter(ref=>ref.fromStep).map(ref=>run.steps[ref.fromStep!]);
+  if(deps.some(dep=>dep.status==='failed')){state.status='failed';state.attempts.push({model:'-',status:'failed',charged:0,note:'Une étape dont elle dépend a échoué.',at:Date.now()});changed=true;continue;}
+  if(deps.some(dep=>dep.status!=='done')||inFlight>=MAX_PARALLEL)continue;
+  if(await submitStep(resource,payload,step,state,left)){changed=true;if(state.attempts.at(-1)?.status==='submitted')inFlight++;}
+ }
+ const states=Object.values(run.steps);
+ if(states.every(state=>state.status==='done'||state.status==='failed')){
+  const failed=payload.steps.filter(step=>run.steps[step.id].status==='failed');
+  await finish(resource,payload,failed.length?'stopped':'completed',failed.length?failed.length+' étape(s) non réalisée(s) : '+failed.map(step=>step.label).join(', ')+'.':undefined);
+  return mediaPlanState(await getResource(tenant,id));
+ }
+ if(changed){try{await save(resource,payload);}catch{/* A concurrent advance won; receipts in operations let the next call recover. */}}
+ return mediaPlanState(await getResource(tenant,id));
 }
 
 export function mediaPlanState(resource:Resource){

@@ -4,6 +4,7 @@ import { settleHold, type BillingIdentity } from './billing';
 import { AppError } from './core.mjs';
 import { persistMedia } from './media-assets';
 import { wakeWorkForResource } from './work';
+import { advanceMediaPlans } from './media-plans';
 const q = (sql: string, ...args: (string | number | null)[]) => db().prepare(sql).bind(...args);
 export async function pollMediaProposal(tenant: string, id: string) {
     const resource = await getResource(tenant, id), op = await q('SELECT * FROM operations WHERE resource_id=? AND workspace_id=? ORDER BY created_at DESC LIMIT 1', id, tenant).first<{
@@ -52,6 +53,11 @@ export async function runMediaTick() {
             await pollMediaProposal(job.workspace_id, job.resource_id);
         }
         catch { /* Polling is read-only externally; receipts remain intact for the next bounded tick. */ }
+    let plans = 0;
+    try {
+        plans = (await advanceMediaPlans()).checked;
+    }
+    catch { /* Plans retry on the next tick. */ }
     let stored = 0;
     if (config().MEDIA_PERSIST_ENABLED === 'true') {
         const pending = await q("SELECT r.id,r.workspace_id,w.organization_id,h.actor FROM resources r JOIN workspaces w ON w.id=r.workspace_id JOIN operations o ON json_extract(r.data,'$.proposalId')=o.resource_id AND o.status='completed' JOIN credit_holds h ON h.id=json_extract(o.detail,'$.holdId') WHERE r.kind='media' AND r.status='ready' AND COALESCE(json_extract(r.data,'$.storageStatus'),'pending')!='stored' AND COALESCE(json_extract(r.data,'$.storageAttempts'),0)<5 ORDER BY r.updated_at LIMIT 3").all<{
@@ -72,5 +78,5 @@ export async function runMediaTick() {
             }
         }
     }
-    return { checked: jobs.results.length, stored };
+    return { checked: jobs.results.length, plans, stored };
 }
