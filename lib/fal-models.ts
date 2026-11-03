@@ -20,6 +20,8 @@ export const approvedModelSchema=z.object({
  tasks:z.array(z.string().refine(task=>Object.hasOwn(MEDIA_TASKS,task),'Tâche inconnue')).min(1).max(7),
  description:z.string().max(600).default(''),
  unit:z.enum(['megapixels','seconds','1000 characters','images','videos','units']),maxUnits:z.number().positive().max(10000),
+ // Optional bound per possible fal billing unit; the live price picks the unit.
+ limits:z.record(z.number().positive().max(10000)).optional(),
  inputSchema:z.object({type:z.literal('object'),additionalProperties:z.literal(false),required:z.array(z.string()),properties:z.record(z.record(z.unknown()))}).passthrough(),
  approvedAt:z.string().datetime(),approvedBy:z.string().max(160),quote:quoteSchema.optional(),
 });
@@ -41,7 +43,8 @@ async function readText(url:string,headers:Record<string,string>,maxBytes=200000
 }
 
 /** Price a list of models from fal's pricing API and the BEAC reference rate. */
-export async function priceModels(key:string,items:Pick<ApprovedModel,'id'|'unit'|'maxUnits'>[],now=Date.now()){
+const unitKey=(unit:string)=>unit.trim().toLowerCase().replace(/s$/,'');
+export async function priceModels(key:string,items:(Pick<ApprovedModel,'id'|'unit'|'maxUnits'>&{limits?:Record<string,number>})[],now=Date.now()){
  if(!items.length)return new Map<string,z.infer<typeof quoteSchema>>();
  const url=new URL(FAL_PRICE_URL);for(const item of items)url.searchParams.append('endpoint_id',item.id);
  const [priceText,fxText]=await Promise.all([readText(url.href,{Authorization:'Key '+key},262144),readText(FX_REFERENCE_URL,{Accept:'text/html'})]);
@@ -51,15 +54,24 @@ export async function priceModels(key:string,items:Pick<ApprovedModel,'id'|'unit
  const quotes=new Map<string,z.infer<typeof quoteSchema>>();
  for(const item of items){
   const row=rows.find(r=>r.endpoint_id===item.id);if(!row||row.currency!=='USD')continue;
-  if(['megapixels','seconds','1000 characters'].includes(item.unit)&&row.unit!==item.unit)continue;
-  const cost=row.unit_price*item.maxUnits*fx.usdXaf,credits=Math.max(1,Math.ceil(cost/4));
+  // The fal billing unit must be one this model has a declared upper bound for.
+  const bounds:Record<string,number>={[unitKey(item.unit)]:item.maxUnits};for(const [unit,max] of Object.entries(item.limits||{}))bounds[unitKey(unit)]=max;
+  const maxUnits=bounds[unitKey(row.unit)];if(!maxUnits)continue;
+  const cost=row.unit_price*maxUnits*fx.usdXaf,credits=Math.max(1,Math.ceil(cost/4));
   if(!Number.isFinite(cost)||credits>1000)continue;
   quotes.set(item.id,{credits,costCeilingXaf:cost,unitPrice:row.unit_price,verifiedAt:new Date(now).toISOString(),fxValueDate:fx.fxValueDate});
  }
  return quotes;
 }
 
-async function load(env:Bindings){const saved=await env.BUCKET?.get(STORE);if(!saved||saved.size>262144)return [] as ApprovedModel[];return storeSchema.parse(JSON.parse(await saved.text())).items;}
+function configured(env:Bindings){try{return z.array(approvedModelSchema).max(40).parse(JSON.parse(String(env.FAL_APPROVED_MODELS_JSON||'[]')));}catch{return [] as ApprovedModel[];}}
+async function load(env:Bindings){
+ // Models activated by the operations workflow (FAL_APPROVED_MODELS_JSON) and
+ // by the admin page (R2) are merged; the stored entry keeps its latest price.
+ const saved=await env.BUCKET?.get(STORE),stored=saved&&saved.size<=262144?storeSchema.parse(JSON.parse(await saved.text())).items:[];
+ const byId=new Map(configured(env).map(item=>[item.id,item]));for(const item of stored)byId.set(item.id,{...byId.get(item.id),...item,quote:item.quote});
+ return [...byId.values()].slice(0,40);
+}
 async function store(env:Bindings,items:ApprovedModel[]){if(!env.BUCKET)throw new AppError('Stockage indisponible.',503);await env.BUCKET.put(STORE,JSON.stringify({version:1,items}));cache={items,loadedAt:Date.now()};}
 
 /** Load approved models and refresh stale prices. Never throws into the request path. */
