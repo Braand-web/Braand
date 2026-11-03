@@ -8,7 +8,8 @@ import './platform.css';
 import {RoutinesPanel} from './routines-panel';
 const credits = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
 const active = new Set(['running', 'waiting_approval', 'waiting_external']);
-export function WorkBoard({ conversationId, compact = false, role, ready = true, legacy = [], onAsk, onOpen, title = "Missions" }: {
+export function WorkBoard({ conversationId, compact = false, role, ready = true, legacy = [], onAsk, onOpen, title = "Missions", hideSectionTabs = false }: {
+    hideSectionTabs?: boolean;
     conversationId?: string;
     title?: string;
     compact?: boolean;
@@ -63,8 +64,8 @@ export function WorkBoard({ conversationId, compact = false, role, ready = true,
         setError(e instanceof Error ? e.message : 'Le livrable est indisponible.');
     } };
     const visible = compact ? items.filter(item => !['completed', 'cancelled', 'expired'].includes(item.status)).slice(0, 2) : items;
-    const tabs=!compact&&<div className="platform-tabs" aria-label="Type de mission"><button type="button" className="platform-tab" aria-pressed={section==='work'} onClick={()=>chooseSection('work')}>Travaux</button><button type="button" className="platform-tab" aria-pressed={section==='routines'} onClick={()=>chooseSection('routines')}>Routines</button></div>;
-    if(!compact&&section==='routines')return <section className="platform-work"><header className="platform-heading"><div><h1>{title}</h1><p>Vos objectifs, les livrables et les décisions à prendre.</p></div></header>{tabs}<RoutinesPanel role={role} ready={ready} onAsk={onAsk}/></section>;
+    const tabs=!compact&&!hideSectionTabs&&<div className="platform-tabs" aria-label="Type de mission"><button type="button" className="platform-tab" aria-pressed={section==='work'} onClick={()=>chooseSection('work')}>Travaux</button><button type="button" className="platform-tab" aria-pressed={section==='routines'} onClick={()=>chooseSection('routines')}>Routines</button></div>;
+    if(!compact&&section==='routines')return <section className="platform-work"><header className="platform-heading"><div><h1>{title}</h1><p>Vos tâches récurrentes, leur calendrier et leur plafond de crédits.</p></div></header>{tabs}<RoutinesPanel role={role} ready={ready} onAsk={onAsk}/></section>;
     if (compact && !visible.length && !error)
         return null;
     return <section className={'platform-work ' + (compact ? 'is-compact' : '')} aria-label={compact ? 'Travail dans cette discussion' : 'Travaux et décisions'}>

@@ -1,3 +1,4 @@
+import {memoryVisibilitySql,memoryVisibilityArgs,memoryVisible} from './agent-memory';
 import {db,getResource} from './server';
 import {AppError} from './core.mjs';
 import {z} from 'zod';
@@ -31,12 +32,12 @@ export async function searchConversation(tenant:string,conversationId:string,inp
  const result=await db().prepare("SELECT rowid seq,role,content FROM messages WHERE workspace_id=? AND conversation_id=? AND rowid<? AND content LIKE ? ESCAPE '\\' ORDER BY rowid DESC LIMIT 20").bind(tenant,conversationId,p.beforeRowid||Number.MAX_SAFE_INTEGER,pattern).all<Row>();
  return {messages:result.results.map(row=>({seq:row.seq,role:row.role,excerpt:JSON.stringify(content(row)).slice(0,3000)})),nextBeforeRowid:result.results.length===20?result.results.at(-1)!.seq:null,untrusted:true};
 }
-export async function searchMemory(tenant:string,input:unknown,projectId:string|null=null){
+export async function searchMemory(tenant:string,input:unknown,projectId:string|null=null,userId=''){
  const p=z.object({query:z.string().max(300).default(''),ids:z.array(z.string().min(1).max(160)).max(8).default([])}).strict().parse(input);
  const pattern='%'+p.query.replace(/[\\%_]/g,'\\$&')+'%';
- const rows=await db().prepare("SELECT id,title,version,data,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.projectId') IS ? AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT 12").bind(tenant,projectId,pattern,pattern).all<{id:string;title:string;version:number;data:string;updated_at:number}>();
+ const rows=await db().prepare("SELECT id,title,version,data,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND "+memoryVisibilitySql+" AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT 12").bind(tenant,...memoryVisibilityArgs(projectId,userId),pattern,pattern).all<{id:string;title:string;version:number;data:string;updated_at:number}>();
  const selected=new Map<string,{id:string;title:string;version:number;data:unknown;updated_at:number}>();
- for(const id of p.ids){try{const r=await getResource(tenant,id);if(r.kind==='knowledge'&&r.status==='saved'&&(typeof r.data.projectId==='string'?r.data.projectId:null)===projectId)selected.set(id,{...r,data:r.data});}catch{/* No foreign data or existence signal. */}}
+ for(const id of p.ids){try{const r=await getResource(tenant,id);if(r.kind==='knowledge'&&r.status==='saved'&&memoryVisible(r.data as Record<string,unknown>,projectId,userId))selected.set(id,{...r,data:r.data});}catch{/* No foreign data or existence signal. */}}
  for(const row of rows.results)try{if(!selected.has(row.id))selected.set(row.id,{...row,data:JSON.parse(row.data)});}catch{/* Malformed memory is not trusted. */}
  return {strategy:p.ids.length?'model_selected_and_lexical':'lexical_fallback',items:[...selected.values()].slice(0,8).map(row=>({...row,data:JSON.stringify(row.data).slice(0,2500),truncated:JSON.stringify(row.data).length>2500})),untrusted:true};
 }

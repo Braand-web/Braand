@@ -1,0 +1,29 @@
+/* Conversation-first navigation: follow-ups, suggestions, section switches and quick access. */
+
+/* Follow-ups: views offered by the agent and project reference consent. */
+.message-followups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.followup-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 14px; border: 1px solid var(--ds-line, rgba(0,0,0,.12)); border-radius: var(--ds-radius-pill, 999px); background: var(--ds-surface, transparent); color: var(--ds-text, inherit); font: inherit; font-size: 13px; cursor: pointer; }
+.followup-button:hover { background: var(--ds-fill, rgba(0,0,0,.05)); }
+.followup-button:focus-visible { outline: 2px solid var(--ds-focus, currentColor); outline-offset: 2px; }
+.followup-button.primary { background: var(--ds-action, #111); border-color: var(--ds-action, #111); color: var(--ds-action-text, #fff); }
+.reference-request { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 14px; border: 1px solid var(--ds-line, rgba(0,0,0,.12)); border-radius: var(--ds-radius-md, 12px); background: var(--ds-fill, rgba(0,0,0,.03)); }
+.reference-request > span { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.reference-request strong { color: var(--ds-text, inherit); font-size: 14px; }
+.reference-request small { color: var(--ds-muted, inherit); font-size: 12px; }
+.home-context-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 14px; }
+.home-context-suggestions button { padding: 4px 2px; border: 0; background: none; color: var(--ds-muted, inherit); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.home-context-suggestions button:hover, .home-context-suggestions button:focus-visible { color: var(--ds-text, inherit); text-decoration-color: currentColor; }
+
+/* Section switch for the grouped Bibliothèque and Activité views. */
+.section-switch { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 0 auto 8px; padding: 12px 24px 0; max-width: 1120px; }
+.section-switch::-webkit-scrollbar { display: none; }
+.section-switch button { flex: none; min-height: 34px; padding: 6px 14px; border: 0; border-radius: var(--ds-radius-pill, 999px); background: transparent; color: var(--ds-muted, inherit); font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.section-switch button:hover { color: var(--ds-text, inherit); background: var(--ds-fill, rgba(0,0,0,.04)); }
+.section-switch button[aria-current="page"] { color: var(--ds-text, inherit); background: var(--ds-fill, rgba(0,0,0,.06)); font-weight: 600; }
+.section-switch button:focus-visible { outline: 2px solid var(--ds-focus, currentColor); outline-offset: 2px; }
+.library-content > .section-switch { padding: 0; margin: 0 0 16px; max-width: none; }
+@media (max-width: 640px) { .section-switch { padding: 10px 16px 0; } }
+.search-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 12px; margin-bottom: 8px; border-bottom: 1px solid var(--ds-line-quiet, rgba(0,0,0,.06)); }
+.search-results .search-shortcuts button { display: inline-flex; align-items: center; gap: 6px; width: auto; min-height: 32px; padding: 4px 12px; border: 1px solid var(--ds-line, rgba(0,0,0,.12)); border-radius: var(--ds-radius-pill, 999px); background: transparent; font-size: 13px; }
+.search-results .search-shortcuts button span { display: inline-flex; align-items: baseline; gap: 6px; }
+.search-results .search-shortcuts small { color: var(--ds-muted, inherit); font-size: 11px; }

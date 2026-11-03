@@ -40,9 +40,9 @@ export async function updateAgentContext(tenant:string,input:unknown){
  }else await updateResource(tenant,current.id,p.version,{data,status:'saved'});
  return readAgentContext(tenant);
 }
-export async function explainMemory(tenant:string,input:unknown){
+export async function explainMemory(tenant:string,input:unknown,userId?:string){
  const {id}=z.object({id:z.string().min(1).max(160)}).strict().parse(input),resource=await getResource(tenant,id);
- if(resource.kind!=='knowledge'||resource.status!=='saved')throw new AppError('Souvenir introuvable.',404);
+ if(resource.kind!=='knowledge'||resource.status!=='saved'||userId&&typeof resource.data.userId==='string'&&resource.data.userId!==userId)throw new AppError('Souvenir introuvable.',404);
  return {id,title:resource.title,version:resource.version,content:resource.data.content,source:resource.data.source||null,memoryType:resource.data.memoryType||'fact',createdAt:resource.created_at,updatedAt:resource.updated_at,validatedAt:resource.data.validatedAt||null,learning:resource.data.learning||null,sourceIndependentlyVerified:false,supersededHistoryAvailable:false,untrusted:true};
 }
 export async function agentRuntimeContext(tenant:string){

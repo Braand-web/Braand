@@ -1,13 +1,13 @@
 import {z} from "zod";
 import {richPresentationTool,richPresentationInstruction} from './rich-response';
 import {prepareRichResponse,persistRichResponse} from './rich-response-server';
-import {projectContextTool,projectContextInstruction,conversationProject,searchProjectContext,resourceProject,assertProjectResource} from './project-context';
+import {projectContextTool,projectContextInstruction,conversationProject,searchProjectContext,resourceProject,assertProjectResource,reusableMethodExtraction} from './project-context';
 import {meteredMessage,type RunBudget} from "./metering";
 import {authorize} from "./server";
 import {config,db,uid,createResource,list,updateResource,getResource,getClientResource,auditLog} from "./server";
 import {agentHandoffInstruction,MAX_AGENT_TOOL_ROUNDS} from './agent-work-policy';
 import {modelCapacityTool,modelCapacityInstruction,requestModelCapacity,type CapacityState} from './model-capacity';
-import {knowledgeInput,reviseKnowledge,forgetKnowledge,workspaceMemoryContext} from './agent-memory';
+import {knowledgeInput,reviseKnowledge,forgetKnowledge,workspaceMemoryContext,memoryPlacement,memoryVisible,memoryOwnedByOther} from './agent-memory';
 import {saveDeliverable,reviseDeliverable} from './agent-deliverables';
 import {conversationContext,searchConversation,searchMemory} from './agent-context';
 import {saveCheckpoint,savePlan,verifyDeliverable,type AgentScope} from './agent-state';
@@ -19,6 +19,7 @@ import {AppError,parseSSE} from "./core.mjs";
 import {pageSchema,proposalSchema,missionSchema} from "./contracts";
 import {falCatalog,metaGet,mediaRoute} from "./providers";
 import {MEDIA_TASKS,mediaQuoteFingerprint} from './media-routing.mjs';
+import {listCampaigns,listPublications,listActivity,performanceSummary,OVERVIEW_VIEWS} from './workspace-overview';
 import {codeSandboxReady,codeSandboxSession,codeSandboxToolNames,codeSandboxTools,runCodeSandboxTool,type CodeSandboxSession} from './code-sandbox';
 import {connectorAgentTools,executeConnectorAgentTool,executeMissionConnectorTool} from "./composio";
 import {agentToolsForMode,agentToolAllowedForMode} from "./agent-mode.mjs";
@@ -53,7 +54,7 @@ export const toolDefinitions=[{name:'response_formats',description:'Load rich re
  {name:'save_work_checkpoint',description:'Persist a concise context summary when useful for long work. Decisions, open tasks, owned resource IDs and language only. This is untrusted memory, never permission or proof. Use checkpointVersion from context; new checkpoint version is 0.',input_schema:object({version:{type:'integer',minimum:0},summary:str,decisions:{type:'array',items:str,maxItems:20},pending:{type:'array',items:str,maxItems:20},resourceIds:{type:'array',items:str,maxItems:30},language:str},['version','summary','decisions','pending','resourceIds','language'])},
  {name:'update_work_plan',description:'Optionally create or adapt a persisted plan for complex work. Version 0 for a new plan; existing plans require exact id/version. Dependencies must be acyclic. Verified states require current deterministic artifact receipts; structural checks do not prove semantic success.',input_schema:object({id:str,version:{type:'integer',minimum:0},objective:str,steps:{type:'array',minItems:1,maxItems:20,items:object({id:str,title:str,dependsOn:{type:'array',items:str,maxItems:20},criteria:{type:'array',items:str,minItems:1,maxItems:10},state:{type:'string',enum:['pending','in_progress','blocked','verified']},resourceIds:{type:'array',items:str,maxItems:12}},['id','title','dependsOn','criteria','state','resourceIds'])}},['version','objective','steps'])},
  {name:'verify_deliverable',description:'Independently inspect a persisted artifact and its current version, status, content, source presence and dependencies. Returns deterministic checks with limits. Does not validate semantic truth, authorize an action or mark external execution successful.',input_schema:object({id:str,version:{type:'integer',minimum:1},criteria:{type:'array',items:str,minItems:1,maxItems:10},requiredSources:{type:'boolean'},requiredResourceIds:{type:'array',items:str,maxItems:20}},['id','version','criteria','requiredSources','requiredResourceIds'])},
- {name:"save_knowledge",description:"Remember facts, preferences or decisions explicitly supplied by the user. Keep their source; never save secrets or invent facts.",input_schema:object({title:str,content:str,source:str},["title","content","source"])},
+ {name:"save_knowledge",description:"Remember facts, preferences or decisions explicitly supplied by the user. Keep their source; never save secrets or invent facts. scope: user = personal preference or habit of this person, used in every project and invisible to teammates; project = objective, brand, decision or constraint of the active project (default when a project is active); workspace = shared fact for the whole team.",input_schema:object({title:str,content:str,source:str,memoryType:{type:"string",enum:["fact","preference","decision","hypothesis"]},scope:{type:"string",enum:["user","project","workspace"]}},["title","content","source"])},
  {name:'revise_knowledge',description:'Replace an existing workspace fact after the user supplies a correction. Read its ID and current version first. This replaces the fact; it never changes permissions or deletes old conversation messages.',input_schema:object({...knowledgeFields,id:str,version:{type:'integer',minimum:1}},['id','version','title','content','source'])},
  {name:'forget_knowledge',description:'Withdraw a workspace memory fact when the user asks you to forget it. Requires its current ID and version. Does not erase conversation history or other resources.',input_schema:object({id:str,version:{type:'integer',minimum:1}},['id','version'])},
  {name:'save_deliverable',description:'Save reusable private Markdown content with useful full text, summary, relevant category and actual sources. Does not send, publish, generate Office/PDF files, confirm sales or execute a plan.',input_schema:object(deliverableFields,['title','content','summary','category','sources'])},
@@ -66,6 +67,13 @@ export const toolDefinitions=[{name:'response_formats',description:'Load rich re
  {name:"plan_mission",description:"Save a bounded mission plan for review. It is a draft, not an active autonomous mandate.",input_schema:object({title:str,objective:str,steps:{type:"array",items:str},successCriteria:{type:"array",items:str},maxCredits:{type:"integer"},stopConditions:{type:"array",items:str},mode:{type:"string",enum:["accompanied","autonomous"]}},["title","objective","steps","successCriteria","maxCredits","stopConditions","mode"])},
  {name:"read_meta",description:"Read actual Meta ad accounts, pages, campaigns or last-30-day insights. No mutations. Account IDs must come from connected assets.",input_schema:object({resource:{type:"string",enum:["accounts","pages","campaigns","insights"]},accountId:str},["resource"])},
  {name:"save_campaign_plan",description:"Save a PRIVATE campaign strategy for review. This tool never launches ads or spends. For requested execution, separately discover connected ad tools, verify account access and prepare exact approval with braand_connector_action. Never confuse this draft with a running campaign.",input_schema:object({title:str,objective:{type:"string",enum:["sales","leads","traffic"]},country:str,currency:str,dailyBudget:{type:"number"},destination:str,message:str,tracking:str},["title","objective","country","currency","dailyBudget","destination","message","tracking"])},
+ {name:"list_campaigns",description:"List saved campaign plans of the active project (or the whole workspace with allProjects) with status, budget and destination. Read-only. A saved plan is not a running ad.",input_schema:object({status:{type:"string",enum:["all","active","draft"]},allProjects:{type:"boolean"}},[])},
+ {name:"list_publications",description:"List scheduled or recent social posts for a period, batches awaiting a decision and optionally recent comments. Read-only; dates are UTC.",input_schema:object({period:{type:"string",enum:["today","this_week","next_7_days","last_7_days","this_month"]},includeComments:{type:"boolean"}},[])},
+ {name:"list_activity",description:"List durable works, missions and recurring automations with their status, budget and next run; counts what needs attention. Read-only.",input_schema:object({filter:{type:"string",enum:["all","running","needs_attention","recurring"]}},[])},
+ {name:"performance_summary",description:"Summarize available organic social statistics for the last N days and say explicitly what is unavailable. Read-only; never fill missing data.",input_schema:object({days:{type:"integer",minimum:1,maximum:90}},[])},
+ {name:"find_projects",description:"Find projects the user can access by name. Use it when the user names a project (e.g. “le projet ALPHA”). Returns ids and titles only, never project content.",input_schema:object({query:{type:"string",maxLength:160}},[])},
+ {name:"request_project_reference",description:"Ask the user, with a one-click button, to allow reading another project as a read-only reference for the next request. Use after find_projects identified exactly one project; then stop and wait. Never assume the grant.",input_schema:object({projectId:{type:"string",maxLength:160},reason:{type:"string",maxLength:300}},["projectId","reason"])},
+ {name:"open_view",description:"Offer a button under your answer that opens a detailed view: campaigns, publications, calendar, activity, analytics, library, creations, pages, files or projects. Use when editing, a calendar or a detailed comparison is better than chat.",input_schema:object({view:{type:"string",enum:[...OVERVIEW_VIEWS]},label:{type:"string",maxLength:80}},["view"])},
  {name:"save_skill_candidate",description:"Save a PRIVATE reusable method candidate. It must contain no secret and cannot grant permission or execute code. No common-library publication occurs.",input_schema:object({title:str,objective:str,steps:{type:"array",items:str},checks:{type:"array",items:str},source:str},["title","objective","steps","checks","source"])}
 ].map(tool=>({...tool,description:tool.name==='export_deliverable'?'Export current owned report to private PDF/DOCX/XLSX/PPTX/HTML/CSV/MD. Return downloadUrl. No publish.':compactToolDescriptions[tool.name]||tool.description}));
 export function initialToolDefinitions(settings:Record<string,unknown>=config()){
@@ -83,20 +91,20 @@ export async function executeTool(tenant:string,name:string,input:unknown,skills
  case 'read_agent_guide':return readAgentGuide(input);
  case 'read_agent_context':return readAgentContext(tenant,input);
  case 'update_agent_context':return updateAgentContext(tenant,input);
- case 'explain_memory':return explainMemory(tenant,input);
+ case 'explain_memory':return explainMemory(tenant,input,scope?.userId);
  case 'record_learning':if(!scope)throw new AppError('Contexte utilisateur requis.');return recordUserLearning(scope,input);
- case 'search_memory':return searchMemory(tenant,input,scope?.projectId??null);
+ case 'search_memory':return searchMemory(tenant,input,scope?.projectId??null,scope?.userId??'');
  case 'search_conversation':if(!scope)throw new AppError('Contexte de conversation requis.');return searchConversation(tenant,scope.conversationId,input);
  case 'save_work_checkpoint':if(!scope)throw new AppError('Contexte d’exécution requis.');return saveCheckpoint(scope,input);
  case 'update_work_plan':if(!scope)throw new AppError('Contexte d’exécution requis.');return savePlan(scope,input);
  case 'verify_deliverable':if(!scope)throw new AppError('Contexte d’exécution requis.');return verifyDeliverable(scope,input);
  case 'search_skills':return searchSkills(input);
  case 'read_skill':return readSkill(input,skills,config().BUCKET);
- case "search_workspace":{const {kind}=z.object({kind:z.enum(["knowledge","deliverable","media","page","mission","skill","proposal","project","brand"])}).parse(input);return (await list(tenant,kind)).filter(r=>kind==='project'?r.id===(scope?.projectId??null):resourceProject(r.data)===(scope?.projectId??null)).map(r=>({id:r.id,title:r.title,version:r.version,status:r.status,data:r.data}));}
- case 'get_workspace_resource':{const {id}=z.object({id:z.string().min(1).max(160)}).strict().parse(input);const resource=await getClientResource(tenant,id);if(resource.status==='deleted'||!['knowledge','deliverable','media','page','mission','skill','proposal','project','subagent','file'].includes(resource.kind))throw new AppError('Élément introuvable.',404);return {resource};}
- case "save_knowledge":{const data=knowledgeInput.parse(input);return createResource(tenant,"knowledge",data.title,{...data,projectId:scope?.projectId??null,validatedAt:Date.now()},"saved");}
- case 'revise_knowledge':return reviseKnowledge(tenant,input);
- case 'forget_knowledge':return forgetKnowledge(tenant,input);
+ case "search_workspace":{const {kind}=z.object({kind:z.enum(["knowledge","deliverable","media","page","mission","skill","proposal","project","brand"])}).parse(input);return (await list(tenant,kind)).filter(r=>kind==='project'?r.id===(scope?.projectId??null):kind==='knowledge'?memoryVisible(r.data as Record<string,unknown>,scope?.projectId??null,scope?.userId??''):resourceProject(r.data)===(scope?.projectId??null)).map(r=>({id:r.id,title:r.title,version:r.version,status:r.status,data:r.data}));}
+ case 'get_workspace_resource':{const {id}=z.object({id:z.string().min(1).max(160)}).strict().parse(input);const resource=await getClientResource(tenant,id);if(resource.kind==='knowledge'&&memoryOwnedByOther(resource.data as Record<string,unknown>,scope?.userId??''))throw new AppError('Élément introuvable.',404);if(resource.status==='deleted'||!['knowledge','deliverable','media','page','mission','skill','proposal','project','subagent','file'].includes(resource.kind))throw new AppError('Élément introuvable.',404);return {resource};}
+ case "save_knowledge":{const data=knowledgeInput.parse(input);return createResource(tenant,"knowledge",data.title,{...data,...memoryPlacement(data.scope,scope?.projectId??null,scope?.userId??""),validatedAt:Date.now()},"saved");}
+ case 'revise_knowledge':return reviseKnowledge(tenant,input,scope?.userId);
+ case 'forget_knowledge':return forgetKnowledge(tenant,input,scope?.userId);
  case 'save_deliverable':return saveDeliverable(tenant,input);
  case 'revise_deliverable':return reviseDeliverable(tenant,input);
  case "create_page":{const data=pageSchema.parse(input);return createResource(tenant,"page",data.title,{current:data,history:[]},"draft");}
@@ -109,14 +117,20 @@ export async function executeTool(tenant:string,name:string,input:unknown,skills
  if(p.resource==="pages")return metaGet(tenant,"me/accounts",{fields:"id,name"});
  if(!p.accountId||!/^act_\d+$/.test(p.accountId))throw new AppError("Compte publicitaire requis.");
  return metaGet(tenant,p.accountId+"/"+p.resource,p.resource==="insights"?{fields:"campaign_name,spend,impressions,clicks,actions,action_values",date_preset:"last_30d",level:"campaign"}:{fields:"id,name,status,effective_status,objective",limit:"50"});}
- case "save_campaign_plan":{const p=z.object({title:z.string().max(160),objective:z.enum(["sales","leads","traffic"]),country:z.string().max(80),currency:z.string().max(10),dailyBudget:z.number().positive(),destination:z.string().url(),message:z.string().max(3000),tracking:z.string().max(2000)}).parse(input);return createResource(tenant,"campaign",p.title,p,"draft");}
+ case "save_campaign_plan":{const p=z.object({title:z.string().max(160),objective:z.enum(["sales","leads","traffic"]),country:z.string().max(80),currency:z.string().max(10),dailyBudget:z.number().positive(),destination:z.string().url(),message:z.string().max(3000),tracking:z.string().max(2000)}).parse(input);return createResource(tenant,"campaign",p.title,{...p,projectId:scope?.projectId??null},"draft");}
+ case "list_campaigns":return listCampaigns(tenant,input,scope?.projectId??null);
+ case "list_publications":return listPublications(tenant,input);
+ case "list_activity":return listActivity(tenant,input);
+ case "performance_summary":return performanceSummary(tenant,input);
+ case "find_projects":{const {query=""}=z.object({query:z.string().max(160).optional()}).strict().parse(input??{});const needle=query.trim().toLocaleLowerCase("fr");const projects=(await list(tenant,"project")).filter(r=>r.status!=="deleted");const scored=projects.map(r=>{const title=r.title.toLocaleLowerCase("fr");return {r,score:!needle?1:title===needle?3:title.startsWith(needle)?2:title.includes(needle)?1:0};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||b.r.updated_at-a.r.updated_at);return {query,count:scored.length,projects:scored.slice(0,10).map(({r})=>({id:r.id,title:r.title,status:r.status,active:r.id===(scope?.projectId??null),updatedAt:r.updated_at})),note:scored.length>1?"Plusieurs projets correspondent : demande lequel avant de continuer.":scored.length?"Pour lire ce projet depuis un autre, demande l’accord avec request_project_reference.":"Aucun projet accessible ne correspond. Ne l’invente pas."};}
  case "save_skill_candidate":{const p=z.object({title:z.string().max(160),objective:z.string().max(3000),steps:z.array(z.string()).max(20),checks:z.array(z.string()).max(20),source:z.string().max(2000)}).parse(input);return createResource(tenant,"skill",p.title,{...p,scope:"private",evaluation:"not_evaluated"},"candidate");}
  default:throw new AppError("Outil non autorisé.",403);
  }
 }
 export const connectorWorkPolicy="Pour publier un post ou préparer le lancement de publicités en mode Accompagné, découvre les outils du service demandé puis vérifie braand_connector_status. Une connexion expirée exige une reconnexion ; une connexion active ne prouve pas les permissions. Vérifie les Pages et comptes publicitaires par les outils de lecture découverts. Si les outils connectés existent, ne déclare pas une incapacité générale parce que read_meta, le calendrier social ou save_campaign_plan ne peuvent pas exécuter cette action. Les destinations, contenus et paramètres publicitaires doivent être concrets et vérifiés. Toute activation publicitaire nécessite budget, devise et durée ou plafond total explicites, sans les inventer. Présente chaque mutation exacte à approuver avec braand_connector_action. Une campagne créée en pause n'est pas une publicité diffusée ; vérifie son état réel après approbation, et ne relance jamais un résultat incertain. Une nouvelle demande après approbation peut poursuivre les étapes restantes selon le reçu, sans répéter celles déjà confirmées.\r";
 export const codingPolicy='CODE : pour une question courte ou un extrait, réponds directement avec un code correct et complet dans un bloc balisé par son langage. Pour un programme, plusieurs fichiers, un débogage avec journaux, une refonte, du SQL ou de l’infrastructure, délègue à delegate_specialist avec role coding et specialty software_engineer, en transmettant le code, les erreurs, la pile et les contraintes exactes ; relis puis livre son résultat. Identifie la cause racine avant de corriger. Ne laisse aucun espace réservé ni API inventée, indique les fichiers, versions et commandes de test. Le spécialiste coding exécute et teste le code dans un bac à sable isolé seulement quand ce service est configuré : ne présente comme exécuté que ce que son rapport cite avec commandes et codes de sortie. Sinon personne n’exécute le code : ne prétends jamais qu’il a été lancé ou testé.';
-export const systemPrompt=personalAgentPolicy+'\n'+codingPolicy+'\nPour une réponse enrichie utile (tableau, graphique, cartes, formulaire), appelle response_formats pour charger le contrat puis present_response. Une réponse simple reste textuelle. Ne fabrique aucune donnée.';
+export const conversationFirstPolicy='CONVERSATION D’ABORD : pour une question sur les campagnes, publications, missions, automatisations ou performances, lis list_campaigns, list_publications, list_activity ou performance_summary au lieu de renvoyer vers un onglet. Réponds par une phrase de synthèse puis, si utile, un résultat présenté (cartes, tableau, indicateurs, graphique) avec response_formats et present_response ; termine par une ou deux suites concrètes. Quand une édition visuelle, un calendrier ou une comparaison détaillée est préférable, propose open_view plutôt qu’une longue réponse. Signale toute donnée indisponible sans la compléter. RÉFÉRENCE À UN AUTRE PROJET : si l’utilisateur cite un projet (ex. « comme dans ALPHA »), appelle find_projects ; plusieurs résultats → une question courte ; aucun → dis-le ; un seul non autorisé → request_project_reference puis attends. Une fois autorisé, search_project_context avec ce projectId, distingue principes réutilisables et données propres au projet source (noms, prix, budgets, contacts, résultats ne sont jamais repris), adapte au projet actif et cite brièvement la référence (projet, titre, version). Ne modifie jamais le projet source.';
+export const systemPrompt=personalAgentPolicy+'\n'+codingPolicy+'\n'+conversationFirstPolicy+'\nPour une réponse enrichie utile (tableau, graphique, cartes, formulaire), appelle response_formats pour charger le contrat puis present_response. Une réponse simple reste textuelle. Ne fabrique aucune donnée.';
 
 export async function runSpecialist(tenant:string,runId:string,input:unknown,emit:(type:string,data:unknown)=>Promise<void>,signal:AbortSignal,budget:RunBudget,skills:SkillSession=createSkillSession(),scope?:AgentScope){
  const p=z.object({role:z.enum(["creative","campaigns","extraction","coding","analysis","review"]),task:z.string().min(1).max(4000),context:z.string().max(12000),specialty:z.enum(Object.keys(specialistProfiles) as [keyof typeof specialistProfiles,...(keyof typeof specialistProfiles)[]]).optional(),contract:delegationContract.optional()}).strict().parse(input);
@@ -178,7 +192,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
  const mutationResults=new Map<string,unknown>();
  let specialistCount=0;
  const [context,memoryContext,runtimeContext,connectorTools]=await Promise.all([
-  conversationContext(tenant,conversationId),workspaceMemoryContext(tenant,activeProjectId),agentRuntimeContext(tenant),
+  conversationContext(tenant,conversationId),workspaceMemoryContext(tenant,activeProjectId,budget.who.user.userId),agentRuntimeContext(tenant),
   workMode==='autonomous'?Promise.resolve([]):connectorAgentTools(budget.who,conversationId).catch(async()=>{await emit('connector_unavailable',{message:'Les connecteurs sont temporairement indisponibles. La discussion reste disponible.'});return [];})
  ]);
  // Native Meta and Composio are separate paths. Do not advertise an unusable
@@ -250,8 +264,32 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
      await persistRichResponse(response);await emit('rich_response',response);
      results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify({presented:true,blockIds:response.blocks.map(b=>b.id),messageId})});return;
     }
+    if(call.name==='request_project_reference'){
+     const p=z.object({projectId:z.string().min(1).max(160),reason:z.string().trim().min(1).max(300)}).strict().parse(call.input);
+     if(p.projectId===activeProjectId)throw new AppError('Ce projet est déjà le projet actif.',409,'project_reference_redundant');
+     const project=await getResource(tenant,p.projectId);if(project.kind!=='project'||project.status==='deleted')throw new AppError('Projet introuvable.',404,'project_not_found');
+     const granted=(budget.referenceProjectIds||[]).includes(project.id);
+     if(!granted)await emit('reference_request',{projectId:project.id,title:project.title,reason:p.reason});
+     results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(granted?{granted:true,projectId:project.id,note:'Référence déjà autorisée pour cette demande : utilise search_project_context avec ce projectId.'}:{requested:true,awaitingUser:true,projectId:project.id,note:'Bouton affiché. Arrête-toi ici et indique brièvement pourquoi cette référence est utile ; la lecture ne sera possible qu’à la prochaine demande, si l’utilisateur accepte.'})});return;
+    }
+    if(call.name==='open_view'){
+     const p=z.object({view:z.enum(OVERVIEW_VIEWS),label:z.string().trim().max(80).optional()}).strict().parse(call.input);
+     await emit('open_view',{view:p.view,label:p.label||null,messageId});
+     results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify({offered:true,view:p.view})});return;
+    }
     if(call.name==='search_project_context'){
-     const result=await searchProjectContext(tenant,{projectId:activeProjectId,userId:budget.who.user.userId,referenceProjectIds:budget.referenceProjectIds||[]},call.input);
+     const {extractable=[],...result}=await searchProjectContext(tenant,{projectId:activeProjectId,userId:budget.who.user.userId,referenceProjectIds:budget.referenceProjectIds||[]},call.input);
+     // Another project's raw content never reaches this model: a separate,
+     // tool-less extraction call returns only transferable principles.
+     for(const source of extractable.slice(0,2)){
+      try{
+       const response=await meteredMessage(budget,'specialist',{max_tokens:900,stream:true,system:reusableMethodExtraction,messages:[{role:'user',content:JSON.stringify({title:source.title,document:source.content})}]},AbortSignal.any([signal,AbortSignal.timeout(60000)]),{task:'extraction'});
+       if(!response.ok||!response.body)continue;
+       let text='';for await(const item of parseSSE(response.body)){const e=modelEventSchema.parse(item.data);if(e.type==='error'||e.error)throw new AppError('Extraction interrompue.',502);if(e.type==='content_block_delta'){const delta=modelBlockDeltaSchema.parse(e).delta;if(delta.type==='text_delta')text+=delta.text??'';}}
+       text=text.trim();if(!text||text.includes('AUCUNE_METHODE'))continue;
+       result.items.push({id:source.id,title:'Méthode réutilisable (extraite de « '+source.title.slice(0,120)+' »)',version:source.version,updatedAt:Date.now(),excerpt:text.slice(0,2000),truncated:text.length>2000,sourceProjectId:result.project?.id??null});
+      }catch(error){if(signal.aborted)throw error;}
+     }
      results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(result)});await emit('tool_result',{name:call.name,id:call.id,result});return;
     }
     if(call.name===modelCapacityTool.name){
