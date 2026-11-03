@@ -83,6 +83,10 @@ export async function reconcileOpenRouterUsage(organization?:string,limit=10){
   const run=await db().prepare('SELECT status FROM runs WHERE id=?').bind(row.run_id).first<{status:string}>();
   if(run&&run.status!=='streaming')await finishRunBudget({runId:row.run_id,holdId:row.hold_id,rate});
  }catch{/* The real cost stays unresolved; never resubmit a generation. */}}
+ // A tool cost that can no longer be reconciled must not lock the wallet
+ // forever. Ten minutes after the run ends, charge its known ceiling (the
+ // maximum it could have cost) so the hold can settle and the balance frees up.
+ await db().prepare("UPDATE agent_tool_usage SET status='complete',actual_units=ceiling_units WHERE status IN ('pending','unknown') AND created_at<? AND EXISTS(SELECT 1 FROM runs r WHERE r.id=agent_tool_usage.run_id AND r.status IN ('failed','partial','cancelled','completed'))"+(organization?' AND hold_id IN (SELECT id FROM credit_holds WHERE organization_id=?)':'')).bind(...(organization?[Date.now()-600000,organization]:[Date.now()-600000])).run();
  // A worker can stop after recording the receipt, or after marking a run
  // cancelled, before its finally block settles the hold. Retry terminal holds
  // independently of whether a provider receipt still needs reconciliation.
