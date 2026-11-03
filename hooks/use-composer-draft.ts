@@ -102,8 +102,10 @@ export function useComposerDraft({ userId, workspaceId, context, content, onRest
                 saved.current = JSON.stringify([value.content, value.attachments]);
                 ready.current = key;
                 if (current.current.content && current.current.content !== (cached?.content || '') && current.current.content !== value.content) {
-                    setRemote(value);
-                    setState('conflict');
+                    // What the person is typing always wins: adopt the server version
+                    // number silently and save their text over it. No dialog.
+                    setState('local');
+                    setRevision(n => n + 1);
                     return;
                 }
                 if (cached && cached.updatedAt > value.updatedAt && JSON.stringify([cached.content, cached.attachments]) !== saved.current) {
@@ -142,8 +144,10 @@ export function useComposerDraft({ userId, workspaceId, context, content, onRest
                 if (response.status === 409) {
                     const fresh = await api<Draft>('/api/drafts?context=' + encodeURIComponent(value.context));
                     if (current.current.key === requestKey) {
-                        setRemote(fresh);
-                        setState('conflict');
+                        // Another tab saved meanwhile: keep the current text and retry on the fresh version.
+                        version.current = fresh.version;
+                        setState('local');
+                        setRevision(n => n + 1);
                     }
                     return;
                 }
