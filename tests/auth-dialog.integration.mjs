@@ -36,6 +36,6 @@ assert.match(form,/type="email"/);assert.match(form,/autocomplete="email"/i);ass
 assert.match(form,/<button[^>]+type="submit"[^>]+disabled/);
 assert.match(form,/Gardons vos idées ensemble\./);assert.match(form,/Choisir une option/);
 assert.match(form,/Se connecter/);assert.match(form,/Créer un compte/);
-assert.match(form,/type="password"/);assert.match(form,/Mot de passe oublié ou première connexion/);
+assert.match(form,/type="password"/);assert.match(form,/Mot de passe oublié/);assert.match(form,/Recevoir un lien de connexion/);assert.match(form,/Afficher le mot de passe/);
 assert.doesNotMatch(form,/Retrouvez votre espace|Recevez un lien personnel|email-sign-in/);
 console.log('PASS: unresolved sessions never masquerade as signed-out accounts; email submission waits for its secure browser binding.');

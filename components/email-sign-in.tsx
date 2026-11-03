@@ -1,7 +1,7 @@
 "use client";
 
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
-import {ArrowUpRight, CheckCircle2, LoaderCircle} from "lucide-react";
+import {ArrowUpRight, CheckCircle2, Eye, EyeOff, LoaderCircle} from "lucide-react";
 import {BrandMark} from "./brand";
 
 type LoginForm = {authenticated: boolean; browser?: string; returnTo: string; googleAvailable?:boolean};
@@ -9,7 +9,8 @@ type LoginForm = {authenticated: boolean; browser?: string; returnTo: string; go
 export function EmailSignIn({returnTo}: {returnTo?: string}) {
  const [email, setEmail] = useState("");
  const [password, setPassword] = useState("");
- const [intent, setIntent] = useState<"signin" | "signup" | "reset">("signin");
+ const [intent, setIntent] = useState<"signin" | "signup" | "reset" | "link">("signin");
+ const [showPassword, setShowPassword] = useState(false);
  const [form, setForm] = useState<LoginForm | null>(null);
  const [error, setError] = useState("");
  const [sending, setSending] = useState(false);
@@ -49,7 +50,8 @@ export function EmailSignIn({returnTo}: {returnTo?: string}) {
    const current = await prepare(controller.signal);
    if (!current) return;
    const fields=new URLSearchParams({email:email.trim(),browser:current.browser!,return_to:current.returnTo});
-   fields.set(intent==='signin'?'password':'new_password',password);
+   // A passwordless link only proves the address; no password is sent or changed.
+   if(intent!=='link')fields.set(intent==='signin'?'password':'new_password',password);
    const response = await fetch(intent==='signin'?"/auth/password":"/auth/request", {method:"POST", credentials:"same-origin", signal:controller.signal, headers:{"Content-Type":"application/x-www-form-urlencoded", Accept:"application/json"}, body:fields});
    const data = await response.json().catch(() => null) as {message?: string} | null;
    if (!response.ok) throw new Error(data?.message || "La demande n’a pas pu aboutir. Réessayez.");
@@ -65,18 +67,20 @@ export function EmailSignIn({returnTo}: {returnTo?: string}) {
  return <div className="auth-content" aria-busy={!form && !error || sending}>
   <span className="brand-mark" aria-hidden="true"><BrandMark/></span>
   <h3>Gardons vos idées ensemble.</h3>
-  <p>{intent==='reset'?"Choisissez un nouveau mot de passe, puis vérifiez votre adresse e-mail.":"Connectez-vous ou inscrivez-vous avec votre adresse e-mail."}</p>
+  <p>{intent==='reset'?"Choisissez un nouveau mot de passe, puis vérifiez votre adresse e-mail.":intent==='link'?"Recevez un lien de connexion à usage unique, sans mot de passe.":"Connectez-vous ou inscrivez-vous avec votre adresse e-mail."}</p>
   <div className="auth-intents" role="group" aria-label="Choisir une option">
-   {([['signin','Se connecter'],['signup','Créer un compte']] as const).map(([value,label])=><button key={value} type="button" className={intent===value?"selected":""} aria-pressed={intent===value} disabled={sending} onClick={()=>{setIntent(value);setPassword("");setSent(false);if(form)setError("");}}>{label}</button>)}
+   {([['signin','Se connecter'],['signup','Créer un compte']] as const).map(([value,label])=><button key={value} type="button" className={intent===value?"selected":""} aria-pressed={intent===value||(value==='signin'&&(intent==='link'||intent==='reset'))} disabled={sending} onClick={()=>{setIntent(value);setPassword("");setSent(false);if(form)setError("");}}>{label}</button>)}
   </div>
   {!sent&&form?.googleAvailable&&<a className="button secondary" style={{width:'min(100%, 360px)',minHeight:46,marginBottom:14}} href={'/auth/google?return_to='+encodeURIComponent(form.returnTo)} aria-disabled={sending} onClick={event=>{if(sending)event.preventDefault();}}>Continuer avec Google<ArrowUpRight size={16} aria-hidden="true"/></a>}
   {sent ? <div className="auth-feedback" role="status"><CheckCircle2 size={20} aria-hidden="true"/><div><strong>Consultez votre messagerie</strong><p>Si cette adresse peut être utilisée, un lien vient d’être envoyé.</p><button type="button" className="auth-change-email" onClick={()=>{setSent(false);requestAnimationFrame(()=>emailInput.current?.focus());}}>Utiliser une autre adresse</button></div></div> : <form className="auth-form" onSubmit={submit}>
    <label htmlFor="braand-login-email">Adresse e-mail</label>
    <input ref={emailInput} id="braand-login-email" name="email" type="email" autoComplete="email" maxLength={254} required value={email} onChange={event=>setEmail(event.target.value)} aria-describedby="braand-login-note" disabled={sending} placeholder="vous@exemple.com"/>
-   <label htmlFor="braand-login-password">{intent==='reset'?'Nouveau mot de passe':'Mot de passe'}</label>
-   <input id="braand-login-password" name="password" type="password" autoComplete={intent==='signin'?'current-password':'new-password'} minLength={intent==='signin'?1:12} maxLength={128} required value={password} onChange={event=>setPassword(event.target.value)} disabled={sending} placeholder={intent==='signin'?'Votre mot de passe':'12 caractères minimum'}/>
-   {intent==='signin'&&<button type="button" className="auth-change-email" onClick={()=>{setIntent('reset');setPassword('');setError('');}}>Mot de passe oublié ou première connexion ?</button>}
-   <button type="submit" className="button primary" disabled={!form || sending || !email.trim() || !password}>{sending ? <><LoaderCircle size={16} className="spin" aria-hidden="true"/>{intent==='signin'?'Connexion…':'Envoi en cours…'}</> : <>{intent==="signin"?"Se connecter":intent==='reset'?"Vérifier mon adresse":"Créer mon compte"}<ArrowUpRight size={16} aria-hidden="true"/></>}</button>
+   {intent!=='link'&&<><label htmlFor="braand-login-password">{intent==='reset'?'Nouveau mot de passe':'Mot de passe'}</label>
+   <div className="auth-password"><input id="braand-login-password" name="password" type={showPassword?"text":"password"} autoComplete={intent==='signin'?'current-password':'new-password'} minLength={intent==='signin'?1:12} maxLength={128} required value={password} onChange={event=>setPassword(event.target.value)} disabled={sending} placeholder={intent==='signin'?'Votre mot de passe':'12 caractères minimum'}/><button type="button" className="auth-password-toggle" aria-label={showPassword?"Masquer le mot de passe":"Afficher le mot de passe"} aria-pressed={showPassword} onClick={()=>setShowPassword(value=>!value)} disabled={sending}>{showPassword?<EyeOff size={17} aria-hidden="true"/>:<Eye size={17} aria-hidden="true"/>}</button></div>
+   {intent!=='signin'&&password.length>0&&password.length<12&&<span className="fine-print" role="status">Encore {12-password.length} caractère{12-password.length>1?'s':''} au minimum.</span>}</>}
+   {intent==='signin'&&<div className="auth-alternatives"><button type="button" className="auth-change-email" onClick={()=>{setIntent('link');setPassword('');setError('');}}>Recevoir un lien de connexion</button><button type="button" className="auth-change-email" onClick={()=>{setIntent('reset');setPassword('');setError('');}}>Mot de passe oublié ?</button></div>}
+   {intent==='link'&&<button type="button" className="auth-change-email" onClick={()=>{setIntent('signin');setError('');}}>Utiliser mon mot de passe</button>}
+   <button type="submit" className="button primary" disabled={!form || sending || !email.trim() || (intent!=='link'&&!password)}>{sending ? <><LoaderCircle size={16} className="spin" aria-hidden="true"/>{intent==='signin'?'Connexion…':'Envoi en cours…'}</> : <>{intent==="signin"?"Se connecter":intent==='reset'?"Vérifier mon adresse":intent==='link'?"Recevoir le lien":"Créer mon compte"}<ArrowUpRight size={16} aria-hidden="true"/></>}</button>
    {error&&<p className="auth-error" role="alert">{error}</p>}
    {!form&&!error&&<span role="status" className="sr-only">Vérification de votre session…</span>}
    {!form&&error&&<button type="button" className="button secondary" onClick={()=>setRevision(value=>value+1)}>Réessayer</button>}

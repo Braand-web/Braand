@@ -122,5 +122,20 @@ try {
   assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:'wrong'},cookie),env,at)).status,400);
   assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:nonce},cookie,{origin:'https://evil.test'}),env,at)).status,400);assert.equal(mails.length,count);
  });
+
+ await check('an active session slides once a day, stays capped at 90 days and every device can be signed out at once',async()=>{
+  const user=sql.prepare("SELECT id FROM auth_users ORDER BY created_at LIMIT 1").get();assert.ok(user);
+  const b64=bytes=>Buffer.from(bytes).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(env.AUTH_HASH_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const mint=async (created,expires=created+auth.SESSION_TTL)=>{const token=b64(crypto.getRandomValues(new Uint8Array(32)));const tokenHash=b64(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('session:'+token))));sql.prepare('INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)').run(tokenHash,user.id,expires,created);return '__Host-braand_session='+token;};
+  const first=await mint(now),second=await mint(now);
+  const fresh=await auth.authenticateRequest(req('/api/workspace',null,first),env,now+1000);assert.equal(fresh.request.headers.get('x-braand-identity-id'),user.id);assert.equal(fresh.setCookie,null,'no renewal within the first day');
+  const later=now+2*86400000,renewed=await auth.authenticateRequest(req('/api/workspace',null,first),env,later);assert.match(renewed.setCookie,/^__Host-braand_session=[A-Za-z0-9_-]{43}; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800$/);
+  const again=await auth.authenticateRequest(req('/api/workspace',null,first),env,later+1000);assert.equal(again.setCookie,null,'renewed at most once a day');
+  const old=await mint(now-89*86400000-3600000,now+3600000);
+  const capped=await auth.authenticateRequest(req('/api/workspace',null,old),env,now);assert.ok(capped.setCookie);assert.ok(Number(capped.setCookie.match(/Max-Age=(\d+)/)[1])<=86400,'never beyond 90 days after sign-in');
+  const out=await auth.handleAuth(req('/auth/sign-out',{confirm:'yes',scope:'all'},first),env,now);assert.equal(out.status,303);
+  for(const token of [first,second,old])assert.equal((await auth.authenticateRequest(req('/api/workspace',null,token),env,now+1000)).request.headers.get('x-braand-identity-id'),null);
+ });
 } finally {globalThis.fetch=originalFetch;sql.close();}
 console.log(`${checks} independent authentication checks passed; zero real emails or payments.`);

@@ -15,6 +15,8 @@ const encode = (value: Uint8Array) => btoa(String.fromCharCode(...value)).replac
 const random = () => encode(crypto.getRandomValues(new Uint8Array(32)));
 const text = new TextEncoder();
 const googleKeys=createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
+// Sessions slide while used: renewed at most once a day, never beyond 90 days after sign-in.
+export const SESSION_TTL = 604_800_000, SESSION_RENEW_AFTER = 86_400_000, SESSION_MAX_AGE = 90 * 86_400_000;
 const PASSWORD_ITERATIONS = 32_768; // scrypt N; r=8 and p=3 are fixed for this version.
 const validPassword = (password:string) => password.length >= 12 && text.encode(password).length <= 128;
 const decode = (value:string) => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4)),c=>c.charCodeAt(0));
@@ -107,12 +109,24 @@ export async function sessionIdentity(headers: Headers, env: AuthEnv, now = Date
   const row = await env.DB!.prepare('SELECT u.id,u.email FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').bind(await hash('session:' + token, env), now).first<{id:string; email:string}>();
   return row ? {userId:row.id, email:row.email, displayName:row.email, fullName:null} : null;
 }
-export async function authenticatedRequest(request: Request, env: AuthEnv) {
+export async function authenticatedRequest(request: Request, env: AuthEnv) {return (await authenticateRequest(request, env)).request;}
+// Rebuilds identity from the private session and, for an active user, extends
+// the session once a day (atomic, capped at 90 days). Returns the cookie to set.
+export async function authenticateRequest(request: Request, env: AuthEnv, now = Date.now()): Promise<{request: Request; setCookie: string | null}> {
   const headers = new Headers(request.headers);
   for (const name of [...headers.keys()]) if (name.startsWith('oai-authenticated-user-') || name.startsWith('x-braand-identity-')) headers.delete(name);
-  const user = await sessionIdentity(headers, env);
-  if (user) {headers.set('x-braand-identity-id', user.userId); headers.set('x-braand-identity-email', user.email);}
-  return new Request(request, {headers});
+  const user = await sessionIdentity(headers, env, now);
+  let renewal: string | null = null;
+  if (user) {
+    headers.set('x-braand-identity-id', user.userId); headers.set('x-braand-identity-email', user.email);
+    const token = cookie(headers, SESSION_COOKIE);
+    if (token) {
+      const tokenHash = await hash('session:' + token, env);
+      const renewed = await env.DB!.prepare('UPDATE auth_sessions SET expires_at=MIN(?,created_at+?) WHERE token_hash=? AND expires_at>? AND expires_at<? AND created_at>? RETURNING expires_at').bind(now + SESSION_TTL, SESSION_MAX_AGE, tokenHash, now, now + SESSION_TTL - SESSION_RENEW_AFTER, now - SESSION_MAX_AGE).first<{expires_at: number}>();
+      if (renewed && renewed.expires_at > now) renewal = setCookie(SESSION_COOKIE, token, Math.floor((renewed.expires_at - now) / 1000));
+    }
+  }
+  return {request: new Request(request, {headers}), setCookie: renewal};
 }
 export async function cleanupAuth(env: AuthEnv, now = Date.now()) {
   if (!env.DB) return;
@@ -142,8 +156,10 @@ export async function handleAuth(request: Request, env: AuthEnv, now = Date.now(
     return Response.json({authenticated:false, browser, returnTo,...(googleReady(env)?{googleAvailable:true}:{})}, {headers});
   }
   if (path === '/auth/sign-out') {
-    if (request.method === 'GET') return page('Se déconnecter', '<p>Votre travail enregistré restera disponible lors de votre prochaine connexion.</p><form method="post" action="/auth/sign-out"><button type="submit">Confirmer la déconnexion</button></form>');
+    if (request.method === 'GET') return page('Se déconnecter', '<p>Votre travail enregistré restera disponible lors de votre prochaine connexion.</p><form method="post" action="/auth/sign-out"><button type="submit">Confirmer la déconnexion</button></form><form method="post" action="/auth/sign-out"><input type="hidden" name="scope" value="all"><button type="submit" class="secondary">Se déconnecter de tous les appareils</button></form>');
     const token = cookie(request.headers, SESSION_COOKIE);
+    // scope=all signs this account out on every device (lost phone, shared computer).
+    if (token && form?.get('scope') === 'all') {const owner = await env.DB!.prepare('SELECT user_id FROM auth_sessions WHERE token_hash=? AND expires_at>?').bind(await hash('session:' + token, env), now).first<{user_id: string}>(); if (owner) await env.DB!.prepare('DELETE FROM auth_sessions WHERE user_id=?').bind(owner.user_id).run();}
     if (token) await env.DB!.prepare('DELETE FROM auth_sessions WHERE token_hash=?').bind(await hash('session:' + token, env)).run();
     const response = redirect('/', setCookie(SESSION_COOKIE, '', 0));
     response.headers.append('Set-Cookie', setCookie(SESSION_COOKIE.replace('braand', LEGACY_PREFIX), '', 0));

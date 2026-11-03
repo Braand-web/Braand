@@ -15,7 +15,7 @@ await build({entryPoints:['build/worker.ts'],outfile:output,bundle:true,platform
     builder.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:
       args.path==='vinext/server/fetch-handler'?`export default {fetch:async request=>{globalThis.__schedulerFixture.requests.push(new URL(request.url).pathname);return Response.json({status:'fixture'},{status:globalThis.__schedulerFixture.status});}};`:
       args.path.endsWith('operations')?`export async function raiseOperationalAlert(id,category,target){globalThis.__schedulerFixture.alerts.push({id,category,target});}`:
-      args.path.endsWith('auth-runtime')?`export async function cleanupAuth(){globalThis.__schedulerFixture.cleanup++;}export async function handleAuth(){return null;}export async function authenticatedRequest(r){return r;}`:
+      args.path.endsWith('auth-runtime')?`export async function cleanupAuth(){globalThis.__schedulerFixture.cleanup++;}export async function handleAuth(){return null;}export async function authenticatedRequest(r){return r;}export async function authenticateRequest(request){return {request,setCookie:null};}`:
       'export class BrowserSession{}'
     }));
   }

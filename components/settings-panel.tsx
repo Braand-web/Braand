@@ -148,6 +148,7 @@ export function SettingsPanel({tab, onTabChange, user, workspace, capabilities, 
       <h4 id="settings-account-title">Mon compte</h4>
       {signedIn ? <dl className="settings-card settings-details"><div className="settings-row"><dt>Nom</dt><dd>{user?.name || "Indisponible"}</dd></div><div className="settings-row"><dt>Adresse e-mail</dt><dd>{user?.email || "Indisponible"}</dd></div></dl> : <div className="settings-card settings-guest"><p>Connectez-vous pour retrouver votre compte et votre espace.</p>{signIn}</div>}
      </section>
+     {signedIn && <section className="settings-section" aria-labelledby="settings-security-title"><h4 id="settings-security-title">Sécurité</h4><div className="settings-card"><div className="settings-row settings-row-action"><div className="settings-row-copy"><span>Sessions</span><small>Votre session reste active tant que vous utilisez Braand, 90 jours au maximum.</small></div><form method="post" action="/auth/sign-out" target="_top" style={{display:'contents'}}><input type="hidden" name="confirm" value="yes"/><input type="hidden" name="scope" value="all"/><button type="submit" className="settings-button">Se déconnecter de tous les appareils</button></form></div></div></section>}
      {signedIn && <section className="settings-section" aria-labelledby="settings-workspace-title">
       <h4 id="settings-workspace-title">Mon espace</h4>
       <div className="settings-card">

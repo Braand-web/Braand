@@ -4,7 +4,7 @@ import handler from "vinext/server/fetch-handler";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import { raiseOperationalAlert } from "../lib/operations";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
-import {authenticatedRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
+import {authenticateRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
 import {secureResponse} from '../lib/response-security.mjs';
 export {BrowserSession} from "../lib/browser-session-do";
 
@@ -73,11 +73,13 @@ export default {
   async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
     // The local-only Vite middleware strips supplied headers before adding its fixture.
     // Production always reconstructs identity from a private, revocable D1 session.
+    let sessionCookie: string | null = null;
     if (!import.meta.env.DEV) {
       try {
         const authResponse = await handleAuth(request, env);
         if (authResponse) return secureResponse(authResponse,request);
-        request = await authenticatedRequest(request, env);
+        const authenticated = await authenticateRequest(request, env);
+        request = authenticated.request;sessionCookie = authenticated.setCookie;
       } catch {
         return secureResponse(Response.json({error:"Connexion temporairement indisponible.",code:"authentication_unavailable"}, {status:503,headers:{"Cache-Control":"no-store"}}),request);
       }
@@ -102,7 +104,10 @@ export default {
         },
       };
     }
-    return secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
+    const response = secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
+    // An active session is extended at most once a day; streaming bodies are left untouched.
+    if (sessionCookie) {try {response.headers.append("Set-Cookie", sessionCookie);} catch {const copy = new Response(response.body, response);copy.headers.append("Set-Cookie", sessionCookie);return copy;}}
+    return response;
   },
   scheduled(
     controller: ScheduledController,

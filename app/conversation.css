@@ -47,3 +47,11 @@
 .browser-panel details ul { margin: 8px 0 0; padding-left: 18px; color: var(--browser-muted); font-size: 12px; line-height: 1.6; }
 .browser-panel select { appearance: none; -webkit-appearance: none; padding-right: 36px !important; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 @media (prefers-reduced-motion: reduce) { .browser-panel details > summary::before { transition: none; } }
+
+/* Sign-in: password visibility toggle and alternative actions. */
+.auth-password { position: relative; width: 100%; }
+.auth-password input { width: 100%; padding-right: 48px !important; }
+.auth-password-toggle { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: var(--ds-radius-pill, 999px); background: transparent; color: var(--ds-muted, inherit); cursor: pointer; }
+.auth-password-toggle:hover { color: var(--ds-text, inherit); background: var(--ds-fill, rgba(127,127,127,.12)); }
+.auth-password-toggle:focus-visible { outline: 2px solid var(--ds-focus, currentColor); outline-offset: 1px; }
+.auth-alternatives { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; width: 100%; }
