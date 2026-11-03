@@ -37,6 +37,8 @@ assert.equal(models.approvedCatalogItems(Date.now()+2*86400000).length,0,'A pric
 price=0.1;calls.length=0;
 await models.ensureApprovedFalModels(env,Date.now()+7*3600000);
 assert.ok(calls.some(url=>url.includes('/pricing')),'Stale quotes are repriced');
-assert.equal(models.approvedModels()[0].quote.credits,15);
-await models.removeFalModel(env,'fal-ai/clarity-upscaler');assert.equal(models.approvedModels().length,0);
+const clarity=()=>models.approvedModels().find(model=>model.id==='fal-ai/clarity-upscaler');
+assert.equal(clarity().quote.credits,15);
+const before=models.approvedModels().length;await models.removeFalModel(env,'fal-ai/clarity-upscaler');assert.equal(clarity(),undefined,'Removal also hides a model shipped with the code');assert.equal(models.approvedModels().length,before-1);
+await models.ensureApprovedFalModels(env,Date.now()+20*3600000);assert.equal(clarity(),undefined,'Removal survives a reload');
 console.log('PASS fal models: discovery with prices, admin approval priced from fal and BEAC, catalog merge, fail-closed and repriced quotes');

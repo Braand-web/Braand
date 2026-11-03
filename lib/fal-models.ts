@@ -27,7 +27,7 @@ export const approvedModelSchema=z.object({
  approvedAt:z.string().datetime(),approvedBy:z.string().max(160),quote:quoteSchema.optional(),
 });
 export type ApprovedModel=z.infer<typeof approvedModelSchema>;
-const storeSchema=z.object({version:z.literal(1),items:z.array(approvedModelSchema).max(60)});
+const storeSchema=z.object({version:z.literal(1),items:z.array(approvedModelSchema).max(60),removed:z.array(z.string().max(180)).max(200).default([])});
 
 let cache:{items:ApprovedModel[];loadedAt:number;inFlight?:Promise<void>}={items:[],loadedAt:0};
 
@@ -75,11 +75,13 @@ function configured(env:Bindings){
 async function load(env:Bindings){
  // Models activated by the operations workflow (FAL_APPROVED_MODELS_JSON) and
  // by the admin page (R2) are merged; the stored entry keeps its latest price.
- const saved=await env.BUCKET?.get(STORE),stored=saved&&saved.size<=262144?storeSchema.parse(JSON.parse(await saved.text())).items:[];
- const byId=new Map(configured(env).map(item=>[item.id,item]));for(const item of stored)byId.set(item.id,{...byId.get(item.id),...item,quote:item.quote});
+ const saved=await env.BUCKET?.get(STORE),state=saved&&saved.size<=262144?storeSchema.parse(JSON.parse(await saved.text())):{items:[],removed:[] as string[]};
+ removedIds=new Set(state.removed);
+ const byId=new Map(configured(env).filter(item=>!removedIds.has(item.id)).map(item=>[item.id,item]));for(const item of state.items)byId.set(item.id,{...byId.get(item.id),...item,quote:item.quote});
  return [...byId.values()].slice(0,60);
 }
-async function store(env:Bindings,items:ApprovedModel[]){if(!env.BUCKET)throw new AppError('Stockage indisponible.',503);await env.BUCKET.put(STORE,JSON.stringify({version:1,items}));cache={items,loadedAt:Date.now()};}
+let removedIds=new Set<string>();
+async function store(env:Bindings,items:ApprovedModel[]){if(!env.BUCKET)throw new AppError('Stockage indisponible.',503);await env.BUCKET.put(STORE,JSON.stringify({version:1,items,removed:[...removedIds]}));cache={items,loadedAt:Date.now()};}
 
 /** Load approved models and refresh stale prices. Never throws into the request path. */
 export async function ensureApprovedFalModels(env:Bindings,now=Date.now()){
@@ -120,9 +122,9 @@ export async function approveFalModel(env:Bindings,adminId:string,raw:unknown){
  if(!env.FAL_KEY)throw new AppError('fal.ai n’est pas configuré.',503);
  const quote=(await priceModels(String(env.FAL_KEY),[item])).get(item.id);
  if(!quote)throw new AppError('Prix introuvable ou unité différente chez fal pour ce modèle. Vérifiez l’unité et le maximum.',409,'fal_price_unavailable');
- const items=(await load(env)).filter(existing=>existing.id!==item.id);
+ const items=(await load(env)).filter(existing=>existing.id!==item.id);removedIds.delete(item.id);
  if(items.length>=60)throw new AppError('Catalogue complet (60 modèles). Retirez un modèle d’abord.',409);
  const approved={...item,approvedAt:new Date().toISOString(),approvedBy:adminId,quote};
  await store(env,[...items,approved]);return approved;
 }
-export async function removeFalModel(env:Bindings,id:string){const items=await load(env);await store(env,items.filter(item=>item.id!==id));}
+export async function removeFalModel(env:Bindings,id:string){const items=await load(env);removedIds.add(id);await store(env,items.filter(item=>item.id!==id));}
