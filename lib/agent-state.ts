@@ -3,7 +3,7 @@ import {db,getResource,uid} from './server';
 import {AppError,safeWebURL} from './core.mjs';
 import {pageSchema} from './contracts';
 import {deliverableInput} from './agent-deliverables';
-export type AgentScope={tenant:string;conversationId:string;runId:string;coveredRowid:number};
+export type AgentScope={tenant:string;conversationId:string;runId:string;coveredRowid:number;projectId?:string|null;userId?:string;referenceProjectIds?:string[]};
 const ref=z.string().min(1).max(160);
 const criterion=z.string().min(1).max(500);
 export const checkpointSchema=z.object({version:z.number().int().nonnegative(),summary:z.string().min(1).max(6000),decisions:z.array(criterion).max(20),pending:z.array(criterion).max(20),resourceIds:z.array(ref).max(30),language:z.string().min(1).max(80)}).strict();

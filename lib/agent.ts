@@ -1,4 +1,7 @@
 import {z} from "zod";
+import {richPresentationTool,richPresentationInstruction} from './rich-response';
+import {prepareRichResponse,persistRichResponse} from './rich-response-server';
+import {projectContextTool,projectContextInstruction,conversationProject,searchProjectContext,resourceProject,assertProjectResource} from './project-context';
 import {meteredMessage,type RunBudget} from "./metering";
 import {authorize} from "./server";
 import {config,db,uid,createResource,list,updateResource,getResource,getClientResource,auditLog} from "./server";
@@ -37,7 +40,7 @@ const deliverableFields={title:str,content:str,summary:str,category:{type:'strin
 const localMutations=new Set(['record_learning','update_agent_context','analyze_data','save_source_project','prepare_routine','export_deliverable','save_knowledge','revise_knowledge','forget_knowledge','create_page','revise_page','prepare_media','propose_media','plan_mission','save_campaign_plan','save_skill_candidate','save_deliverable','revise_deliverable','save_work_checkpoint','update_work_plan','prepare_brief','prepare_work','prepare_publications','prepare_social_reply','assemble_media','prepare_video_edit']);
 function mutationKey(name:string,input:unknown){return name+':'+JSON.stringify(input,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);}
 const compactToolDescriptions:Record<string,string>={"capabilities":"Discover tools by area when needed; no authorization.","search_skills":"Discover reviewed skill metadata.","read_skill":"Read a reviewed skill; entry first.","browser_plan":"Draft a browser mandate; no execution.","delegate_specialist":"Delegate bounded report; contract optional.","search_workspace":"Read owned resources by kind.","get_workspace_resource":"Read exact current owned resource.","search_memory":"Retrieve relevant owned memory.","search_conversation":"Retrieve earlier current-chat excerpts.","save_work_checkpoint":"Save versioned context and open tasks.","update_work_plan":"Save/adapt versioned plan and dependencies.","verify_deliverable":"Check real artifact; not semantic proof.","save_knowledge":"Remember explicitly supplied sourced facts.","revise_knowledge":"Correct a fact at its current version.","forget_knowledge":"Withdraw memory, not old messages.","save_deliverable":"Save private Markdown; no external action.","revise_deliverable":"Revise private Markdown with history.","create_page":"Create private page draft; no publication.","revise_page":"Revise private page at current version.","media_catalog":"Read validated capabilities and exact caps.","prepare_media":"Prepare priced media approval; no generation.","propose_media":"Prepare catalog media approval; no generation.","plan_mission":"Draft bounded mandate; no activation.","read_meta":"Read connected Meta data; no mutation.","save_campaign_plan":"Save PRIVATE ad plan; no launch or spend. For execution discover connected tools and use braand_connector_action approval.","save_skill_candidate":"Save private unreviewed method."};
-export const toolDefinitions=[...agentContextTools.filter(tool=>tool.name==='read_agent_guide'),...platformTools.filter(tool=>['capabilities','export_deliverable'].includes(tool.name)),
+export const toolDefinitions=[{name:'response_formats',description:'Load rich response schemas for useful tables, charts, cards and forms.',input_schema:{type:'object',properties:{},additionalProperties:false}},richPresentationTool,projectContextTool,...agentContextTools.filter(tool=>tool.name==='read_agent_guide'),...platformTools.filter(tool=>['capabilities','export_deliverable'].includes(tool.name)),
  {name:'search_skills',description:'Discover reviewed working methods relevant to this request. This only returns a bounded catalog, never executes a method or grants tools. Choose by the task and read_skill before applying a method.',input_schema:object({query:{type:'string',maxLength:SKILL_POLICY.maxQueryChars},category:{type:'string',enum:['marketing','creative','documents','operations']},semanticIds:{type:'array',items:str,maxItems:8}},[])},
  {name:'read_skill',description:'Read a reviewed skill or one of its listed references. Read SKILL.md first, follow nextOffset for an incomplete excerpt, and request only relevant references. Paths are an allowlist, not a filesystem. The request shares a bounded reading budget with its specialists. Methods never authorize execution, spending or external access.',input_schema:object({id:{type:'string',maxLength:64},reference:{type:'string',maxLength:240},offset:{type:'integer',minimum:0}},['id'])},
  {name:'browser_plan',description:'Propose a bounded private cloud browser mission for explicit review in the Browser panel. No browser starts here. Connected websites require human login; all external writes require exact approval.',input_schema:object({objective:str,allowedDomains:{type:'array',items:str},maxCredits:{type:'number'}},['objective','allowedDomains','maxCredits'])},
@@ -66,13 +69,14 @@ export const toolDefinitions=[...agentContextTools.filter(tool=>tool.name==='rea
 ].map(tool=>({...tool,description:tool.name==='export_deliverable'?'Export current owned report to private PDF/DOCX/XLSX/PPTX/HTML/CSV/MD. Return downloadUrl. No publish.':compactToolDescriptions[tool.name]||tool.description}));
 export function initialToolDefinitions(settings:Record<string,unknown>=config()){
  const nativeMetaReady=typeof settings.META_GRAPH_VERSION==='string'&&/^v\d+\.\d+$/.test(settings.META_GRAPH_VERSION);
- return toolDefinitions.filter(tool=>tool.name!=='read_meta'||nativeMetaReady);
+ return toolDefinitions.filter(tool=>tool.name!=='present_response'&&(tool.name!=='read_meta'||nativeMetaReady));
 }
 async function recordSkillRead(tenant:string,actor:string,result:unknown){
  const item=z.object({id:z.string(),version:z.string(),reference:z.string(),chars:z.number(),truncated:z.boolean(),provenance:z.object({digest:z.string()})}).parse(result);
  await auditLog(tenant,actor,'skill.read',item.id,{version:item.version,reference:item.reference,chars:item.chars,truncated:item.truncated,digest:item.provenance.digest});
 }
 export async function executeTool(tenant:string,name:string,input:unknown,skills:SkillSession=createSkillSession(),scope?:AgentScope){
+ if(scope?.projectId!==undefined&&input&&typeof input==='object'&&'id' in input&&typeof input.id==='string'&&['get_workspace_resource','revise_knowledge','forget_knowledge','revise_deliverable','revise_page','verify_deliverable','explain_memory'].includes(name))await assertProjectResource(tenant,input.id,scope.projectId);
  switch(name){
  case 'get_current_time':return currentTime(input);
  case 'read_agent_guide':return readAgentGuide(input);
@@ -80,16 +84,16 @@ export async function executeTool(tenant:string,name:string,input:unknown,skills
  case 'update_agent_context':return updateAgentContext(tenant,input);
  case 'explain_memory':return explainMemory(tenant,input);
  case 'record_learning':if(!scope)throw new AppError('Contexte utilisateur requis.');return recordUserLearning(scope,input);
- case 'search_memory':return searchMemory(tenant,input);
+ case 'search_memory':return searchMemory(tenant,input,scope?.projectId??null);
  case 'search_conversation':if(!scope)throw new AppError('Contexte de conversation requis.');return searchConversation(tenant,scope.conversationId,input);
  case 'save_work_checkpoint':if(!scope)throw new AppError('Contexte d’exécution requis.');return saveCheckpoint(scope,input);
  case 'update_work_plan':if(!scope)throw new AppError('Contexte d’exécution requis.');return savePlan(scope,input);
  case 'verify_deliverable':if(!scope)throw new AppError('Contexte d’exécution requis.');return verifyDeliverable(scope,input);
  case 'search_skills':return searchSkills(input);
  case 'read_skill':return readSkill(input,skills,config().BUCKET);
- case "search_workspace":{const {kind}=z.object({kind:z.enum(["knowledge","deliverable","media","page","mission","skill","proposal","project","brand"])}).parse(input);return (await list(tenant,kind)).map(r=>({id:r.id,title:r.title,version:r.version,status:r.status,data:r.data}));}
+ case "search_workspace":{const {kind}=z.object({kind:z.enum(["knowledge","deliverable","media","page","mission","skill","proposal","project","brand"])}).parse(input);return (await list(tenant,kind)).filter(r=>kind==='project'?r.id===(scope?.projectId??null):resourceProject(r.data)===(scope?.projectId??null)).map(r=>({id:r.id,title:r.title,version:r.version,status:r.status,data:r.data}));}
  case 'get_workspace_resource':{const {id}=z.object({id:z.string().min(1).max(160)}).strict().parse(input);const resource=await getClientResource(tenant,id);if(resource.status==='deleted'||!['knowledge','deliverable','media','page','mission','skill','proposal','project','subagent','file'].includes(resource.kind))throw new AppError('Élément introuvable.',404);return {resource};}
- case "save_knowledge":{const data=knowledgeInput.parse(input);return createResource(tenant,"knowledge",data.title,{...data,validatedAt:Date.now()},"saved");}
+ case "save_knowledge":{const data=knowledgeInput.parse(input);return createResource(tenant,"knowledge",data.title,{...data,projectId:scope?.projectId??null,validatedAt:Date.now()},"saved");}
  case 'revise_knowledge':return reviseKnowledge(tenant,input);
  case 'forget_knowledge':return forgetKnowledge(tenant,input);
  case 'save_deliverable':return saveDeliverable(tenant,input);
@@ -110,12 +114,12 @@ export async function executeTool(tenant:string,name:string,input:unknown,skills
  }
 }
 export const connectorWorkPolicy="Pour publier un post ou préparer le lancement de publicités en mode Accompagné, découvre les outils du service demandé puis vérifie braand_connector_status. Une connexion expirée exige une reconnexion ; une connexion active ne prouve pas les permissions. Vérifie les Pages et comptes publicitaires par les outils de lecture découverts. Si les outils connectés existent, ne déclare pas une incapacité générale parce que read_meta, le calendrier social ou save_campaign_plan ne peuvent pas exécuter cette action. Les destinations, contenus et paramètres publicitaires doivent être concrets et vérifiés. Toute activation publicitaire nécessite budget, devise et durée ou plafond total explicites, sans les inventer. Présente chaque mutation exacte à approuver avec braand_connector_action. Une campagne créée en pause n'est pas une publicité diffusée ; vérifie son état réel après approbation, et ne relance jamais un résultat incertain. Une nouvelle demande après approbation peut poursuivre les étapes restantes selon le reçu, sans répéter celles déjà confirmées.\r";
-export const systemPrompt=personalAgentPolicy;
+export const systemPrompt=personalAgentPolicy+'\nPour une réponse enrichie utile (tableau, graphique, cartes, formulaire), appelle response_formats pour charger le contrat puis present_response. Une réponse simple reste textuelle. Ne fabrique aucune donnée.';
 
-export async function runSpecialist(tenant:string,runId:string,input:unknown,emit:(type:string,data:unknown)=>Promise<void>,signal:AbortSignal,budget:RunBudget,skills:SkillSession=createSkillSession()){
+export async function runSpecialist(tenant:string,runId:string,input:unknown,emit:(type:string,data:unknown)=>Promise<void>,signal:AbortSignal,budget:RunBudget,skills:SkillSession=createSkillSession(),scope?:AgentScope){
  const p=z.object({role:z.enum(["creative","campaigns","extraction","analysis","review"]),task:z.string().min(1).max(4000),context:z.string().max(12000),specialty:z.enum(Object.keys(specialistProfiles) as [keyof typeof specialistProfiles,...(keyof typeof specialistProfiles)[]]).optional(),contract:delegationContract.optional()}).strict().parse(input);
  if(p.specialty&&!(specialistProfiles[p.specialty].roles as readonly string[]).includes(p.role))throw new AppError('Rôle incompatible avec cette spécialité.',400,'specialist_profile_invalid');
- const references=[];for(const id of p.contract?.references||[]){const resource=await getClientResource(tenant,id);if(resource.status==='deleted'||resource.kind==='connector_action')throw new AppError('Référence indisponible dans ce contexte.',404);references.push({id:resource.id,kind:resource.kind,title:resource.title,version:resource.version,status:resource.status,data:JSON.stringify(Object.fromEntries(Object.entries(resource.data).filter(([key])=>key!=='history'))).slice(0,6000),truncated:JSON.stringify(resource.data).length>6000});}
+ const references=[];for(const id of p.contract?.references||[]){if(scope)await assertProjectResource(tenant,id,scope.projectId??null);const resource=await getClientResource(tenant,id);if(resource.status==='deleted'||resource.kind==='connector_action')throw new AppError('Référence indisponible dans ce contexte.',404);references.push({id:resource.id,kind:resource.kind,title:resource.title,version:resource.version,status:resource.status,data:JSON.stringify(Object.fromEntries(Object.entries(resource.data).filter(([key])=>key!=='history'))).slice(0,6000),truncated:JSON.stringify(resource.data).length>6000});}
  let specialistBudget=budget;
  if(p.contract){const usage=await db().prepare('SELECT usage,status,provider,cost_xaf,rate FROM provider_usage WHERE hold_id=?').bind(budget.holdId).all<{usage:string;status:string;provider:string;cost_xaf:number|null;rate:string}>();if(usage.results.some(row=>['pending','unknown','estimated'].includes(row.status)))throw new AppError('Un coût reste à rapprocher.',409,'usage_unknown');const consumed=usage.results.reduce((total,row)=>total+(row.status==='complete'?requestCostUnits(row,modelRateSchema.parse(JSON.parse(row.rate)),usageUnits):0),0);specialistBudget={...budget,limit:Math.min(budget.limit,consumed+p.contract.maxCredits*100)};}
  const record=await createResource(tenant,"subagent",p.task.slice(0,100),{role:p.role,task:p.task,...(p.specialty?{specialty:p.specialty}:{}),...(p.contract?{contract:p.contract}:{}),startedAt:Date.now()},"running");
@@ -150,7 +154,7 @@ export async function runSpecialist(tenant:string,runId:string,input:unknown,emi
    if((escalated||contractRepair)&&calls.length)throw new AppError('La tentative de vérification doit rendre un rapport sans nouvel outil.',409,'model_escalation_limit');
    if(!calls.length){if(p.contract){try{structured=parseSpecialistOutput(report);if(structured.checks.length!==p.contract.successCriteria.length||p.contract.successCriteria.some(criterion=>structured!.checks.filter(check=>check.criterion===criterion).length!==1))throw new Error('Missing or mismatched criterion checks');}catch{if(contractRepair||round>=2)throw new AppError('Le livrable du spécialiste ne respecte pas son contrat.',502,'specialist_contract_invalid');contractRepair=true;messages.push({role:'user',content:'Le contrat de sortie est invalide. Rends uniquement le JSON demandé avec un contrôle pour chaque critère, sans nouvelle action.'});continue;}}if(!report.trim()&&!escalated&&!['analysis','review'].includes(p.role)&&round<2){escalated=true;messages.push({role:'user',content:'Validation du résultat échouée : aucun rapport textuel. Fournis le rapport factuel demandé sans effectuer d’action externe.'});continue;}break;}
    const results:{type:string;tool_use_id:string;content:string;is_error?:boolean}[]=[];
-   for(const call of calls){await authorize(tenant,budget.who.user.userId,"write");await budget.beforeTool?.();if(!allowed.has(call.name))throw new AppError("Outil interdit au spécialiste.",403);try{const result=await executeTool(tenant,call.name,call.input,skills);if(call.name==='read_skill')await recordSkillRead(tenant,budget.who.user.userId,result);results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});}catch(error){results.push({type:"tool_result",tool_use_id:call.id,content:error instanceof AppError?error.message:"Lecture indisponible.",is_error:true});}}
+   for(const call of calls){await authorize(tenant,budget.who.user.userId,"write");await budget.beforeTool?.();if(!allowed.has(call.name))throw new AppError("Outil interdit au spécialiste.",403);try{const result=await executeTool(tenant,call.name,call.input,skills,scope);if(call.name==='read_skill')await recordSkillRead(tenant,budget.who.user.userId,result);results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});}catch(error){results.push({type:"tool_result",tool_use_id:call.id,content:error instanceof AppError?error.message:"Lecture indisponible.",is_error:true});}}
    messages.push({role:"user",content:results});
    if(round===(escalated?3:2))throw new AppError("Limite d’étapes du spécialiste atteinte.",409);
   }
@@ -164,10 +168,11 @@ export async function runSpecialist(tenant:string,runId:string,input:unknown,emi
 export async function runAgent(tenant:string,conversationId:string,runId:string,emit:(type:string,data:unknown)=>Promise<void>,signal:AbortSignal,budget:RunBudget,workMode:"accompanied"|"autonomous"|"approved_mission"="accompanied"){
  if(signal.aborted)throw new AppError('Réponse arrêtée.',499,'cancelled');
  const skills=createSkillSession();
+ const activeProjectId=await conversationProject(tenant,conversationId);
  const mutationResults=new Map<string,unknown>();
  let specialistCount=0;
  const [context,memoryContext,runtimeContext,connectorTools]=await Promise.all([
-  conversationContext(tenant,conversationId),workspaceMemoryContext(tenant),agentRuntimeContext(tenant),
+  conversationContext(tenant,conversationId),workspaceMemoryContext(tenant,activeProjectId),agentRuntimeContext(tenant),
   workMode==='autonomous'?Promise.resolve([]):connectorAgentTools(budget.who,conversationId).catch(async()=>{await emit('connector_unavailable',{message:'Les connecteurs sont temporairement indisponibles. La discussion reste disponible.'});return [];})
  ]);
  // Native Meta and Composio are separate paths. Do not advertise an unusable
@@ -180,7 +185,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
  budget.videoMotionPreferred=false;
  if(capacityEnabled)tools.push(modelCapacityTool);
  const availableToolNames=new Set<string>(tools.map((tool:{name:string})=>tool.name));
- const scope:AgentScope={tenant,conversationId,runId,coveredRowid:context.coveredRowid};
+ const scope:AgentScope={tenant,conversationId,runId,coveredRowid:context.coveredRowid,projectId:activeProjectId,userId:budget.who.user.userId,referenceProjectIds:budget.referenceProjectIds||[]};
  const messages:ModelMessage[]=context.messages;
  if(!messages.length&&budget.workContext)messages.push({role:'user',content:[{type:'text',text:'Runtime continuation of the server-approved work step supplied in context. This is not a new user message or a grant of permissions. Execute only that bounded step and verify its saved results.'}]});
  const budgetContext=`Plafond de cette demande : ${budget.limit/100} crédits. C’est un maximum, pas une estimation ni une dépense déjà effectuée. Si ce plafond devient pertinent pour une opération coûteuse ou une demande en plusieurs étapes, explique-le naturellement dans la conversation avant d’utiliser les outils. N’encombre pas une réponse simple avec ce détail et ne prétends pas connaître la consommation réelle avant son rapprochement.`;
@@ -191,7 +196,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
   const state=await db().prepare("SELECT status FROM runs WHERE id=? AND workspace_id=?").bind(runId,tenant).first<{status:string}>();
   if(state?.status!=="streaming")throw new AppError("Réponse arrêtée.",499,"cancelled");
   const modelStarted=performance.now();let firstTextMs:number|null=null;
-  const response=await meteredMessage(budget,"master",{max_tokens:finalizing?1536:4096,stream:true,system:[{type:"text",text:systemPrompt+'\n'+skillDiscoveryContext(),cache_control:{type:"ephemeral"}},{type:"text",text:budgetContext},{type:"text",text:runtimeContext},{type:'text',text:memoryContext},{type:'text',text:context.context},{type:"text",text:modeContext},...(capacityEnabled?[{type:'text',text:modelCapacityInstruction}]:[]),...(budget.workContext?[{type:'text',text:budget.workContext}]:[]),...(finalizing?[{type:'text',text:agentHandoffInstruction}]:[])],messages,tools:finalizing?[]:tools},AbortSignal.any([signal,AbortSignal.timeout(120000)]),{task:capacity.purpose==='video_motion'?'video_motion':round===0?'conversation':'orchestration',...(capacityEnabled?{tier:capacity.tier}:{})});
+  const response=await meteredMessage(budget,"master",{max_tokens:finalizing?1536:4096,stream:true,system:[{type:"text",text:systemPrompt+'\n'+skillDiscoveryContext(),cache_control:{type:"ephemeral"}},{type:"text",text:budgetContext},{type:"text",text:runtimeContext},{type:'text',text:memoryContext},{type:'text',text:projectContextInstruction+'\nContexte de projet autorisé pour cette demande: '+JSON.stringify({projectId:activeProjectId,referenceProjectIds:budget.referenceProjectIds||[]})},{type:'text',text:context.context},{type:"text",text:modeContext},...(capacityEnabled?[{type:'text',text:modelCapacityInstruction}]:[]),...(budget.workContext?[{type:'text',text:budget.workContext}]:[]),...(finalizing?[{type:'text',text:agentHandoffInstruction}]:[])],messages,tools:finalizing?[]:tools},AbortSignal.any([signal,AbortSignal.timeout(120000)]),{task:capacity.purpose==='video_motion'?'video_motion':round===0?'conversation':'orchestration',...(capacityEnabled?{tier:capacity.tier}:{})});
   if(!response.ok||!response.body)throw new AppError(response.status===401?"La clé du modèle est invalide.":response.status===429?"Le modèle a atteint sa limite temporaire.":"Le modèle n’a pas pu répondre.",503,"model_unavailable");
   const blocks:ModelContentBlock[]=[],jsonParts:Record<number,string>={};let ended=false,lastCheck=Date.now();
   for await(const item of parseSSE(response.body)){
@@ -229,6 +234,20 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
    if(signal.aborted||state?.status!=="streaming")throw new AppError("Réponse arrêtée.",499,"cancelled");
    let operationSucceeded=false;let receipt:string|undefined;
    try{
+    if(!availableToolNames.has(call.name))throw new AppError('Outil indisponible.',403,'tool_unavailable');
+    if(call.name==='response_formats'){
+     z.object({}).strict().parse(call.input);if(!availableToolNames.has('present_response')){tools.push(richPresentationTool);availableToolNames.add('present_response');}
+     results.push({type:'tool_result',tool_use_id:call.id,content:richPresentationInstruction});return;
+    }
+    if(call.name==='present_response'){
+     const response=await prepareRichResponse(tenant,conversationId,messageId,call.id,call.input);
+     await persistRichResponse(response);await emit('rich_response',response);
+     results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify({presented:true,blockIds:response.blocks.map(b=>b.id),messageId})});return;
+    }
+    if(call.name==='search_project_context'){
+     const result=await searchProjectContext(tenant,{projectId:activeProjectId,userId:budget.who.user.userId,referenceProjectIds:budget.referenceProjectIds||[]},call.input);
+     results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(result)});await emit('tool_result',{name:call.name,id:call.id,result});return;
+    }
     if(call.name===modelCapacityTool.name){
      if(!capacityEnabled||!availableToolNames.has(call.name))throw new AppError('Capacité indisponible.',403,'tool_unavailable');
      if(calls.length!==1)throw new AppError('Select capacity alone; no other action was authorized by this request.',409,'model_capacity_mixed');
@@ -249,8 +268,12 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
     receipt=durableReceipt?.reused?undefined:durableReceipt?.fingerprint;
     if(durableReceipt?.reused)mutationResults.set(key!,durableReceipt.result);
     const reused=key!==undefined&&mutationResults.has(key);
-    let result:unknown=reused?{reused:true,originalResult:mutationResults.get(key!),note:'Cette même modification a déjà réussi pendant cette demande. Aucune nouvelle modification. Relis la ressource pour vérifier son état actuel.'}:platformTools.some(tool=>tool.name===call.name)?await (await import('./platform-runtime')).executePlatformTool(call.name,call.input,scope,budget):call.name==="browser_plan"?await browserService.create(budget.who,{...z.object({objective:z.string(),allowedDomains:z.array(z.string()),maxCredits:z.number()}).strict().parse(call.input),conversationId}).then(session=>({id:session.id,kind:"browser_session",status:session.status})):call.name==="delegate_specialist"?await runSpecialist(tenant,runId,call.input,emit,signal,budget,skills):call.name.startsWith("COMPOSIO_")||call.name.startsWith("braand_")?(workMode==='approved_mission'?await executeMissionConnectorTool(budget.who,conversationId,call.name,call.input,budget.workId||'',budget.workStepId||''):await executeConnectorAgentTool(budget.who,conversationId,call.name,call.input)):await executeTool(tenant,call.name,call.input,skills,scope);
+    let result:unknown=reused?{reused:true,originalResult:mutationResults.get(key!),note:'Cette même modification a déjà réussi pendant cette demande. Aucune nouvelle modification. Relis la ressource pour vérifier son état actuel.'}:platformTools.some(tool=>tool.name===call.name)?await (await import('./platform-runtime')).executePlatformTool(call.name,call.input,scope,budget):call.name==="browser_plan"?await browserService.create(budget.who,{...z.object({objective:z.string(),allowedDomains:z.array(z.string()),maxCredits:z.number()}).strict().parse(call.input),conversationId}).then(session=>({id:session.id,kind:"browser_session",status:session.status})):call.name==="delegate_specialist"?await runSpecialist(tenant,runId,call.input,emit,signal,budget,skills,scope):call.name.startsWith("COMPOSIO_")||call.name.startsWith("braand_")?(workMode==='approved_mission'?await executeMissionConnectorTool(budget.who,conversationId,call.name,call.input,budget.workId||'',budget.workStepId||''):await executeConnectorAgentTool(budget.who,conversationId,call.name,call.input)):await executeTool(tenant,call.name,call.input,skills,scope);
     operationSucceeded=true;
+    if(!reused&&['save_knowledge','create_page','prepare_media','propose_media','plan_mission','save_campaign_plan','save_skill_candidate','save_deliverable'].includes(call.name)&&result&&typeof result==='object'&&'id' in result&&'kind' in result&&'data' in result&&typeof result.id==='string'&&!['revise_knowledge','forget_knowledge','revise_deliverable','revise_page','update_agent_context','record_learning'].includes(call.name)){
+     const created=await getResource(tenant,result.id);
+     if(resourceProject(created.data)!==activeProjectId)result=await updateResource(tenant,created.id,created.version,{data:{...created.data,projectId:activeProjectId}});
+    }
     if(call.name==='verify_deliverable'&&result&&typeof result==='object'&&(result as {status?:string}).status==='partial')capacityEvidence.validationFailure=true;
     if(call.name==='capabilities'&&result&&typeof result==='object'){
      const request=z.object({area:z.enum(['work','research','social','media','browser','documents','analysis','software','context']).optional()}).strict().parse(call.input),discovered=discoveredPlatformTools(request.area,result as Record<string,unknown>).filter(tool=>agentToolAllowedForMode(workMode,tool.name));

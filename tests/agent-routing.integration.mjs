@@ -11,7 +11,7 @@ function statement(query,args=[]){return {bind(...v){return statement(query,v);}
 const DB={prepare:q=>statement(q),async batch(ss){sql.exec('BEGIN');try{const r=ss.map(s=>s._run());sql.exec('COMMIT');return r;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 const fixture={env:{DB},headers:new Headers({'x-braand-identity-id':'agent-routing-owner','x-braand-identity-email':'owner@test.invalid'}),requests:[],responses:[],external:[],events:[],beforeTools:0};globalThis.__agentRoutingTest=fixture;
 const out=path.join(project,'.local-build','agent-routing-test.mjs');mkdirSync(path.dirname(out),{recursive:true});
-await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(project,'lib/agent.ts').replaceAll('\\','/'))};export * as server from ${JSON.stringify(path.join(project,'lib/server.ts').replaceAll('\\','/'))};`,resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'agent-routing-isolation',setup(b){
+await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(project,'lib/agent.ts').replaceAll('\\','/'))};export * as context from ${JSON.stringify(path.join(project,'lib/project-context.ts').replaceAll('\\','/'))};export * as interaction from ${JSON.stringify(path.join(project,'app/api/chat/interaction/route.ts').replaceAll('\\','/'))};export * as server from ${JSON.stringify(path.join(project,'lib/server.ts').replaceAll('\\','/'))};`,resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'agent-routing-isolation',setup(b){
  b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},a=>({path:a.path,namespace:'bindings'}));
  b.onLoad({filter:/.*/,namespace:'bindings'},a=>({contents:a.path==='cloudflare:workers'?'export const env=globalThis.__agentRoutingTest.env;':a.path==='next/headers'?'export async function headers(){return globalThis.__agentRoutingTest.headers;}':'export function redirect(){throw Error("Unexpected redirect");}'}));
  b.onResolve({filter:/^\.\/(metering|composio|browser|browser-agent|providers|platform-runtime)$/},a=>({path:a.path,namespace:'fixture'}));
@@ -24,7 +24,7 @@ await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(
   './browser-agent':`export async function runBrowserAgentTurn(){throw Error('Unexpected browser runner');}`,
  }[a.path]}));
 }}]});
-const {agent,server}=await import(pathToFileURL(out).href),who=await server.identity(new Request('https://braand.test/api/chat'));
+const {agent,server,context,interaction}=await import(pathToFileURL(out).href),who=await server.identity(new Request('https://braand.test/api/chat'));
 globalThis.fetch=async()=>{throw Error('Network forbidden in orchestrator routing tests');};
 const emit=async(type,data)=>{fixture.events.push({type,data});},signal=()=>new AbortController().signal;
 function stream(blocks){return [{type:'message_start',message:{model:'fixture',usage:{}}},...blocks.flatMap((block,index)=>block.type==='tool_use'?[{type:'content_block_start',index,content_block:{...block,input:{}}},{type:'content_block_delta',index,delta:{type:'input_json_delta',partial_json:JSON.stringify(block.input)}},{type:'content_block_stop',index}]:[{type:'content_block_start',index,content_block:{...block,text:''}},{type:'content_block_delta',index,delta:{type:'text_delta',text:block.text||''}},{type:'content_block_stop',index}]),{type:'message_stop'}].map(event=>'event: '+event.type+'\ndata: '+JSON.stringify(event)+'\n\n').join('');}
@@ -33,6 +33,30 @@ async function setup(){sql.prepare("UPDATE runs SET status='partial' WHERE statu
 const run=execution=>agent.runAgent(who.tenant,execution.conversationId,execution.runId,emit,signal(),execution.budget);
 const specialist=(execution,role)=>agent.runSpecialist(who.tenant,execution.runId,{role,task:'Travail encadré '+role,context:'Faits fournis par cet espace'},emit,signal(),execution.budget);
 let count=0;async function check(name,fn){await fn();count++;console.log('PASS '+name);}
+await check('rich response is persisted with its message and emits only validated blocks',async()=>{
+ const execution=await setup();fixture.responses=[stream([{type:'tool_use',id:'formats',name:'response_formats',input:{}}]),stream([{type:'tool_use',id:'present-1',name:'present_response',input:{version:1,blocks:[{id:'result',type:'table',columns:['Objet','Quantité'],rows:[['Test',0],['Inconnu',null]],source:'Fixture contrôlée'}]}}]),text('Le tableau est disponible.')];await run(execution);
+ const event=fixture.events.find(e=>e.type==='rich_response');assert.ok(event);assert.equal(event.data.blocks[0].rows[1][1],null);
+ const row=sql.prepare('SELECT content FROM messages WHERE id=?').get(event.data.messageId);assert.deepEqual(JSON.parse(row.content).find(b=>b.type==='ui_response').response,event.data);
+});
+await check('a rejected rich component leaves the conversation recoverable',async()=>{
+ const execution=await setup();fixture.responses=[stream([{type:'tool_use',id:'formats',name:'response_formats',input:{}}]),stream([{type:'tool_use',id:'invalid-ui',name:'present_response',input:{version:1,blocks:[{id:'evil',type:'html',html:'<script>alert(1)</script>'}]}}]),text('Voici le résultat en texte.')];await run(execution);assert.equal(fixture.events.filter(e=>e.type==='rich_response').length,0);assert.ok(fixture.requests[2].body.messages.some(m=>Array.isArray(m.content)&&m.content.some(b=>b.type==='tool_result'&&b.is_error)));
+});
+await check('form submissions are idempotent, restored and require current membership',async()=>{
+ const execution=await setup();fixture.responses=[stream([{type:'tool_use',id:'formats',name:'response_formats',input:{}}]),stream([{type:'tool_use',id:'form-ui',name:'present_response',input:{version:1,blocks:[{id:'form',type:'form',fields:[{id:'brief',label:'Brief',type:'text',required:true}]}]}}]),text('Précisez votre brief.')];await run(execution);
+ const response=fixture.events.find(e=>e.type==='rich_response').data;const payload={messageId:response.messageId,responseId:response.id,blockId:'form',action:'respond',values:{brief:'Premier brief'}};
+ const submit=values=>interaction.POST(new Request('https://braand.test/api/chat/interaction',{method:'POST',headers:{'content-type':'application/json','x-braand-workspace':who.tenant},body:JSON.stringify({...payload,values})}));
+ const [a,b]=await Promise.all([submit(payload.values),submit({brief:'Autre brief'})]);assert.equal(a.status,200);assert.equal(b.status,200);assert.deepEqual((await a.json()).values,(await b.json()).values);
+ const q=new URLSearchParams({messageId:response.messageId,responseId:response.id,blockId:'form'});const loaded=await interaction.GET(new Request('https://braand.test/api/chat/interaction?'+q));assert.equal((await loaded.json()).saved,true);
+ const foreign=await interaction.POST(new Request('https://braand.test/api/chat/interaction',{method:'POST',headers:{'content-type':'application/json','x-braand-workspace':'forbidden'},body:JSON.stringify(payload)}));assert.equal(foreign.status,403);
+});
+await check('project search isolates memory and explicit cross-project reuse returns only reusable methods',async()=>{
+ const a=await server.createResource(who.tenant,'project','ALPHA',{},'saved'),b=await server.createResource(who.tenant,'project','BETA',{},'saved');
+ await server.createResource(who.tenant,'knowledge','Stratégie',{projectId:a.id,content:'Stratégie CONFIDENTIAL_BUDGET_900',reusableMethod:'Stratégie: tester une hypothèse à la fois'},'saved');
+ await server.createResource(who.tenant,'knowledge','Stratégie actuelle',{projectId:b.id,content:'Stratégie BETA'},'saved');
+ const scope={projectId:b.id,userId:who.user.userId,referenceProjectIds:[]};const own=await context.searchProjectContext(who.tenant,scope,{query:'Stratégie'});assert.equal(own.items.length,1);assert.doesNotMatch(JSON.stringify(own),/CONFIDENTIAL/);
+ await assert.rejects(()=>context.searchProjectContext(who.tenant,scope,{query:'Stratégie',projectId:a.id}),e=>e.status===403);
+ const borrowed=await context.searchProjectContext(who.tenant,{...scope,referenceProjectIds:[a.id]},{query:'Stratégie',projectId:a.id});assert.equal(borrowed.methodOnly,true);assert.equal(borrowed.items[0].sourceProjectId,a.id);assert.doesNotMatch(JSON.stringify(borrowed),/CONFIDENTIAL/);assert.deepEqual(borrowed.messages,[]);
+});
 await check('file export is available immediately without discovery and is available for autonomous private delivery',async()=>{
  const execution=await setup();fixture.responses=[text('Quelle information doit figurer dans le document ?')];await run(execution);
  assert.ok(fixture.requests[0].body.tools.some(tool=>tool.name==='export_deliverable'));

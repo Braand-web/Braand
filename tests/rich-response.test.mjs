@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdirSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import path from 'node:path';
+const out=path.resolve('.local-build/rich-response-unit.mjs');mkdirSync(path.dirname(out),{recursive:true});
+await build({entryPoints:['lib/rich-response.ts'],outfile:out,bundle:true,platform:'node',format:'esm'});
+const {richInputSchema,readableRichBlocks}=await import(pathToFileURL(out));
+const text={id:'text',type:'markdown',text:'Bonjour'};
+test('text and useful mixed blocks round trip as persisted JSON',()=>{const response={version:1,blocks:[text,{id:'table',type:'table',columns:['Objet','Valeur'],rows:[['A',null],['B',0]],source:'Données utilisateur'}]};assert.deepEqual(richInputSchema.parse(JSON.parse(JSON.stringify(response))),response);});
+test('invalid sibling and future versions have readable fallback',()=>{const blocks=readableRichBlocks({version:1,blocks:[text,{id:'x',type:'script',code:'alert(1)'}]});assert.equal(blocks[0].text,'Bonjour');assert.equal(blocks[1].type,'markdown');assert.match(readableRichBlocks({version:2,blocks:[]})[0].text,/version/);});
+test('executable attributes, duplicate IDs, oversize and invalid numeric data are rejected',()=>{for(const blocks of [[{...text,onClick:'evil()'}],[text,text],[{...text,text:'x'.repeat(12001)}],[{id:'c',type:'chart',chart:'line',unit:'XAF',period:'jour',source:'test',dataKind:'observed',points:[{label:'A',value:Infinity}]}]])assert.equal(richInputSchema.safeParse({version:1,blocks}).success,false);});
+test('table shape and cross object mutation attributes are rejected',()=>{assert.equal(richInputSchema.safeParse({version:1,blocks:[{id:'t',type:'table',columns:['A'],rows:[[1,2]],source:'test'}]}).success,false);assert.equal(richInputSchema.safeParse({version:1,blocks:[{id:'o',type:'objects',refs:[{id:'r',kind:'campaign',version:1,action:'publish'}]}]}).success,false);});

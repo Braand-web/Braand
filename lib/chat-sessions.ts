@@ -1,5 +1,5 @@
 type Update<T> = T | ((current:T)=>T);
-export type ChatSlot<M,A,S>={key:string;scope:string;conversationId:string|undefined;messages:M[];attachments:A[];draftInput:string|null;busy:boolean;runId:string;activity:string;responseStatus:S|null;error:string;controller:{current:AbortController|null};inFlight:{current:boolean};flush:{current:(()=>void)|null}};
+export type ChatSlot<M,A,S>={key:string;scope:string;projectId:string|null;referenceProjectId:string;conversationId:string|undefined;messages:M[];attachments:A[];draftInput:string|null;busy:boolean;runId:string;activity:string;responseStatus:S|null;error:string;controller:{current:AbortController|null};inFlight:{current:boolean};flush:{current:(()=>void)|null}};
 
 /** UI state and stream ownership are scoped to a conversation, never to the visible page. */
 export function createChatSessions<M,A,S>(){
@@ -7,7 +7,7 @@ export function createChatSessions<M,A,S>(){
  let sequence=0,disposed=false;
  const notify=()=>{for(const fn of listeners)fn();};
  const create=(scope:string,conversationId?:string,messages:M[]=[])=>{
-  const key=scope+':'+(++sequence),slot:ChatSlot<M,A,S>={key,scope,conversationId,messages,attachments:[],draftInput:null,busy:false,runId:'',activity:'',responseStatus:null,error:'',controller:{current:null},inFlight:{current:false},flush:{current:null}};
+  const key=scope+':'+(++sequence),slot:ChatSlot<M,A,S>={key,scope,projectId:null,referenceProjectId:'',conversationId,messages,attachments:[],draftInput:null,busy:false,runId:'',activity:'',responseStatus:null,error:'',controller:{current:null},inFlight:{current:false},flush:{current:null}};
   slots.set(key,slot);active.set(scope,key);
   // Keep running streams; evict only old inactive UI histories. Saved chats remain on the server.
   const old=[...slots.values()].filter(item=>item.scope===scope&&!item.busy&&item.key!==key);
@@ -18,8 +18,8 @@ export function createChatSessions<M,A,S>(){
   subscribe(fn:()=>void){listeners.add(fn);return()=>{listeners.delete(fn);};},
   snapshot(scope:string){return slots.get(active.get(scope)||'')||create(scope);},
   update<K extends keyof ChatSlot<M,A,S>>(key:string,field:K,value:Update<ChatSlot<M,A,S>[K]>){const item=slots.get(key);if(!item||disposed)return;const next=typeof value==='function'?(value as (v:ChatSlot<M,A,S>[K])=>ChatSlot<M,A,S>[K])(item[field]):value;slots.set(key,{...item,[field]:next});if(['busy','conversationId'].includes(field)){const visible=active.get(item.scope);if(visible&&visible!==key){const shown=slots.get(visible);if(shown)slots.set(visible,{...shown});}}notify();},
-  newChat(scope:string){const existing=[...slots.values()].reverse().find(s=>s.scope===scope&&!s.busy&&!s.conversationId);const item=existing||create(scope);active.set(scope,item.key);notify();return item;},
-  open(scope:string,id:string,messages?:M[]){let item=[...slots.values()].find(s=>s.scope===scope&&s.conversationId===id);if(!item&&messages===undefined)return false;if(!item)item=create(scope,id,messages);active.set(scope,item.key);notify();return true;},
+  newChat(scope:string,force=false,projectId:string|null=null){const existing=!force&&[...slots.values()].reverse().find(s=>s.scope===scope&&!s.busy&&!s.conversationId&&s.projectId===projectId);const item=existing||create(scope);item.projectId=projectId;active.set(scope,item.key);notify();return item;},
+  open(scope:string,id:string,messages?:M[],projectId?:string|null){let item=[...slots.values()].find(s=>s.scope===scope&&s.conversationId===id);if(!item&&messages===undefined)return false;if(!item)item=create(scope,id,messages);if(projectId!==undefined)item.projectId=projectId;active.set(scope,item.key);notify();return true;},
   isCurrent(scope:string,key:string){return active.get(scope)===key;},
   select(scope:string,key:string){if(slots.get(key)?.scope!==scope)return false;active.set(scope,key);notify();return true;},
   running(scope:string){return [...slots.values()].filter(s=>s.scope===scope&&s.busy);},

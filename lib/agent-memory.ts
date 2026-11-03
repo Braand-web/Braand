@@ -10,7 +10,7 @@ export async function reviseKnowledge(tenant:string,input:unknown){
  if(resource.kind!=='knowledge'||resource.status==='deleted')throw new AppError('Information de mémoire introuvable.',404);
  // Replacing, rather than retaining a hidden history, makes a correction or
  // withdrawal effective for subsequent requests. Existing chat history is separate.
- return updateResource(tenant,id,version,{title:facts.title,status:'saved',data:{...facts,validatedAt:Date.now()}});
+ return updateResource(tenant,id,version,{title:facts.title,status:'saved',data:{...facts,...(typeof resource.data.projectId==='string'?{projectId:resource.data.projectId}:{}),validatedAt:Date.now()}});
 }
 
 export async function forgetKnowledge(tenant:string,input:unknown){
@@ -20,9 +20,9 @@ export async function forgetKnowledge(tenant:string,input:unknown){
  return {id,status:'deleted',scope:'workspace_memory',note:'Cette information ne sera plus chargée dans les prochaines demandes. Les anciens messages restent distincts.'};
 }
 
-export async function workspaceMemoryContext(tenant:string){
- const brands=await db().prepare("SELECT id,title,data,version FROM resources WHERE workspace_id=? AND kind='brand' AND status='saved' ORDER BY updated_at DESC LIMIT 10").bind(tenant).all<{id:string;title:string;data:string;version:number}>();
- const rows=await db().prepare("SELECT id,title,data,version,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' ORDER BY updated_at DESC,id LIMIT 25").bind(tenant).all<{id:string;title:string;data:string;version:number;updated_at:number}>();
+export async function workspaceMemoryContext(tenant:string,projectId:string|null=null){
+ const brands=await db().prepare("SELECT id,title,data,version FROM resources WHERE workspace_id=? AND kind='brand' AND status='saved' AND json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.projectId') IS ? ORDER BY updated_at DESC LIMIT 10").bind(tenant,projectId).all<{id:string;title:string;data:string;version:number}>();
+ const rows=await db().prepare("SELECT id,title,data,version,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.projectId') IS ? ORDER BY updated_at DESC,id LIMIT 25").bind(tenant,projectId).all<{id:string;title:string;data:string;version:number;updated_at:number}>();
  const items:Record<string,unknown>[]=[],limit=12000;let truncated=rows.results.length===25;
  for(const row of rows.results){
   let value:unknown;try{value=JSON.parse(row.data);}catch{continue;}

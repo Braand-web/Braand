@@ -52,6 +52,7 @@ jobs:
           BRAAND_PLAYWRIGHT_MODULE: ${{ runner.temp }}/braand-browser/node_modules/playwright/index.mjs
         run: |
           node tests/agent-ui.browser.mjs
+          node tests/rich-response.browser.mjs
           node tests/auth-ui.browser.mjs
           node tests/routines-ui.browser.mjs
           node tests/browser-live-vault-ui.browser.mjs

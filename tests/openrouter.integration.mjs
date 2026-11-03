@@ -22,7 +22,7 @@ const env=globalThis.__openrouterTest.env;
 const who=await server.identity(new Request('https://braand.test/api/chat'));
 const now=Date.now();sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('fixture-credit',who.organization,'topup','fixture',1000000,1000000,now,now);
 const rate={model:'anthropic/claude-opus-5.5',input:5,output:25,cacheWrite:6.25,cacheRead:.5,usdXaf:600,overheadXaf:1,fundingFeeBps:300,verifiedAt:new Date().toISOString()};
-const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 10 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.initialToolDefinitions(env)};
+const masterBody={max_tokens:4096,stream:true,system:[{type:'text',text:agent.systemPrompt,cache_control:{type:'ephemeral'}},{type:'text',text:'Plafond de cette demande : 15 crédits.'}],messages:[{role:'user',content:[{type:'text',text:'bonjour'}]},{role:'user',content:[{type:'text',text:'Réponds brièvement en français pour confirmer que tu me reçois.'}]}],tools:agent.initialToolDefinitions(env)};
 const actualAgentInput=llm.estimateInputTokens(masterBody);
 const body={max_tokens:64,stream:true,system:'Help the user.',messages:[{role:'user',content:'Create an advertisement.'}],tools:[{name:'save_draft',description:'Save a draft',input_schema:{type:'object',properties:{title:{type:'string'}},required:['title']}}]};
 const signal=()=>new AbortController().signal;
@@ -106,7 +106,10 @@ await check('Native streaming preserves text, Unicode and tool input deltas with
  assert.equal(calls.slice(before).some(c=>c.url.includes('count_tokens')),false);await finish(b);assert.equal(hold(b).actual,Math.ceil(usage.cost_xaf/4*100));assert.equal(text.includes(secret),false);
 });
 await check('Output token ceiling adapts to a small accepted credit budget',async()=>{
- reset();const b=await budget(10),limited=masterBody,response=await meter.meteredMessage(b,'master',limited,signal());await response.text();
+ reset();
+ // Keep a bounded allowance for output as the real system/tool schema evolves.
+ const accepted=Math.ceil(((Math.ceil(actualAgentInput*1.2)*Math.max(rate.input,rate.cacheWrite,rate.cacheWriteHour||0)+512*rate.output)/1e6*rate.usdXaf*(1+rate.fundingFeeBps/10000)+rate.overheadXaf)/4);
+ const b=await budget(accepted),limited=masterBody,response=await meter.meteredMessage(b,'master',limited,signal());await response.text();
  const request=JSON.parse(calls.filter(c=>c.url.endsWith('/messages')).at(-1).body),usage=row(b),inputTokens=JSON.parse(usage.rate).inputEstimate;
  const ceiling=Math.ceil(((Math.ceil(inputTokens*1.2)*Math.max(rate.input,rate.cacheWrite,rate.cacheWriteHour||0)+request.max_tokens*rate.output)/1e6*rate.usdXaf*(1+rate.fundingFeeBps/10000)+rate.overheadXaf)/4*100);
  assert.equal(inputTokens,actualAgentInput);assert.ok(request.max_tokens>=128);assert.ok(request.max_tokens<limited.max_tokens);assert.ok(ceiling<=b.limit);await finish(b);assert.equal(hold(b).actual,Math.ceil((generationCost*600*1.03+1)/4*100));

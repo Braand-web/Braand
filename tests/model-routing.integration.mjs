@@ -128,5 +128,14 @@ await check('late cost receipt settles reserved credits without issuing or charg
  receiptReady=true;await meter.reconcileOpenRouterUsage(who.organization,100);await meter.reconcileOpenRouterUsage(who.organization,100);
  assert.equal(paidCalls,generationCalls);assert.equal(rows(b)[0].status,'complete');assert.equal(sql.prepare('SELECT actual FROM credit_holds WHERE id=?').get(b.holdId).actual,60);assert.equal(sql.prepare("SELECT count(*) n FROM credit_ledger WHERE reference=? AND kind='consume' AND units>0").get(b.holdId).n,1);assert.ok(receiptCalls>=3);
 });
+await check('requested OpenRouter identities require exact configured rates and manual selection cannot escalate',async()=>{
+ const saved=env.MODEL_ROUTING_CATALOG_JSON;const entries=JSON.parse(saved);
+ for(const [key,id] of Object.entries({solpro:'openai/gpt-6.1-sol-pro',terra:'openai/gpt-6.1-terra',fable:'anthropic/claude-fable-5.1'})){
+  entries[key]={enabled:true,transport:'openrouter',maxInputTokens:90000,maxOutputTokens:8192,rate:{model:id,provider:'openrouter',input:1,output:5,cacheWrite:1.25,cacheRead:.1,usdXaf:600,overheadXaf:0,fundingFeeBps:0,verifiedAt:new Date().toISOString()}};
+  env.MODEL_ROUTING_CATALOG_JSON=JSON.stringify(entries);const selected=router.routedModel(env,{task:'conversation',modelKey:key});assert.equal(selected.model,id);assert.equal(selected.provider,'openrouter');
+  assert.throws(()=>router.routedModel(env,{task:'conversation',modelKey:key,escalation:{reason:'incomplete_result',attempt:1}}),e=>e.code==='manual_model_locked');
+ }
+ assert.throws(()=>router.routedModel(env,{task:'conversation',modelKey:'anthropic/'}));env.MODEL_ROUTING_CATALOG_JSON=saved;
+});
 assert.equal(JSON.stringify(sql.prepare('SELECT rate,usage FROM provider_usage').all()).includes(secret),false);
-console.log('14 model routing integration checks passed. Provider APIs simulated; no paid calls.');
+console.log('15 model routing integration checks passed. Provider APIs simulated; no paid calls.');
