@@ -1,12 +1,12 @@
-.ai-status{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;min-height:30px;font-family:var(--font,Manrope,Arial,sans-serif);font-size:12px;line-height:1.6;color:var(--muted,#999b9e)}
+.ai-status{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;min-height:30px;font-family:var(--font,Manrope,Arial,sans-serif);font-size:var(--text-xs);line-height:1.6;color:var(--muted,var(--color-text-muted))}
 .ai-status-icon{display:inline-flex;align-items:center;justify-content:center;width:21px;height:24px;flex:0 0 21px;animation:ai-status-icon-in 180ms cubic-bezier(.16,1,.3,1)}
 .ai-status-content{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;max-width:100%}
-.ai-status-label{font-weight:550;color:var(--muted,#999b9e);animation:ai-status-label-in 160ms ease-out}
-.ai-status-shimmer{background-image:linear-gradient(100deg,var(--muted,#999b9e) 30%,var(--text,#efefef) 50%,var(--muted,#999b9e) 70%);background-size:250% 100%;background-clip:text;-webkit-background-clip:text;color:transparent;animation:ai-status-shine 2.4s linear infinite}
-.ai-status-detail{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:min(240px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted,#999b9e)}
-.ai-status-detail img{object-fit:contain;border-radius:3px}.ai-status-timer{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted,#999b9e)}
+.ai-status-label{font-weight:550;color:var(--muted,var(--color-text-muted));animation:ai-status-label-in 160ms ease-out}
+.ai-status-shimmer{background-image:linear-gradient(100deg,var(--muted,var(--color-surface-3)) 30%,var(--text,var(--color-text)) 50%,var(--muted,var(--color-surface-3)) 70%);background-size:250% 100%;background-clip:text;-webkit-background-clip:text;color:transparent;animation:ai-status-shine 2.4s linear infinite}
+.ai-status-detail{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:min(240px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted,var(--color-text-muted))}
+.ai-status-detail img{object-fit:contain;border-radius:3px}.ai-status-timer{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted,var(--color-text-muted))}
 .ai-status-sparkle{transform-origin:11px 13px;animation:ai-status-think 3s ease-in-out infinite}.ai-status-twinkle{transform-origin:18px 5px;animation:ai-status-pulse 1.6s ease-in-out infinite}.ai-status-search{animation:ai-status-search 2s ease-in-out infinite}.ai-status-bars path{transform-box:fill-box;transform-origin:bottom;animation:ai-status-bar 1.2s ease-in-out infinite}.ai-status-pen{animation:ai-status-write 2.4s ease-in-out infinite}.ai-status-ink{stroke-dasharray:1;animation:ai-status-ink 2.4s ease-in-out infinite}.ai-status-check{stroke-dasharray:1;animation:ai-status-check 220ms ease-out both}
-.ai-status[data-state=error] .ai-status-icon{color:#f19791}.ai-status:not([data-active]) svg *{animation-iteration-count:1}
+.ai-status[data-state=error] .ai-status-icon{color:var(--color-danger)}.ai-status:not([data-active]) svg *{animation-iteration-count:1}
 .ai-status[data-paused] *{animation-play-state:paused!important}.ai-status-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .message-agent-status{margin-bottom:9px}
 @keyframes ai-status-icon-in{from{opacity:.25;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
@@ -19,4 +19,4 @@
 @keyframes ai-status-write{0%,100%{transform:translate(0,0)}50%{transform:translate(2px,-1px)}}
 @keyframes ai-status-ink{0%{stroke-dashoffset:1}70%,100%{stroke-dashoffset:0}}
 @keyframes ai-status-check{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-@media(prefers-reduced-motion:reduce){.ai-status,.ai-status *{animation:none!important;transition:none!important}.ai-status-shimmer{background-image:none;color:var(--muted,#999b9e)}}
+@media(prefers-reduced-motion:reduce){.ai-status,.ai-status *{animation:none!important;transition:none!important}.ai-status-shimmer{background-image:none;color:var(--muted,var(--color-text-muted))}}

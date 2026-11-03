@@ -1,0 +1,8 @@
+.ds-error-page { display: grid; grid-template-rows: auto 1fr; min-height: 100dvh; background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); }
+.ds-error-page > header { display: flex; align-items: center; height: 72px; padding: 0 var(--space-6); }
+.ds-error-page > header a { color: var(--color-text); }
+.ds-error-page > main { align-self: center; }
+.ds-error-code { margin: 0; color: var(--color-accent); font-size: var(--text-sm); font-weight: var(--weight-bold); letter-spacing: .12em; }
+.ds-error-icon { background: var(--color-warning-soft); color: var(--color-warning); }
+.ds-error-ref { margin: var(--space-4) 0 0; color: var(--color-text-subtle); font-family: var(--font-mono); font-size: var(--text-xs); }
+.ds-error-page a.ds-btn { text-decoration: none; }

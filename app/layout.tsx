@@ -7,6 +7,9 @@ import { FilePreviewProvider } from "@/components/file-preview/file-preview-prov
 import {AppearanceProvider} from "@/components/appearance-provider";
 import {ACCENT_INIT_SCRIPT} from "@/lib/appearance";
 import "./appearance.css";
+import "./tokens.css";
+import "@/components/ds/ds.css";
+import "@/components/ds/bridge.css";
 import "./conversation.css";
 
 export const metadata: Metadata = {

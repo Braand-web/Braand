@@ -1,6 +1,6 @@
 .routines-panel>.platform-actions{margin-bottom:20px}
 .routine-history{margin:24px 0}
-.routine-history h3{font-size:14px;margin:0 0 12px}
+.routine-history h3{font-size:var(--text-sm);margin:0 0 12px}
 .routine-run-link{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;min-height:44px;border-bottom:1px solid var(--ds-line);color:var(--ds-text);text-decoration:none;overflow-wrap:anywhere}
 .routine-run-link span{min-width:0}.routine-run-link small{display:block;color:var(--ds-muted);margin-top:4px}
 .routine-run-link svg{flex-shrink:0}.routine-run-link:hover{color:var(--ds-accent)}

@@ -1,0 +1,160 @@
+/* ==========================================================================
+   Braand design tokens — single source of truth (redesign v2).
+   Every color, size, radius, shadow, layer and motion value used by the UI
+   comes from here. Legacy variables (--ds-*, --bg, --text…) are mapped below
+   so existing screens follow the same system. Contrast targets WCAG AA.
+   ========================================================================== */
+
+:root {
+  /* Typography: one family for UI, one for code. */
+  --font-sans: Manrope, "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --text-xs: 12px;   --leading-xs: 16px;
+  --text-sm: 14px;   --leading-sm: 20px;
+  --text-base: 15px; --leading-base: 24px;
+  --text-lg: 18px;   --leading-lg: 26px;
+  --text-xl: 22px;   --leading-xl: 30px;
+  --text-2xl: 28px;  --leading-2xl: 34px;
+  --text-3xl: 36px;  --leading-3xl: 42px;
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
+  --tracking-tight: -0.02em; --tracking-display: -0.035em;
+
+  /* Spacing: 4 / 8 px scale. */
+  --space-0: 0; --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px; --space-20: 80px;
+
+  /* Radii. */
+  --radius-xs: 6px; --radius-sm: 10px; --radius-md: 14px; --radius-lg: 20px; --radius-xl: 28px; --radius-pill: 9999px;
+
+  /* Layers. */
+  --z-base: 0; --z-raised: 10; --z-sticky: 20; --z-sidebar: 30; --z-dropdown: 40; --z-overlay: 60;
+  --z-modal: 70; --z-popover: 80; --z-toast: 90; --z-tooltip: 100;
+
+  /* Motion: short, natural, transform/opacity first. */
+  --duration-instant: 100ms; --duration-fast: 150ms; --duration-base: 200ms; --duration-slow: 300ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --stagger: 40ms;
+
+  /* Layout. */
+  --size-control-sm: 32px; --size-control: 40px; --size-control-lg: 48px; --size-touch: 44px;
+  --width-reading: 768px; --width-page: 1120px; --width-sidebar: 248px; --width-rail: 72px;
+
+  /* Dark theme (default). */
+  color-scheme: dark;
+  --color-bg: #0f1012;
+  --color-surface: #17181b;
+  --color-surface-2: #1f2125;
+  --color-surface-3: #282a2f;
+  --color-overlay: rgba(6, 7, 9, .62);
+  --color-fill: rgba(255, 255, 255, .06);
+  --color-fill-hover: rgba(255, 255, 255, .09);
+  --color-fill-pressed: rgba(255, 255, 255, .13);
+  --color-border: rgba(255, 255, 255, .08);
+  --color-border-strong: rgba(255, 255, 255, .16);
+  --color-text: #f4f5f7;
+  --color-text-muted: #a9adb6;
+  --color-text-subtle: #8a8f99;
+  --color-accent: var(--theme-accent-dark, #6ea8ff);
+  --color-action: var(--theme-action-dark, #2563eb);
+  --color-action-hover: color-mix(in srgb, var(--color-action), white 10%);
+  --color-action-text: var(--theme-action-text-dark, #ffffff);
+  --color-link: var(--theme-link-dark, #8bb8ff);
+  --color-focus: var(--color-accent);
+  --color-success: #4ade80; --color-success-soft: rgba(74, 222, 128, .14);
+  --color-warning: #fbbf24; --color-warning-soft: rgba(251, 191, 36, .14);
+  --color-danger: #f87171;  --color-danger-soft: rgba(248, 113, 113, .14);
+  --color-info-soft: color-mix(in srgb, var(--color-accent), transparent 86%);
+  --color-user-bubble: var(--theme-user, #2563eb);
+  --color-user-text: #ffffff;
+  --color-skeleton: rgba(255, 255, 255, .06);
+  --color-skeleton-shine: rgba(255, 255, 255, .11);
+  --color-scrollbar: rgba(255, 255, 255, .22);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 1px 1px rgba(0, 0, 0, .2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, .38), 0 2px 6px rgba(0, 0, 0, .24);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, .5), 0 8px 20px rgba(0, 0, 0, .3);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--color-focus), transparent 65%);
+}
+
+html.light:root {
+  color-scheme: light;
+  --color-bg: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f2f3f5;
+  --color-surface-3: #e8e9ed;
+  --color-overlay: rgba(15, 17, 21, .36);
+  --color-fill: rgba(15, 17, 21, .05);
+  --color-fill-hover: rgba(15, 17, 21, .08);
+  --color-fill-pressed: rgba(15, 17, 21, .12);
+  --color-border: rgba(15, 17, 21, .09);
+  --color-border-strong: rgba(15, 17, 21, .18);
+  --color-text: #15171a;
+  --color-text-muted: #555b65;
+  --color-text-subtle: #6b717c;
+  --color-accent: var(--theme-accent-light, #0b63e5);
+  --color-action: var(--theme-action-light, #0b63e5);
+  --color-action-hover: color-mix(in srgb, var(--color-action), black 10%);
+  --color-action-text: var(--theme-action-text-light, #ffffff);
+  --color-link: var(--theme-accent-light, #0b5bd3);
+  --color-success: #15803d; --color-success-soft: rgba(21, 128, 61, .1);
+  --color-warning: #b45309; --color-warning-soft: rgba(180, 83, 9, .1);
+  --color-danger: #dc2626;  --color-danger-soft: rgba(220, 38, 38, .09);
+  --color-skeleton: rgba(15, 17, 21, .06);
+  --color-skeleton-shine: rgba(15, 17, 21, .1);
+  --color-scrollbar: rgba(15, 17, 21, .24);
+  --shadow-sm: 0 1px 2px rgba(15, 17, 21, .06), 0 1px 1px rgba(15, 17, 21, .04);
+  --shadow-md: 0 8px 24px rgba(15, 17, 21, .08), 0 2px 6px rgba(15, 17, 21, .05);
+  --shadow-lg: 0 24px 60px rgba(15, 17, 21, .14), 0 8px 20px rgba(15, 17, 21, .07);
+}
+
+/* Legacy names → tokens. Defined with the same selector strength as the
+   previous layers and loaded after them, so every existing screen follows. */
+/* :root repeated raises specificity above every legacy layer, whatever the load order. */
+html:root:root, html:root:root[data-design-system="muse"] {
+  --ds-bg: var(--color-bg);
+  --ds-surface: var(--color-surface-2);
+  --ds-surface-raised: var(--color-surface-3);
+  --ds-fill: var(--color-fill);
+  --ds-hover: var(--color-fill-hover);
+  --ds-pressed: var(--color-fill-pressed);
+  --ds-line: var(--color-border);
+  --ds-line-quiet: color-mix(in srgb, var(--color-border), transparent 40%);
+  --ds-text: var(--color-text);
+  --ds-muted: var(--color-text-muted);
+  --ds-quiet: var(--color-text-subtle);
+  --ds-accent: var(--color-accent);
+  --ds-action: var(--color-action);
+  --ds-action-text: var(--color-action-text);
+  --ds-link: var(--color-link);
+  --ds-focus: var(--color-focus);
+  --ds-success: var(--color-success);
+  --ds-warning: var(--color-warning);
+  --ds-error: var(--color-danger);
+  --ds-agent: var(--color-surface);
+  --ds-user: var(--color-user-bubble);
+  --ds-user-text: var(--color-user-text);
+  --ds-composer: color-mix(in srgb, var(--color-surface-2), transparent 4%);
+  --ds-menu: color-mix(in srgb, var(--color-surface-2), transparent 2%);
+  --ds-selection: var(--color-action);
+  --ds-scrollbar: var(--color-scrollbar);
+  --ds-font: var(--font-sans);
+  --ds-radius-sm: var(--radius-sm);
+  --ds-radius-md: var(--radius-md);
+  --ds-radius-message: var(--radius-lg);
+  --ds-radius-lg: var(--radius-xl);
+  --ds-radius-pill: var(--radius-pill);
+  --ds-sidebar-width: var(--width-sidebar);
+  --ds-rail-width: var(--width-rail);
+  --ds-reading-width: var(--width-reading);
+  --ds-shadow-sm: var(--shadow-sm);
+  --ds-shadow-lg: var(--shadow-lg);
+  --ds-fast: var(--duration-fast);
+  --ds-ease: var(--ease-out);
+  --braand-elevated-bg: var(--ds-menu);
+  --braand-elevated-border: var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-instant: 1ms; --duration-fast: 1ms; --duration-base: 1ms; --duration-slow: 1ms; --stagger: 0ms; }
+}

@@ -1,36 +1,20 @@
-import type { Metadata } from "next";
+import type {Metadata} from "next";
 import Link from "next/link";
-import { BrandLogo } from "@/components/brand";
-import styles from "@/components/legal-page.module.css";
+import {Compass} from "lucide-react";
+import {BrandLogo} from "@/components/brand";
+import "@/components/ds/error-page.css";
 
-export const metadata: Metadata = {
-  title: "Page introuvable | Braand",
-  robots: { index: false, follow: false },
-};
+export const metadata: Metadata = {title: "Page introuvable | Braand", robots: {index: false, follow: false}};
 
 export default function NotFound() {
-  return (
-    <div className={styles.site}>
-      <header className={styles.legalHeader}>
-        <Link prefetch={false} className={styles.brand} href="/" aria-label="Retour à Braand">
-          <BrandLogo height={32} />
-        </Link>
-      </header>
-      <main id="contenu" className={styles.legalMain} tabIndex={-1}>
-        <div className={styles.intro}>
-          <h1>Page introuvable</h1>
-          <p>Cette adresse n’existe pas ou n’est plus disponible.</p>
-        </div>
-        <article className={styles.article} aria-label="Pistes pour continuer">
-          <section className={styles.next}>
-            <h2>Continuer</h2>
-            <ul>
-              <li><Link prefetch={false} href="/">Revenir à l’accueil de Braand</Link></li>
-              <li><Link prefetch={false} href="/aide">Consulter le centre d’aide</Link></li>
-            </ul>
-          </section>
-        </article>
-      </main>
-    </div>
-  );
+ return <div className="ds-error-page">
+  <header><Link prefetch={false} href="/" aria-label="Retour à Braand"><BrandLogo height={30}/></Link></header>
+  <main id="contenu" className="ds-empty">
+   <span className="ds-empty-icon" aria-hidden="true"><Compass/></span>
+   <p className="ds-error-code">404</p>
+   <h1 className="ds-empty-title">Cette page n’existe pas</h1>
+   <p className="ds-empty-text">Le lien est peut-être ancien. Revenez à l’accueil pour continuer.</p>
+   <div className="ds-empty-actions"><Link prefetch={false} className="ds-btn ds-btn-primary" href="/">Revenir à l’accueil</Link><Link prefetch={false} className="ds-btn ds-btn-ghost" href="/aide">Centre d’aide</Link></div>
+  </main>
+ </div>;
 }

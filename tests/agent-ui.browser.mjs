@@ -16,7 +16,7 @@ const {chromium}=await import(playwright?pathToFileURL(path.resolve(playwright))
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'.tmp','agent-ui-browser');
 await mkdir(output,{recursive:true});
-await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {AppearanceProvider} from "./components/appearance-provider";import "./app/appearance.css";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";import "./app/conversation.css";createRoot(document.getElementById("root")).render(<AppearanceProvider><FilePreviewProvider><Studio/></FilePreviewProvider></AppearanceProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
+await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {AppearanceProvider} from "./components/appearance-provider";import "./app/appearance.css";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/conversation.css";createRoot(document.getElementById("root")).render(<AppearanceProvider><FilePreviewProvider><Studio/></FilePreviewProvider></AppearanceProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZsAAAAASUVORK5CYII=','base64');
 const now=Date.now();
 // Explicit test fixture only: this is not a production tax determination.
@@ -217,7 +217,7 @@ try{
   await page.locator('.welcome-symbol canvas[data-bot-avatar="clover"][data-state="default"]').waitFor();
   const composer=page.getByRole('textbox',{name:'Votre demande à Braand'});
   const initial=await page.locator('.composer').boundingBox();
-  assert.equal(await page.locator('body').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(24, 24, 25)');
+  assert.equal(await page.locator('body').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(15, 16, 18)');
   assert.equal(Math.round((await page.locator('.sidebar').boundingBox()).width),248);
   assert.equal(await page.locator('.sidebar').getByRole('button',{name:'Intégrations',exact:true}).count(),0);
   assert.equal(await page.locator('.sidebar').getByRole('button',{name:'Compétences',exact:true}).count(),0);
@@ -236,7 +236,7 @@ try{
   await composer.fill('Brouillon conservé pendant les paramètres');
   await page.locator('.account-trigger').click();await assertAccountMenuVisible();await capture({path:path.join(output,'design-account-menu-desktop.png'),fullPage:true});await page.getByRole('menuitem',{name:'Paramètres',exact:true}).click();
   const settings=page.getByRole('dialog',{name:'Paramètres',exact:true});await settings.waitFor();
-  assert.equal(await settings.locator('.settings-shell').evaluate(element=>getComputedStyle(element).gridTemplateColumns),'224px 656px');
+  assert.equal(await settings.locator('.settings-shell').evaluate(element=>getComputedStyle(element).gridTemplateColumns),'224px 654px');
   for(const label of ['Général','Connecteurs','Compétences','Portefeuille','Facturation','Équipe et budgets','Stockage','Autorisations','Aide et raccourcis'])assert.equal(await settings.locator('.settings-navigation').getByRole('button',{name:label,exact:true}).count(),1);
   await settings.getByRole('heading',{name:'Général',exact:true}).waitFor();
   await settings.getByText('fixture@example.test',{exact:true}).waitFor();

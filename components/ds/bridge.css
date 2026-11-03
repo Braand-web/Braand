@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Bridge: existing Braand screens adopt the design system without touching
+   their logic. Selectors start with html:root:root to outrank older layers.
+   ========================================================================== */
+
+/* ---------- Base typography & surfaces ---------- */
+html:root:root body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-sm); line-height: var(--leading-sm); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html:root:root :is(h1, .section-heading h1, .platform-heading h1) { letter-spacing: var(--tracking-display); }
+html:root:root ::selection { background: color-mix(in srgb, var(--color-action), transparent 70%); color: var(--color-text); }
+html:root:root :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* ---------- Buttons: one family, every legacy class ---------- */
+html:root:root :is(.button, .settings-button, .platform-button, .skills-upload, .followup-button, .skill-use, .auth-content .button, .panel-action) {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: var(--size-control); padding: 0 var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-pill);
+  background: var(--color-surface); color: var(--color-text); font-family: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer;
+  box-shadow: none;
+  transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+html:root:root :is(.button, .settings-button, .platform-button, .skills-upload, .followup-button, .skill-use, .panel-action):hover:not(:disabled) { background: var(--color-surface-2); border-color: color-mix(in srgb, var(--color-text), transparent 72%); }
+html:root:root :is(.button, .settings-button, .platform-button, .skills-upload, .followup-button, .skill-use, .panel-action, .icon-button, .sidebar-icon-button, .new-chat-icon):active:not(:disabled) { transform: scale(.97); }
+html:root:root :is(.button, .settings-button, .platform-button, .skills-upload, .followup-button, .skill-use, .panel-action):disabled { opacity: .45; cursor: not-allowed; }
+html:root:root :is(.button.primary, .platform-button.primary, .settings-button.settings-primary, .followup-button.primary, .auth-form .button.primary) {
+  border-color: transparent; background: var(--color-action); color: var(--color-action-text); box-shadow: var(--shadow-sm);
+}
+html:root:root :is(.button.primary, .platform-button.primary, .settings-button.settings-primary, .followup-button.primary):hover:not(:disabled) { background: var(--color-action-hover); border-color: transparent; }
+html:root:root :is(.platform-button.quiet, .button.ghost) { border-color: transparent; background: transparent; color: var(--color-text-muted); }
+html:root:root :is(.platform-button.quiet, .button.ghost):hover:not(:disabled) { background: var(--color-fill); color: var(--color-text); }
+html:root:root :is(.button.small, .button.small.secondary) { min-height: var(--size-control-sm); padding: 0 var(--space-3); font-size: var(--text-xs); }
+html:root:root :is(.icon-button, .sidebar-icon-button, .new-chat-icon, .collapsed-new-chat, .settings-close) {
+  place-items: center; border-radius: var(--radius-pill); color: var(--color-text-muted);
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+html:root:root :is(.icon-button, .sidebar-icon-button, .new-chat-icon, .collapsed-new-chat, .settings-close):hover { background: var(--color-fill-hover); color: var(--color-text); }
+
+/* ---------- Segmented tabs: all legacy tab groups ---------- */
+html:root:root :is(.section-switch, .platform-tabs, .library-filters, .auth-intents, .filter-options) {
+  display: flex; gap: var(--space-1); width: fit-content; max-width: 100%; overflow-x: auto; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: var(--color-fill); scrollbar-width: none;
+}
+html:root:root :is(.section-switch, .platform-tabs, .library-filters, .auth-intents, .filter-options) > button {
+  flex: none; min-height: 34px; padding: 0 var(--space-4); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-text-muted);
+  font-family: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); box-shadow: none; cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+html:root:root :is(.section-switch, .platform-tabs, .library-filters, .auth-intents, .filter-options) > button:hover { color: var(--color-text); background: transparent; }
+html:root:root :is(.section-switch, .platform-tabs, .library-filters, .auth-intents, .filter-options) > button:is([aria-pressed="true"], [aria-current="page"], [aria-selected="true"], .selected) {
+  background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm);
+}
+html.light:root:root :is(.section-switch, .platform-tabs, .library-filters, .auth-intents, .filter-options) > button:is([aria-pressed="true"], [aria-current="page"], [aria-selected="true"], .selected) { background: var(--color-surface); }
+html:root:root .section-switch { margin: var(--space-4) auto var(--space-2) max(var(--space-4), calc((100% - var(--width-page)) / 2)); }
+
+/* ---------- Fields ---------- */
+html:root:root :is(.platform-field, .auth-form, .project-form, .settings-content) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="search"]), textarea, select),
+html:root:root :is(.library-search input, .skills-search input) {
+  min-height: var(--size-control-lg); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text);
+  font-family: inherit; font-size: var(--text-base); transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+html:root:root :is(.platform-field, .auth-form, .project-form, .settings-content) :is(input, textarea, select):focus-visible,
+html:root:root :is(.library-search input, .skills-search input):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; border-color: var(--color-focus); box-shadow: var(--shadow-focus); }
+html:root:root :is(.platform-field, .auth-form, .project-form) textarea { min-height: 104px; padding-block: var(--space-3); line-height: var(--leading-base); }
+html:root:root :is(.platform-field, .auth-form label, .project-form label) { color: var(--color-text); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+html:root:root :is(.auth-error, .platform-notice.error, .settings-error) { color: var(--color-danger); }
+html:root:root .settings-error { border: 1px solid color-mix(in srgb, var(--color-danger), transparent 70%); border-radius: var(--radius-md); background: var(--color-danger-soft); padding: var(--space-3) var(--space-4); }
+
+/* ---------- Cards ---------- */
+html:root:root :is(.resource-card, .skill-card, .settings-card, .memory-entry, .platform-card, .billing-card) {
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: none;
+}
+html:root:root :is(.resource-card, .skill-card) { transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out); }
+html:root:root :is(.resource-card, .skill-card):hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--color-border-strong); }
+
+/* ---------- Empty states ---------- */
+html:root:root :is(.panel-empty, .skills-empty, .empty-state, .library-empty, .platform-empty) { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-12) var(--space-6); border: 0; background: transparent; text-align: center; }
+html:root:root :is(.panel-empty, .skills-empty, .empty-state, .library-empty, .platform-empty) > svg { width: 56px; height: 56px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-info-soft); color: var(--color-accent); }
+html:root:root :is(.panel-empty, .skills-empty, .empty-state, .library-empty, .platform-empty) :is(h2, h3) { margin: 0; color: var(--color-text); font-size: var(--text-xl); line-height: var(--leading-xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); }
+html:root:root :is(.panel-empty, .skills-empty, .empty-state, .library-empty, .platform-empty) p { max-width: 42ch; margin: 0; color: var(--color-text-muted); font-size: var(--text-base); line-height: var(--leading-base); }
+
+/* Secondary filters (e.g. library content types): light chips under the main tabs. */
+html:root:root [role="group"][aria-label="Contenu de la bibliothèque"] { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+html:root:root [role="group"][aria-label="Contenu de la bibliothèque"] > button { min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: transparent; color: var(--color-text-muted); font-size: var(--text-xs); font-weight: var(--weight-semibold); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+html:root:root [role="group"][aria-label="Contenu de la bibliothèque"] > button:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+html:root:root [role="group"][aria-label="Contenu de la bibliothèque"] > button:is([aria-pressed="true"], .selected) { border-color: transparent; background: var(--color-text); color: var(--color-bg); }
+html:root:root .platform-empty { justify-items: center; margin-inline: auto; }
+
+/* ---------- Dialogs ---------- */
+html:root:root dialog.modal { border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-lg); }
+html:root:root dialog.modal[open] { animation: ds-pop var(--duration-slow) var(--ease-out); }
+html:root:root dialog.modal::backdrop { background: var(--color-overlay); backdrop-filter: blur(6px); animation: ds-fade var(--duration-base) var(--ease-out); }
+html:root:root .modal-heading h2 { font-size: var(--text-xl); line-height: var(--leading-xl); letter-spacing: var(--tracking-tight); }
+
+/* ---------- Toasts ---------- */
+html:root:root .toast { border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-3); color: var(--color-text); box-shadow: var(--shadow-md); font-size: var(--text-sm); animation: ds-toast-in var(--duration-slow) var(--ease-spring); }
+
+/* ---------- Composer & chat ---------- */
+html:root:root :is(.composer, .chat-composer) { border-radius: var(--radius-xl); transition: box-shadow var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out); }
+html:root:root :is(.composer, .chat-composer):focus-within { box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--color-focus), transparent 55%); }
+html:root:root .home-shortcuts .platform-quick-start > * { transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
+html:root:root .home-shortcuts .platform-quick-start > button:hover { transform: translateY(-1px); }
+
+/* Streaming: animated caret while the agent writes; soft fade for new text. */
+html:root:root .streaming-response[data-state="streaming"] .streaming-response-content > :last-child::after,
+html:root:root .streaming-response[data-state="streaming"] .streaming-response-content:empty::after {
+  content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 3px; vertical-align: -0.15em; border-radius: 1px; background: var(--color-accent);
+  animation: ds-caret 1s steps(2, start) infinite;
+}
+@keyframes ds-caret { to { visibility: hidden; } }
+html:root:root .streaming-response-content > * { animation: ds-fade var(--duration-base) var(--ease-out); }
+
+/* ---------- Page transitions & cascades ---------- */
+html:root:root .content-area > :is(.library-content, .platform-work, section, main, div):not(.messages):not(.chat-view) { animation: ds-rise var(--duration-slow) var(--ease-out); }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > * { animation: ds-rise var(--duration-slow) var(--ease-out) both; }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(n+6) { animation-delay: calc(var(--stagger) * 5); }
+html:root:root .messages > * { animation: ds-rise var(--duration-base) var(--ease-out) both; }
+html:root:root .sidebar .nav-item.sidebar-nav-item { transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
+
+/* Skeletons used by legacy screens share the shimmer. */
+html:root:root :is(.resource-skeleton .resource-thumb, .skeleton-line, .settings-value-skeleton) { background: linear-gradient(90deg, var(--color-skeleton) 25%, var(--color-skeleton-shine) 50%, var(--color-skeleton) 75%); background-size: 200% 100%; animation: ds-shimmer 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:root:root *, html:root:root *::before, html:root:root *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+  html:root:root .streaming-response[data-state="streaming"] .streaming-response-content > :last-child::after { animation: none !important; }
+}
+
+/* Mobile: scrollable tab rows show a soft edge so hidden items are discoverable. */
+@media (max-width: 720px) {
+  html:root:root :is(.settings-navigation, .section-switch, .platform-tabs, .library-filters) { -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 32px), transparent); scroll-padding-inline: var(--space-4); }
+  html:root:root .section-switch { margin-inline: var(--space-4); }
+}
