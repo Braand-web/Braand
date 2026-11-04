@@ -1,0 +1,27 @@
+name: Generate launch film images
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FAL_KEY: ${{ secrets.FAL_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate six product visuals with fal.ai
+        run: node scripts/generate-film-images.mjs
+      - name: Publish them on the film-assets branch (not main)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan film-assets
+          git rm -rf --cached . > /dev/null
+          git add film-assets
+          git commit -m "Launch film product visuals generated with fal.ai"
+          git push -f origin HEAD:film-assets
