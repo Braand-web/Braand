@@ -29,3 +29,5 @@
 @keyframes response-actions-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:640px),(pointer:coarse){.response-action,.response-sources-toggle{min-width:44px;min-height:44px}.response-citation-list a{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.response-footer{animation:none}.response-action,.response-sources-toggle,.response-sources-toggle>svg,.response-disclosure{transition:none}}
+
+.response-feedback-ask{margin:0 4px 0 8px;font-size:12.5px;color:var(--color-text-muted,#8a909a)}

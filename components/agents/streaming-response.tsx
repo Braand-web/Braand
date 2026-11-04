@@ -21,6 +21,8 @@ export interface StreamingResponseProps {
   onSourcesOpenChange?: (open: boolean) => void;
   sourceIdPrefix?: string;
   feedback?: StreamingResponseFeedback;
+  /** Show a short invitation to rate (long or productive answers). */
+  askFeedback?: boolean;
   defaultFeedback?: StreamingResponseFeedback;
   onFeedbackChange?: (feedback: StreamingResponseFeedback) => void | Promise<void>;
   showFeedback?: boolean;
@@ -36,7 +38,7 @@ function ResponseAction({ label, active, children, title, ...props }: ComponentP
 }
 
 /** Adapted from beUI: actions reflect actual stream and persistence outcomes. */
-export function StreamingResponse({ children, status = 'streaming', copyText, onCopy, onRetry, sources = [], sourcesOpen, defaultSourcesOpen = false, onSourcesOpenChange, sourceIdPrefix, feedback, defaultFeedback = null, onFeedbackChange, showFeedback = true, announce = true, showActions = true, className, contentClassName, actionsClassName }: StreamingResponseProps) {
+export function StreamingResponse({ children, askFeedback = false, status = 'streaming', copyText, onCopy, onRetry, sources = [], sourcesOpen, defaultSourcesOpen = false, onSourcesOpenChange, sourceIdPrefix, feedback, defaultFeedback = null, onFeedbackChange, showFeedback = true, announce = true, showActions = true, className, contentClassName, actionsClassName }: StreamingResponseProps) {
   const id = useId();
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -111,6 +113,7 @@ export function StreamingResponse({ children, status = 'streaming', copyText, on
         {canCopy && <ResponseAction label={copied ? 'Réponse copiée' : 'Copier la réponse'} disabled={copying} onClick={() => { void handleCopy(); }}>{copied ? <Check /> : <Copy />}</ResponseAction>}
         {onRetry && <ResponseAction label="Reprendre la demande" title="Remettre la demande dans le champ de saisie avant un nouvel envoi" onClick={onRetry}><RotateCcw /></ResponseAction>}
         {canVote && <>
+          {askFeedback && !currentFeedback && <span className="response-feedback-ask">Cette réponse vous a aidé ?</span>}
           <ResponseAction label="Réponse utile" active={currentFeedback === 'up'} disabled={voting} onClick={() => { void setFeedback('up'); }}><ThumbsUp /></ResponseAction>
           <ResponseAction label="Réponse peu utile" active={currentFeedback === 'down'} disabled={voting} onClick={() => { void setFeedback('down'); }}><ThumbsDown /></ResponseAction>
         </>}
