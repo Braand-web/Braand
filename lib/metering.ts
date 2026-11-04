@@ -122,7 +122,13 @@ export async function meteredModel(b:RunBudget,role:string,url:string,init:Reque
  const requestedOutputTokens=Math.min(typeof body.max_tokens==='number'&&Number.isSafeInteger(body.max_tokens)&&body.max_tokens>0?body.max_tokens:4096,selected?.maxOutputTokens||32768);
  const ceilingFor=(tokens:number)=>Math.ceil(((Math.ceil(inputTokens*1.2)*Math.max(rate.input,rate.cacheWrite,rate.cacheWriteHour||0)+tokens*rate.output)/1e6*rate.usdXaf*funding+rate.overheadXaf)/4*100);
  const available=b.limit-consumed-browser.units-browser.reservedUnits-auxiliary.units;
- if(ceilingFor(1)>available)throw new AppError('Le plafond accepté ne couvre pas le contexte de cette demande. Réduisez le contexte ou augmentez le plafond avant de continuer.',402,'budget_exhausted');
+ if(ceilingFor(1)>available){
+  const credits=(units:number)=>(Math.max(0,units)/100).toLocaleString('fr-FR',{maximumFractionDigits:2});
+  // Say what happened and what to do: low balance at the start, or this message's budget used up mid-task.
+  throw new AppError(consumed>0||auxiliary.units>0||browser.units>0
+   ?'J’ai utilisé le budget prévu pour ce message ('+credits(b.limit)+' crédits). Le travail déjà fait est conservé : écrivez « continue » pour poursuivre.'
+   :'Votre solde disponible ('+credits(b.limit)+' crédits) ne suffit pas pour démarrer cette demande, qui peut coûter jusqu’à '+credits(ceilingFor(1024))+' crédits. Rechargez votre portefeuille, ou ouvrez une nouvelle discussion pour une demande plus courte.',402,'budget_exhausted');
+ }
  let low=1,high=requestedOutputTokens;
  while(low<high){const mid=Math.ceil((low+high)/2);if(ceilingFor(mid)<=available)low=mid;else high=mid-1;}
  if(low<Math.min(128,requestedOutputTokens))throw new AppError('Le plafond accepté est trop bas pour produire une réponse utile. Augmentez-le avant de continuer.',402,'budget_exhausted');

@@ -1,0 +1,26 @@
+name: Agent quality report
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Number of days to analyse
+        default: '7'
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      REPORT_DAYS: ${{ inputs.days || '7' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build the read-only quality report
+        run: node scripts/agent-quality-report.mjs
