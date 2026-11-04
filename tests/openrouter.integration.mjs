@@ -18,7 +18,7 @@ globalThis.__openrouterTest={env:{DB},headers:new Headers({'x-braand-identity-id
 const out=path.join(project,'.local-build','openrouter-test.mjs');mkdirSync(path.dirname(out),{recursive:true});
 await build({stdin:{contents:['llm','metering','server','billing','agent'].map(n=>'export * as '+n+' from "'+path.join(project,n==='agent'?'lib':'lib',n+'.ts').replaceAll('\\','/')+'";').join('\n'),resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'test-bindings',setup(b){b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},a=>({path:a.path,namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},a=>({contents:a.path==='cloudflare:workers'?'export const env=globalThis.__openrouterTest.env;':a.path==='next/headers'?'export async function headers(){return globalThis.__openrouterTest.headers;}':'export function redirect(){throw new Error("unexpected redirect");}'}));}}]});
 const {llm,metering:meter,server,billing,agent}=await import(pathToFileURL(out).href);
-const env=globalThis.__openrouterTest.env;
+const env=globalThis.__openrouterTest.env;env.MODEL_ROUTING_ENABLED='false';/* single-model OpenRouter mode; the adaptive brain is tested in model-routing */
 const who=await server.identity(new Request('https://braand.test/api/chat'));
 const now=Date.now();sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,created_at) VALUES (?,?,?,?,?,?,?,?)').run('fixture-credit',who.organization,'topup','fixture',1000000,1000000,now,now);
 const rate={model:'anthropic/claude-opus-5.5',input:5,output:25,cacheWrite:6.25,cacheRead:.5,usdXaf:600,overheadXaf:1,fundingFeeBps:300,verifiedAt:new Date().toISOString()};

@@ -1,4 +1,5 @@
 import {modelRateEnvironment} from "./model-rate-refresh";
+import {withRoutingDefaults} from './model-routing-defaults';
 import {falRateEnvironment} from './fal-rate-refresh';
 import {env} from "cloudflare:workers";
 import {getBraandUser} from "@/app/auth";
@@ -6,7 +7,7 @@ import {AppError} from "./core.mjs";
 import type {FileRecord,Resource} from "./contracts";
 import {safeResourceDto,safeFileDto} from "./file-policy.mjs";
 const LEGACY_WORKSPACE_COOKIE = ["ai", "ra", "_workspace"].join("");
-export const config=()=>falRateEnvironment(modelRateEnvironment(env)) as Cloudflare.Env & Record<string,string|undefined>;
+export const config=()=>falRateEnvironment(modelRateEnvironment(withRoutingDefaults(env))) as Cloudflare.Env & Record<string,string|undefined>;
 export function db(){if(!env.DB)throw new AppError("Stockage indisponible.",503,"storage_unavailable");return env.DB;}
 export const uid=()=>crypto.randomUUID();
 export type StoredResource=Omit<Resource,'data'>&{data:string};

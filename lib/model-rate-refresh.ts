@@ -1,4 +1,5 @@
 import {modelRateSchema, type ModelRate} from './model-protocol';
+import {withRoutingDefaults} from './model-routing-defaults';
 import {MODEL_PRICING_URL, FX_REFERENCE_URL, parseBEACReference, refreshOpenRouterRate} from './model-rate-sources.mjs';
 
 type Environment = Record<string, unknown> & {BUCKET?: R2Bucket};
@@ -62,7 +63,7 @@ async function sourceText(url:string, limit:number) {
 }
 
 export async function ensureModelRates(bindings:object & {BUCKET?:R2Bucket}, now=Date.now()) {
- const env=bindings as Environment;
+ const env=withRoutingDefaults(bindings) as Environment;
  let selected:Target[];
  try {selected=targets(env);} catch {return {status:'configuration_invalid'};}
  if (!selected.length) return {status:'disabled'};
