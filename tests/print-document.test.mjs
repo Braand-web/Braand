@@ -25,5 +25,10 @@ test('layouts add cover, contents and chapter breaks; ebooks use a 6x9 page',()=
  assert.match(ebook,/main h1\{break-before:page/);assert.match(ebook,/Guide &lt;LUMA&gt;/);assert.match(ebook,/--accent:#4b93ff/);assert.match(ebook,/class="sources"/);
  const plain=buildPrintHtml({title:'Note',content:'Un paragraphe.',layout:'document',accent:'red;}body{display:none',coverImage:'http://insecure/x.png'});
  assert.match(plain,/size:A4/);assert.ok(!plain.includes('class="cover')&&!plain.includes('<nav class="toc">'));assert.match(plain,/--accent:#2563eb/,'Invalid colours are ignored');assert.ok(!plain.includes('insecure'));
- assert.deepEqual(Object.keys(LAYOUTS),['document','report','guide','ebook']);
+ assert.deepEqual(Object.keys(LAYOUTS),['document','report','guide','ebook','slides']);
+});
+
+test('slides layout makes one 16:9 slide per # heading',()=>{
+ const deck=buildPrintHtml({title:'Pitch',content:'# Problème\nTexte.\n\n# Solution\n- A\n- B\n\n# Prix\n| Offre | Prix |\n|---|---|\n| Pro | 10 € |',layout:'slides'});
+ assert.match(deck,/size:13\.333in 7\.5in/);assert.equal((deck.match(/<section class="slide">/g)||[]).length,3);assert.ok(!deck.includes('<nav class="toc">'));
 });
