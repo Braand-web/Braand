@@ -213,7 +213,7 @@ await check('settings metadata requires identity and workspace access and never 
  try{
   const response=await skillsRoute.GET(new Request('https://braand.test/api/skills'));
   assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');
-  const dto=await response.json();assert.equal(dto.skills.length,292);
+  const dto=await response.json();assert.equal(dto.skills.length,293);
   assert.ok(dto.skills.some(item=>item.id==='braand-meeting-actions'));
   assert.ok(dto.skills.every(item=>Object.keys(item).sort().join(',')==='capability,category,description,id,title,version'));
   const foreign=await skillsRoute.GET(new Request('https://braand.test/api/skills',{headers:{'x-braand-workspace':'another-client'}}));assert.equal(foreign.status,403);

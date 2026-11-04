@@ -93,7 +93,7 @@ test('adapted methods support model-led multilingual selection and progressive r
 
 test('settings metadata matches the reviewed registry and rejects private prose or extra executable fields',()=>{
  const skills=reviewedSkillMetadata();const dto=reviewedSkillCatalogSchema.parse({skills});
- assert.equal(dto.skills.length,292);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,292);
+ assert.equal(dto.skills.length,293);assert.equal(new Set(dto.skills.map(skill=>skill.id)).size,293);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],content:'private instructions'}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],tools:['shell']}]}).success,false);
  assert.equal(reviewedSkillCatalogSchema.safeParse({skills:[{...skills[0],id:'../unreviewed'}]}).success,false);
@@ -155,4 +155,13 @@ test('Braand adds its own campaign, motion, editing and orchestration methods an
  }
  assert.ok(searchSkills({query:'monter vidéo rushs sous-titres'}).skills.some(skill=>skill.id==='braand-video-editing'));
  assert.ok(searchSkills({query:'sous-agents nommés parallèle'}).skills.some(skill=>skill.id==='braand-subagent-orchestration'));
+});
+
+test('The Braand operating method is discoverable, readable with its references, and the media pipeline prefers one approved plan',async()=>{
+ assert.ok(skillDiscoveryContext().includes('braand-operating-method'));
+ assert.ok(searchSkills({query:'méthode vérifier état réel cause décider rentabilité bilan'}).skills.some(skill=>skill.id==='braand-operating-method'));
+ const session=createSkillSession(),method=await readSkill({id:'braand-operating-method'},session);
+ assert.equal(method.provenance.origin,'Braand');assert.match(method.content,/Vérifier l'état réel avant d'agir/);assert.match(method.content,/Ne jamais contourner une protection/);
+ const playbook=await readSkill({id:'braand-operating-method',reference:'references/creative-production.md'},session);assert.match(playbook.content,/1640 × 624/);
+ const pipeline=await readSkill({id:'braand-media-pipeline'},createSkillSession());assert.match(pipeline.content,/un seul `plan_media`/);assert.match(pipeline.content,/enable_media_model/);
 });
