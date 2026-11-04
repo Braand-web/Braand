@@ -11,7 +11,7 @@ test('HTML is escaped, offline and cannot embed executable user content',()=>{
  const html=new TextDecoder().decode(renderDocument('html','<script>title</script>','<img src=x onerror=alert(1)>').bytes);assert.ok(!html.includes('<script>'));assert.ok(html.includes('&lt;img'));assert.ok(html.includes('default-src'));assert.ok(!html.includes('https://'));
 });
 test('CSV preserves real rows while neutralizing spreadsheet formulas and bounding exports',()=>{
- const csv=new TextDecoder().decode(renderDocument('csv','Table','| Nom | Valeur |\n|---|---|\n| Test | =1+1 |').bytes);assert.ok(csv.includes('"\'=1+1"'));assert.deepEqual(documentRows('Texte seul'),[['Texte seul']]);assert.throws(()=>renderDocument('zip','X','Y'));assert.throws(()=>renderDocument('md','X','x'.repeat(18001)));
+ const csv=new TextDecoder().decode(renderDocument('csv','Table','| Nom | Valeur |\n|---|---|\n| Test | =1+1 |').bytes);assert.ok(csv.includes('"\'=1+1"'));assert.deepEqual(documentRows('Texte seul'),[['Texte seul']]);assert.throws(()=>renderDocument('zip','X','Y'));assert.throws(()=>renderDocument('md','X','x'.repeat(150001)));assert.doesNotThrow(()=>renderDocument('md','X','x'.repeat(20000)));
 });
 test('tabular exports keep the surrounding explanation and source provenance',()=>{
  for(const format of ['xlsx','csv']){const text=new TextDecoder().decode(renderDocument(format,'Mesures','Une estimation, pas des ventes.\n| Nom | Valeur |\n|---|---|\n| Test | 123 |',['https://example.com/source']).bytes);assert.ok(text.includes('Une estimation'));assert.ok(text.includes('https://example.com/source'));}
