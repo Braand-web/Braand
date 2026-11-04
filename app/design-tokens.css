@@ -69,3 +69,34 @@ html[data-design-system="muse"] {
   --braand-sidebar-accent: var(--ds-accent);
   --braand-sidebar-focus: var(--ds-focus);
 }
+
+/* Light mode (system or chosen): same semantics, light surfaces. The app
+   follows the device setting by default (next-themes defaultTheme="system"). */
+html.light:root {
+  color-scheme: light;
+  --ds-bg: #f7f7f8;
+  --ds-surface: #ffffff;
+  --ds-surface-raised: #f0f1f3;
+  --ds-fill: #0f11150d;
+  --ds-hover: #0f111514;
+  --ds-pressed: #0f11151f;
+  --ds-line: #0f111517;
+  --ds-line-quiet: #0f11150d;
+  --ds-text: #15171a;
+  --ds-muted: #555b65;
+  --ds-quiet: #6b717c;
+  --ds-accent: #0b63e5;
+  --ds-action: #0b63e5;
+  --ds-link: #0b5bd3;
+  --ds-action-text: #ffffff;
+  --ds-focus: #0b63e5;
+  --ds-success: #15803d;
+  --ds-warning: #b45309;
+  --ds-error: #dc2626;
+  --ds-agent: #ffffff;
+  --ds-user: #0b63e5;
+  --ds-composer: #ffffffe6;
+  --ds-menu: #fffffff7;
+  --ds-shadow-sm: 0 1px 3px #0f11150f, 0 2px 10px #0f11150a;
+  --ds-shadow-lg: 0 8px 24px #0f111514, 0 2px 8px #0f11150d;
+}
