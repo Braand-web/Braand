@@ -225,16 +225,16 @@ await check('a recoverable tool error returns to the orchestrator, which can cor
  fixture.responses=[call('invalid','save_knowledge',{title,content:'Fait fourni par le client'}),call('corrected','save_knowledge',{title,content:'Fait fourni par le client',source:'Message utilisateur'}),()=>call('verify-corrected','get_workspace_resource',{id:known().id}),text('Le fait fourni est enregistré avec sa source.')];
  await run(execution);const failed=fixture.requests[1].body.messages.at(-1).content[0];assert.equal(failed.is_error,true);assert.equal(resultFor(fixture.requests[3],'verify-corrected').resource.data.source,'Message utilisateur');assert.equal(sql.prepare("SELECT COUNT(*) n FROM resources WHERE workspace_id=? AND title=?").get(who.tenant,title).n,1);assert.deepEqual(fixture.external,[]);
 });
-await check('eight tool rounds receive a bounded tool-free handoff and remain partial with confirmed results saved',async()=>{
- const execution=await setup();fixture.responses=[...Array.from({length:8},(_,i)=>call('read-'+i,'search_workspace',{kind:'project'})),text('Bilan partiel : les ressources sont consultées. La rédaction reste à réaliser.')];
+await check('twelve tool rounds receive a bounded tool-free handoff and remain partial with confirmed results saved',async()=>{
+ const execution=await setup();fixture.responses=[...Array.from({length:12},(_,i)=>call('read-'+i,'search_workspace',{kind:'project'})),text('Bilan partiel : les ressources sont consultées. La rédaction reste à réaliser.')];
  await assert.rejects(()=>run(execution),error=>error.code==='step_limit');
- assert.equal(fixture.requests.length,9);assert.equal(fixture.beforeTools,8);const handoff=fixture.requests.at(-1);assert.deepEqual(handoff.body.tools,[]);assert.equal(handoff.body.max_tokens,1536);assert.match(handoff.body.system.at(-1).text,/bilan partiel/);assert.ok(fixture.requests.every(request=>request.budget===execution.budget));
+ assert.equal(fixture.requests.length,13);assert.equal(fixture.beforeTools,12);const handoff=fixture.requests.at(-1);assert.deepEqual(handoff.body.tools,[]);assert.equal(handoff.body.max_tokens,1536);assert.match(handoff.body.system.at(-1).text,/bilan partiel/);assert.ok(fixture.requests.every(request=>request.budget===execution.budget));
  assert.equal(JSON.parse(sql.prepare("SELECT content FROM messages WHERE conversation_id=? AND role='assistant' ORDER BY rowid DESC LIMIT 1").get(execution.conversationId).content)[0].text,'Bilan partiel : les ressources sont consultées. La rédaction reste à réaliser.');assert.deepEqual(fixture.external,[]);
 });
-await check('a forged tool call in the final handoff cannot mutate resources or create a ninth tool round',async()=>{
+await check('a forged tool call in the final handoff cannot mutate resources or create a thirteenth tool round',async()=>{
  const execution=await setup(),before=sql.prepare('SELECT COUNT(*) n FROM resources').get().n;
- fixture.responses=[...Array.from({length:8},(_,i)=>call('read-'+i,'search_workspace',{kind:'project'})),call('forged-save','save_knowledge',{title:'Interdit au bilan',content:'Do not execute',source:'fixture'})];
- await assert.rejects(()=>run(execution),error=>error.code==='step_limit');assert.equal(fixture.requests.length,9);assert.equal(fixture.beforeTools,8);assert.equal(sql.prepare('SELECT COUNT(*) n FROM resources').get().n,before);assert.equal(fixture.events.some(event=>event.type==='tool_result'&&event.data.id==='forged-save'),false);
+ fixture.responses=[...Array.from({length:12},(_,i)=>call('read-'+i,'search_workspace',{kind:'project'})),call('forged-save','save_knowledge',{title:'Interdit au bilan',content:'Do not execute',source:'fixture'})];
+ await assert.rejects(()=>run(execution),error=>error.code==='step_limit');assert.equal(fixture.requests.length,13);assert.equal(fixture.beforeTools,12);assert.equal(sql.prepare('SELECT COUNT(*) n FROM resources').get().n,before);assert.equal(fixture.events.some(event=>event.type==='tool_result'&&event.data.id==='forged-save'),false);
 });
 await check('an empty model response cannot be recorded as a successfully delivered answer',async()=>{
  const execution=await setup();fixture.responses=[text('')];await assert.rejects(()=>run(execution),error=>error.code==='empty_result');assert.equal(fixture.requests.length,1);assert.equal(sql.prepare("SELECT COUNT(*) n FROM messages WHERE conversation_id=? AND role='assistant'").get(execution.conversationId).n,0);

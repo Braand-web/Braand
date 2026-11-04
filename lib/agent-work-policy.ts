@@ -1,4 +1,6 @@
-export const MAX_AGENT_TOOL_ROUNDS=8;
+// Enough steps to gather context, act, verify and fix within one answer;
+// spend stays bounded by the request's credit ceiling.
+export const MAX_AGENT_TOOL_ROUNDS=12;
 export const agentWorkPolicy=`Prise en charge globale, jusqu'au livrable autorisé :
 - Une conversation peut rester un échange. Une discussion ne crée pas automatiquement une mission. Réponds directement dans sa langue ; préserve noms et devises. Demande seulement une information indispensable.
 - Complexe : update_work_plan (dépendances, critères), capabilities(area), prepare_work (mandat borné, inactif). Skills progressifs (semanticIds), specialty/contract : contexte, droits et budget bornés.

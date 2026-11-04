@@ -15,7 +15,7 @@ const storage={async get(key){const file=objects.get(key);assert.ok(file,'Only c
 test('all supplied sources are represented once, including nested .skill archives, scripts, fonts and prompts',()=>{
  assert.equal(manifest.sources.length,18);
  assert.equal(manifest.counts.skills,123);assert.equal(manifest.counts.newEntries,124);assert.equal(manifest.counts.augmentedEntries,1);
- assert.equal(SKILL_CATALOG.length,293);assert.equal(new Set(SKILL_CATALOG.map(entry=>entry.id)).size,293);
+ assert.equal(SKILL_CATALOG.length,295);assert.equal(new Set(SKILL_CATALOG.map(entry=>entry.id)).size,295);
  assert.equal(manifest.sources.find(file=>file.name==='Codex-Skills-Cloud.zip').sha256,manifest.sources.find(file=>file.name==='Codex-Skills-Cloud (1).zip').sha256);
  assert.equal(new Set(manifest.objects.map(file=>file.sha256)).size,manifest.objects.length);
  for(const file of manifest.objects){const bytes=buffer(file);assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);}
