@@ -1,90 +1,65 @@
 "use client";
 
-import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
-import {ArrowUpRight, CheckCircle2, Eye, EyeOff, LoaderCircle} from "lucide-react";
+import {useCallback, useEffect, useState} from "react";
+import {LoaderCircle} from "lucide-react";
 import {BrandMark} from "./brand";
 
-type LoginForm = {authenticated: boolean; browser?: string; returnTo: string; googleAvailable?:boolean};
+type LoginForm = {authenticated: boolean; browser?: string; returnTo: string; googleAvailable?: boolean; known?: boolean};
 
-export function EmailSignIn({returnTo}: {returnTo?: string}) {
- const [email, setEmail] = useState("");
- const [password, setPassword] = useState("");
- const [intent, setIntent] = useState<"signin" | "signup" | "reset" | "link">("signin");
- const [showPassword, setShowPassword] = useState(false);
+export function GoogleIcon({size = 18}: {size?: number}) {
+ return <svg className="google-icon" width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+ </svg>;
+}
+
+export function SignIn({returnTo}: {returnTo?: string}) {
  const [form, setForm] = useState<LoginForm | null>(null);
  const [error, setError] = useState("");
- const [sending, setSending] = useState(false);
- const [sent, setSent] = useState(false);
+ const [leaving, setLeaving] = useState(false);
  const [revision, setRevision] = useState(0);
- const inFlight = useRef(false);
- const submission = useRef<AbortController | null>(null);
- const emailInput = useRef<HTMLInputElement>(null);
 
  const prepare = useCallback(async (signal: AbortSignal) => {
   const destination = new URL(window.location.href);
   destination.searchParams.delete("auth");
   destination.searchParams.delete("return_to");
   const response = await fetch("/auth/form?return_to=" + encodeURIComponent(returnTo ?? destination.pathname + destination.search + destination.hash), {credentials:"same-origin", cache:"no-store", signal});
-  if (!response.ok) throw new Error("La connexion est indisponible pour le moment. Réessayez.");
+  if (!response.ok) throw new Error("unavailable");
   const data: LoginForm = await response.json();
-  if (typeof data.returnTo !== "string" || !data.returnTo.startsWith("/") || data.returnTo.startsWith("//")) throw new Error("La connexion n’a pas pu être préparée. Réessayez.");
+  if (typeof data.returnTo !== "string" || !data.returnTo.startsWith("/") || data.returnTo.startsWith("//")) throw new Error("invalid");
   if (data.authenticated) {window.location.replace(data.returnTo); return null;}
-  if (!data.browser || !/^[A-Za-z0-9_-]{43}$/.test(data.browser)) throw new Error("La connexion n’a pas pu être préparée. Réessayez.");
+  if (!data.browser || !/^[A-Za-z0-9_-]{43}$/.test(data.browser)) throw new Error("invalid");
   return data;
  }, [returnTo]);
 
  useEffect(() => {
   const controller = new AbortController();
   void prepare(controller.signal).then(data => {if (!controller.signal.aborted) {setForm(data); setError("");}}).catch(() => {if (!controller.signal.aborted) setError("La connexion n’a pas pu être préparée. Vérifiez votre réseau et réessayez.");});
-  return () => {controller.abort(); submission.current?.abort();};
+  return () => controller.abort();
  }, [prepare, revision]);
 
- const submit = async (event: FormEvent<HTMLFormElement>) => {
-  event.preventDefault();
-  if (inFlight.current || !form || !email.trim()) return;
-  inFlight.current = true;
-  setSending(true); setError("");
-  const controller = new AbortController(); submission.current = controller;
-  try {
-   // Renew an expired browser binding before sending, including after a long idle period.
-   const current = await prepare(controller.signal);
-   if (!current) return;
-   const fields=new URLSearchParams({email:email.trim(),browser:current.browser!,return_to:current.returnTo});
-   // A passwordless link only proves the address; no password is sent or changed.
-   if(intent!=='link')fields.set(intent==='signin'?'password':'new_password',password);
-   const response = await fetch(intent==='signin'?"/auth/password":"/auth/request", {method:"POST", credentials:"same-origin", signal:controller.signal, headers:{"Content-Type":"application/x-www-form-urlencoded", Accept:"application/json"}, body:fields});
-   const data = await response.json().catch(() => null) as {message?: string} | null;
-   if (!response.ok) throw new Error(data?.message || "La demande n’a pas pu aboutir. Réessayez.");
-   if (!controller.signal.aborted) {if(intent==='signin')window.location.assign(current.returnTo);else{setPassword("");setSent(true);}}
-  } catch (failure) {
-   if (!controller.signal.aborted) setError(failure instanceof Error && !(failure instanceof TypeError) ? failure.message : "La connexion n’a pas pu aboutir. Réessayez.");
-  } finally {
-   inFlight.current = false;
-   if (!controller.signal.aborted) setSending(false);
-  }
- };
+ // The server remembers (cookie, no identity) that this browser already signed in.
+ const known = !!form?.known;
+ const unavailable = !!form && !form.googleAvailable;
+ const href = form ? "/auth/google?return_to=" + encodeURIComponent(form.returnTo) : undefined;
 
- return <div className="auth-content" aria-busy={!form && !error || sending}>
+ return <div className="auth-content" aria-busy={!form && !error || leaving}>
   <span className="brand-mark" aria-hidden="true"><BrandMark/></span>
-  <h3>Gardons vos idées ensemble.</h3>
-  <p>{intent==='reset'?"Choisissez un nouveau mot de passe, puis vérifiez votre adresse e-mail.":intent==='link'?"Recevez un lien de connexion à usage unique, sans mot de passe.":"Connectez-vous ou inscrivez-vous avec votre adresse e-mail."}</p>
-  <div className="auth-intents" role="group" aria-label="Choisir une option">
-   {([['signin','Se connecter'],['signup','Créer un compte']] as const).map(([value,label])=><button key={value} type="button" className={intent===value?"selected":""} aria-pressed={intent===value||(value==='signin'&&(intent==='link'||intent==='reset'))} disabled={sending} onClick={()=>{setIntent(value);setPassword("");setSent(false);if(form)setError("");}}>{label}</button>)}
-  </div>
-  {!sent&&form?.googleAvailable&&<a className="button secondary" style={{width:'min(100%, 360px)',minHeight:46,marginBottom:14}} href={'/auth/google?return_to='+encodeURIComponent(form.returnTo)} aria-disabled={sending} onClick={event=>{if(sending)event.preventDefault();}}>Continuer avec Google<ArrowUpRight size={16} aria-hidden="true"/></a>}
-  {sent ? <div className="auth-feedback" role="status"><CheckCircle2 size={20} aria-hidden="true"/><div><strong>Consultez votre messagerie</strong><p>Si cette adresse peut être utilisée, un lien vient d’être envoyé.</p><button type="button" className="auth-change-email" onClick={()=>{setSent(false);requestAnimationFrame(()=>emailInput.current?.focus());}}>Utiliser une autre adresse</button></div></div> : <form className="auth-form" onSubmit={submit}>
-   <label htmlFor="braand-login-email">Adresse e-mail</label>
-   <input ref={emailInput} id="braand-login-email" name="email" type="email" autoComplete="email" maxLength={254} required value={email} onChange={event=>setEmail(event.target.value)} aria-describedby="braand-login-note" disabled={sending} placeholder="vous@exemple.com"/>
-   {intent!=='link'&&<><label htmlFor="braand-login-password">{intent==='reset'?'Nouveau mot de passe':'Mot de passe'}</label>
-   <div className="auth-password"><input id="braand-login-password" name="password" type={showPassword?"text":"password"} autoComplete={intent==='signin'?'current-password':'new-password'} minLength={intent==='signin'?1:12} maxLength={128} required value={password} onChange={event=>setPassword(event.target.value)} disabled={sending} placeholder={intent==='signin'?'Votre mot de passe':'12 caractères minimum'}/><button type="button" className="auth-password-toggle" aria-label={showPassword?"Masquer le mot de passe":"Afficher le mot de passe"} aria-pressed={showPassword} onClick={()=>setShowPassword(value=>!value)} disabled={sending}>{showPassword?<EyeOff size={17} aria-hidden="true"/>:<Eye size={17} aria-hidden="true"/>}</button></div>
-   {intent!=='signin'&&password.length>0&&password.length<12&&<span className="fine-print" role="status">Encore {12-password.length} caractère{12-password.length>1?'s':''} au minimum.</span>}</>}
-   {intent==='signin'&&<div className="auth-alternatives"><button type="button" className="auth-change-email" onClick={()=>{setIntent('link');setPassword('');setError('');}}>Recevoir un lien de connexion</button><button type="button" className="auth-change-email" onClick={()=>{setIntent('reset');setPassword('');setError('');}}>Mot de passe oublié ?</button></div>}
-   {intent==='link'&&<button type="button" className="auth-change-email" onClick={()=>{setIntent('signin');setError('');}}>Utiliser mon mot de passe</button>}
-   <button type="submit" className="button primary" disabled={!form || sending || !email.trim() || (intent!=='link'&&!password)}>{sending ? <><LoaderCircle size={16} className="spin" aria-hidden="true"/>{intent==='signin'?'Connexion…':'Envoi en cours…'}</> : <>{intent==="signin"?"Se connecter":intent==='reset'?"Vérifier mon adresse":intent==='link'?"Recevoir le lien":"Créer mon compte"}<ArrowUpRight size={16} aria-hidden="true"/></>}</button>
-   {error&&<p className="auth-error" role="alert">{error}</p>}
-   {!form&&!error&&<span role="status" className="sr-only">Vérification de votre session…</span>}
-   {!form&&error&&<button type="button" className="button secondary" onClick={()=>setRevision(value=>value+1)}>Réessayer</button>}
-  </form>}
-  <span id="braand-login-note" className="fine-print">{intent==='signin'?'Votre espace vous attend.':'Un lien à usage unique vérifie votre adresse. Vous reviendrez à la page ouverte avec votre brouillon.'}</span>
+  <h3>{known ? "Bon retour sur Braand." : "Gardons vos idées ensemble."}</h3>
+  <p>{known ? "Continuez avec votre compte Google pour retrouver votre espace." : "Un seul clic avec Google : nous retrouvons votre espace s’il existe, sinon nous le créons pour vous."}</p>
+  {form && !unavailable && <a className="button secondary auth-google" href={href} aria-disabled={leaving} onClick={event => {if (leaving) {event.preventDefault(); return;} setLeaving(true);}}>
+   {leaving ? <LoaderCircle size={18} className="spin" aria-hidden="true"/> : <GoogleIcon/>}
+   <span>{leaving ? "Ouverture de Google…" : "Continuer avec Google"}</span>
+  </a>}
+  {unavailable && <p className="auth-error" role="alert">La connexion avec Google est momentanément indisponible. Réessayez dans quelques minutes.</p>}
+  {error && <p className="auth-error" role="alert">{error}</p>}
+  {!form && !error && <span role="status" className="sr-only">Vérification de votre session…</span>}
+  {(error || unavailable) && <button type="button" className="button secondary" onClick={() => {setError(""); setForm(null); setRevision(value => value + 1);}}>Réessayer</button>}
+  <span className="fine-print">Nouveau sur Braand ? Votre compte est créé automatiquement à la première connexion. Vous revenez à la page ouverte, brouillon compris.</span>
  </div>;
 }
+
+/** @deprecated kept for imports; Braand signs in with Google only. */
+export const EmailSignIn = SignIn;

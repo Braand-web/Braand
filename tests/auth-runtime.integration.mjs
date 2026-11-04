@@ -1,4 +1,4 @@
-// Real SQLite + Web Crypto. Only the email provider is simulated.
+// Real SQLite + Web Crypto. No provider is called; e-mail sign-in is retired.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync,mkdirSync} from 'node:fs';
@@ -27,25 +27,18 @@ const check=async(name,fn)=>{await fn();console.log('PASS '+name);checks++;};
 const req=(path,body,cookie='',extra={})=>new Request('https://braand.test'+path,{method:body?'POST':'GET',headers:{...(body?{origin:'https://braand.test','Content-Type':'application/x-www-form-urlencoded'}:{}),cookie,...extra},...(body?{body:new URLSearchParams(body).toString()}:{})});
 const originalFetch=globalThis.fetch;const mails=[];let fail=false;
 globalThis.fetch=async(url,options)=>{assert.equal(url,'https://api.resend.com/emails');if(fail)throw new Error('provider-secret-that-must-stay-private');mails.push(JSON.parse(options.body));return Response.json({id:'offline-mail'});};
-let loginCookie,browser,link,sessionCookie;
+let loginCookie,browser,sessionCookie;
 try {
  await check('disabled auth ignores both legacy and spoofed identity headers',async()=>{const r=await auth.authenticatedRequest(req('/',null,'',{'x-braand-identity-id':'victim','x-braand-identity-email':'victim@braand.test','oai-authenticated-user-id':'victim'}),{...env,AUTH_ENABLED:'false'});assert.equal(r.headers.get('x-braand-identity-id'),null);assert.equal(r.headers.get('oai-authenticated-user-id'),null);});
  await check('unknown auth configuration fails closed without an email',async()=>{assert.equal((await auth.handleAuth(req('/auth/sign-in'),{...env,AUTH_HASH_SECRET:''},now)).status,503);assert.equal(mails.length,0);});
  await check('legacy sign-in opens the Braand dialog rather than a separate login page',async()=>{const r=await auth.handleAuth(req('/auth/sign-in?return_to=%2F%3Fsettings%3Dbilling'),env,now);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/?auth=sign-in&return_to=%2F%3Fsettings%3Dbilling');assert.equal(await r.text(),'');assert.equal(mails.length,0);});
  await check('dialog initialization uses a private secure same-site cookie without sending email',async()=>{const r=await auth.handleAuth(req('/auth/form?return_to=%2F%3Fview%3Dbilling'),env,now);assert.equal(r.status,200);loginCookie=r.headers.get('set-cookie').split(';')[0];browser=loginCookie.split('=')[1];assert.match(r.headers.get('set-cookie'),/Secure; HttpOnly; SameSite=Lax/);assert.equal(r.headers.get('cache-control'),'private, no-store');assert.deepEqual(await r.json(),{authenticated:false,browser,returnTo:'/?view=billing'});assert.equal(mails.length,0);});
  await check('refreshing sign-in or opening another tab preserves the pending email browser binding',async()=>{const r=await auth.handleAuth(req('/auth/form',null,loginCookie),env,now);assert.equal(r.status,200);assert.equal(r.headers.getSetCookie().find(value=>value.startsWith('__Host-braand_login=')).split(';')[0],loginCookie);assert.equal(mails.length,0);});
- await check('cross-origin login and wrong CSRF browser nonce are refused',async()=>{assert.equal((await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',browser},loginCookie,{origin:'https://evil.test'}),env,now)).status,400);assert.equal((await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',browser:'wrong'},loginCookie),env,now)).status,400);assert.equal(mails.length,0);});
- await check('oversized chunked forms are rejected before parsing or sending email',async()=>{const request=new Request('https://braand.test/auth/request',{method:'POST',headers:{origin:env.APP_ORIGIN,'content-type':'application/x-www-form-urlencoded',cookie:loginCookie},body:new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('email='+ 'a'.repeat(5000)));controller.close();}}),duplex:'half'});assert.equal((await auth.handleAuth(request,env,now)).status,400);assert.equal(mails.length,0);});
- await check('sandbox cannot send to arbitrary accounts or reveal registration state',async()=>{const r=await auth.handleAuth(req('/auth/request',{email:'other@braand.test',browser},loginCookie,{accept:'application/json'}),env,now);assert.equal(r.status,200);assert.equal((await r.json()).title,'Consultez votre messagerie');assert.equal(mails.length,0);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n,0);});
- await check('only a token hash is stored; canonical links are sent once with no response leak',async()=>{const r=await auth.handleAuth(req('/auth/request',{email:'OWNER@braand.test',browser,return_to:'/?view=billing'},loginCookie,{accept:'application/json'}),env,now);assert.equal(r.status,200);assert.equal(mails.length,1);link=new URL(mails[0].text.match(/https:\/\/[^\s]+/)[0]);assert.equal(link.origin,'https://braand.test');const row=sql.prepare('SELECT * FROM auth_challenges').get();assert.notEqual(row.token_hash,link.searchParams.get('token'));assert.notEqual(row.browser_hash,browser);assert.doesNotMatch(await r.text(),new RegExp(link.searchParams.get('token')));});
- await check('email cooldown prevents double submits and duplicate sends',async()=>{const r=await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',browser},loginCookie),env,now);assert.equal(r.status,200);assert.equal(mails.length,1);});
- await check('dialog reinitialization after sending preserves the pending link',async()=>{const r=await auth.handleAuth(req('/auth/form',null,loginCookie),env,now);assert.equal((await r.json()).browser,browser);assert.equal((await auth.handleAuth(req(link.pathname+link.search,null,loginCookie),env,now)).status,200);assert.equal(mails.length,1);});
- await check('link scanners never consume a login, and another browser is refused',async()=>{let r=await auth.handleAuth(req(link.pathname+link.search,null,loginCookie),env,now);assert.equal(r.status,200);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_challenges').get().n,1);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,0);r=await auth.handleAuth(req(link.pathname+link.search),env,now);assert.equal(r.status,400);});
- await check('expired challenge cannot create a session even with the matching browser',async()=>{assert.equal((await auth.handleAuth(req('/auth/verify',Object.fromEntries(link.searchParams),loginCookie),env,now+600001)).status,400);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,0);});
- await check('single-use verification rejects double-click races atomically',async()=>{const form=Object.fromEntries(link.searchParams);const results=await Promise.all([auth.handleAuth(req('/auth/verify',form,loginCookie),env,now),auth.handleAuth(req('/auth/verify',form,loginCookie),env,now)]);assert.deepEqual(results.map(r=>r.status).sort(),[303,400]);const success=results.find(r=>r.status===303);assert.equal(success.headers.get('location'),'/?view=billing');sessionCookie=success.headers.getSetCookie().find(c=>c.startsWith('__Host-braand_session=')).split(';')[0];assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,1);});
- await check('an existing session skips the sign-in form, preserves its cookies and uses only a safe return path',async()=>{for(const [destination,expected] of [['/?settings=billing','/?settings=billing'],['https://evil.test/','/'],['/auth/sign-in','/'],['/?auth=sign-in&return_to=%2F','/']]){const r=await auth.handleAuth(req('/auth/sign-in?return_to='+encodeURIComponent(destination),null,sessionCookie),env,now);assert.equal(r.status,303);assert.equal(r.headers.get('location'),expected);assert.equal(r.headers.getSetCookie().length,0);assert.equal(await r.text(),'');}assert.equal(mails.length,1);});
+ await check('cross-origin posts and oversized chunked forms are refused before any work',async()=>{assert.equal((await auth.handleAuth(req('/auth/sign-out',{scope:'all'},loginCookie,{origin:'https://evil.test'}),env,now)).status,400);const request=new Request('https://braand.test/auth/sign-out',{method:'POST',headers:{origin:env.APP_ORIGIN,'content-type':'application/x-www-form-urlencoded',cookie:loginCookie},body:new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('scope='+ 'a'.repeat(5000)));controller.close();}}),duplex:'half'});assert.equal((await auth.handleAuth(request,env,now)).status,400);});
+ await check('e-mail links and passwords are retired and never send mail or create accounts',async()=>{for(const route of ['/auth/request','/auth/password','/auth/verify']){const r=await auth.handleAuth(req(route,{email:'owner@braand.test',password:'fixture-long-password-123',browser},loginCookie,{accept:'application/json'}),env,now);assert.equal(r.status,410);}assert.equal(mails.length,0);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n,0);});
+ await check('a first verified sign-in creates the account and opens a session',async()=>{const started=await auth.startAccountSession(env,'owner@braand.test',now);assert.equal(started.created,true);sessionCookie='__Host-braand_session='+started.session;assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,1);});
+ await check('an existing session skips the sign-in form, preserves its cookies and uses only a safe return path',async()=>{for(const [destination,expected] of [['/?settings=billing','/?settings=billing'],['https://evil.test/','/'],['/auth/sign-in','/'],['/?auth=sign-in&return_to=%2F','/']]){const r=await auth.handleAuth(req('/auth/sign-in?return_to='+encodeURIComponent(destination),null,sessionCookie),env,now);assert.equal(r.status,303);assert.equal(r.headers.get('location'),expected);assert.equal(r.headers.getSetCookie().length,0);assert.equal(await r.text(),'');}assert.equal(mails.length,0);});
  await check('an authenticated dialog returns the safe destination without resetting login cookies',async()=>{const r=await auth.handleAuth(req('/auth/form?return_to=%2F%3Fsettings%3Dbilling',null,sessionCookie),env,now);assert.deepEqual(await r.json(),{authenticated:true,returnTo:'/?settings=billing'});assert.equal(r.headers.getSetCookie().length,0);});
- await check('reopening the dialog after an email keeps the same link valid',async()=>{const r=await auth.handleAuth(req('/auth/form',null,loginCookie),env,now);assert.equal((await r.json()).browser,browser);});
  await check('verified signup automatically grants exactly 15 credits for seven days with personal ownership',async()=>{
   const user=sql.prepare('SELECT id FROM auth_users').get(),lot=sql.prepare("SELECT * FROM credit_lots WHERE id=?").get('free:'+user.id);
   assert.equal(lot.organization_id,user.id);assert.equal(lot.source_id,user.id);assert.equal(lot.granted,1500);assert.equal(lot.balance,1500);assert.equal(lot.starts_at,now);assert.equal(lot.expires_at,now+7*86400000);
@@ -53,12 +46,10 @@ try {
   assert.equal(sql.prepare('SELECT role FROM organization_members WHERE organization_id=? AND user_id=?').get(user.id,user.id).role,'owner');
   assert.equal(sql.prepare('SELECT organization_id FROM workspaces WHERE id=?').get(user.id).organization_id,user.id);
  });
- await check('reconnecting after consumption or expiration cannot replenish or extend the welcome grant',async()=>{
+ await check('a returning user is recognized; reconnecting after consumption or expiration cannot replenish or extend the welcome grant',async()=>{
   const before=sql.prepare('SELECT * FROM credit_lots').get();sql.prepare('UPDATE credit_lots SET balance=0 WHERE id=?').run(before.id);
   const later=now+8*86400000;
-  await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',browser},loginCookie),env,later);
-  const nextLink=new URL(mails.at(-1).text.match(/https:\/\/[^\s]+/)[0]);
-  assert.equal((await auth.handleAuth(req('/auth/verify',Object.fromEntries(nextLink.searchParams),loginCookie),env,later)).status,303);
+  assert.equal((await auth.startAccountSession(env,'owner@braand.test',later)).created,false);
   assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n,1);
   assert.deepEqual({...sql.prepare('SELECT * FROM credit_lots').get()},{...before,balance:0});
   assert.equal(sql.prepare('SELECT COUNT(*) n FROM billing_claims').get().n,1);
@@ -69,60 +60,28 @@ try {
  await check('duplicate session cookies and expired sessions are unauthenticated',async()=>{assert.equal(await auth.sessionIdentity(new Headers({cookie:sessionCookie+'; '+sessionCookie}),env,now),null);assert.equal(await auth.sessionIdentity(new Headers({cookie:sessionCookie}),env,now+604800001),null);});
  await check('logout requires confirmation POST and revokes the server-side session',async()=>{assert.equal((await auth.handleAuth(req('/auth/sign-out',null,sessionCookie),env,now)).status,200);assert.ok(await auth.sessionIdentity(new Headers({cookie:sessionCookie}),env,now));assert.equal((await auth.handleAuth(req('/auth/sign-out',{confirm:'yes'},sessionCookie,{origin:'https://evil.test'}),env,now)).status,400);assert.equal((await auth.handleAuth(req('/auth/sign-out',{confirm:'yes'},sessionCookie),env,now)).status,303);assert.equal(await auth.sessionIdentity(new Headers({cookie:sessionCookie}),env,now),null);});
  await check('open redirects and host-header poisoning are blocked',async()=>{for(const value of ['//evil.test','https://evil.test','/\\evil.test','/auth/verify'])assert.equal(auth.safeAuthReturn(value),'/');const poisoned=new Request('https://evil.test/auth/sign-in');assert.equal((await auth.handleAuth(poisoned,env,now)).status,403);});
- await check('failed email invalidates the link and never leaks provider errors',async()=>{fail=true;const r=await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',browser},loginCookie),env,now+60001);assert.equal(r.status,503);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_challenges').get().n,0);assert.doesNotMatch(await r.text(),/provider-secret/);});
  await check('expired auth metadata is removed, verified accounts are retained',async()=>{await auth.cleanupAuth(env,now+9*86400000);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_rate_limits').get().n,0);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n,1);});
- const register=async(email,at)=>{
-  env.RESEND_TEST_RECIPIENT=email;
-  const start=await auth.handleAuth(req('/auth/form'),env,at),cookie=start.headers.get('set-cookie').split(';')[0],nonce=cookie.split('=')[1];
-  await auth.handleAuth(req('/auth/request',{email,browser:nonce},cookie),env,at);
-  const sent=new URL(mails.at(-1).text.match(/https:\/\/[^\s]+/)[0]);
-  return auth.handleAuth(req('/auth/verify',Object.fromEntries(sent.searchParams),cookie),env,at);
- };
+ const register=async(email,at)=>auth.startAccountSession(env,email,at);
  await check('every new verified user receives a separate grant even when manual discovery is disabled',async()=>{
   fail=false;env.FREE_DAILY_CREDITS='0';
   for(const [index,email] of ['second@braand.test','third@braand.test'].entries()){
    const at=now+(10+index)*86400000;
-   assert.equal((await register(email,at)).status,303);
+   assert.equal((await register(email,at)).created,true);
    const user=sql.prepare('SELECT id FROM auth_users WHERE email=?').get(email),lots=sql.prepare('SELECT * FROM credit_lots WHERE source_id=?').all(user.id);
    assert.equal(lots.length,1);assert.equal(lots[0].balance,1500);assert.equal(lots[0].expires_at,at+7*86400000);
   }
  });
- await check('a failed wallet insertion rolls back account creation and can be retried with a new link',async()=>{
+ await check('a failed wallet insertion rolls back account creation and can be retried',async()=>{
   const before=sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n;
   sql.exec("CREATE TRIGGER fixture_fail_welcome BEFORE INSERT ON credit_lots BEGIN SELECT RAISE(ABORT,'fixture storage failure'); END");
   await assert.rejects(()=>register('retry@braand.test',now+12*86400000));
   assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_users').get().n,before);
   assert.equal(sql.prepare("SELECT COUNT(*) n FROM billing_claims WHERE user_id NOT IN (SELECT id FROM auth_users)").get().n,0);
   sql.exec('DROP TRIGGER fixture_fail_welcome');
-  assert.equal((await register('retry@braand.test',now+12*86400000+60001)).status,303);
+  assert.equal((await register('retry@braand.test',now+12*86400000+60001)).created,true);
   const user=sql.prepare('SELECT id FROM auth_users WHERE email=?').get('retry@braand.test');
   assert.equal(sql.prepare('SELECT balance FROM credit_lots WHERE source_id=?').get(user.id).balance,1500);
  });
- await check('existing email accounts can set a password only after verification and sign in without sending another email',async()=>{
-  const email='owner@braand.test',password='fixture-long-password-123',at=now+20*86400000;env.RESEND_TEST_RECIPIENT=email;
-  const original=sql.prepare('SELECT id FROM auth_users WHERE email=?').get(email),beforeGrant=sql.prepare('SELECT * FROM credit_lots WHERE source_id=?').get(original.id);
-  const start=await auth.handleAuth(req('/auth/form?return_to=%2F%3Fview%3Dprojects'),env,at),cookie=start.headers.get('set-cookie').split(';')[0],nonce=cookie.split('=')[1];
-  const created=await auth.handleAuth(req('/auth/request',{email,browser:nonce,new_password:password,return_to:'/?view=projects'},cookie,{accept:'application/json'}),env,at);assert.equal(created.status,200);
-  const pending=sql.prepare('SELECT * FROM auth_pending_passwords').get();assert.ok(pending);assert.ok(!JSON.stringify(pending).includes(password));assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_passwords WHERE user_id=?').get(original.id).n,0);
-  const verification=new URL(mails.at(-1).text.match(/https:\/\/[^\s]+/)[0]);const scan=await auth.handleAuth(req(verification.pathname+verification.search),env,at);assert.equal(scan.status,400);
-  const preview=await auth.handleAuth(req(verification.pathname+verification.search,null,cookie),env,at);assert.equal(preview.status,200);assert.match(preview.headers.get('content-security-policy'),/script-src 'nonce-/);assert.match(await preview.text(),/requestSubmit/);
-  assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_passwords WHERE user_id=?').get(original.id).n,0);
-  const verified=await auth.handleAuth(req('/auth/verify',Object.fromEntries(verification.searchParams),cookie),env,at);assert.equal(verified.status,303);assert.equal(verified.headers.get('location'),'/?view=projects');
-  const saved=sql.prepare('SELECT * FROM auth_passwords WHERE user_id=?').get(original.id);assert.equal(saved.iterations,32768);assert.notEqual(saved.digest,password);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_pending_passwords').get().n,0);
-  assert.deepEqual({...sql.prepare('SELECT * FROM credit_lots WHERE source_id=?').get(original.id)},{...beforeGrant});
-  const second=await auth.handleAuth(req('/auth/form'),env,at+1000),secondCookie=second.headers.get('set-cookie').split(';')[0],secondNonce=secondCookie.split('=')[1],mailCount=mails.length;
-  const wrong=await auth.handleAuth(req('/auth/password',{email,password:'wrong-password',browser:secondNonce},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(wrong.status,401);
-  const unknown=await auth.handleAuth(req('/auth/password',{email:'unknown@braand.test',password:'wrong-password',browser:secondNonce},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(unknown.status,401);assert.deepEqual(await wrong.json(),await unknown.json());
-  const login=await auth.handleAuth(req('/auth/password',{email,password,browser:secondNonce,return_to:'/?view=library'},secondCookie,{accept:'application/json'}),env,at+1000);assert.equal(login.status,200);assert.equal((await login.json()).message,'/?view=library');assert.equal(mails.length,mailCount);
-  const session=login.headers.getSetCookie().find(value=>value.startsWith('__Host-braand_session=')).split(';')[0];assert.equal((await auth.sessionIdentity(new Headers({cookie:session}),env,at+1000)).userId,original.id);
- });
- await check('password registration validates length and refuses cross-origin or incorrect browser proof',async()=>{
-  const at=now+21*86400000,form=await auth.handleAuth(req('/auth/form'),env,at),cookie=form.headers.get('set-cookie').split(';')[0],nonce=cookie.split('=')[1],count=mails.length;
-  assert.equal((await auth.handleAuth(req('/auth/request',{email:'owner@braand.test',new_password:'short',browser:nonce},cookie),env,at)).status,400);
-  assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:'wrong'},cookie),env,at)).status,400);
-  assert.equal((await auth.handleAuth(req('/auth/password',{email:'owner@braand.test',password:'bad',browser:nonce},cookie,{origin:'https://evil.test'}),env,at)).status,400);assert.equal(mails.length,count);
- });
-
  await check('an active session slides once a day, stays capped at 90 days and every device can be signed out at once',async()=>{
   const user=sql.prepare("SELECT id FROM auth_users ORDER BY created_at LIMIT 1").get();assert.ok(user);
   const b64=bytes=>Buffer.from(bytes).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');

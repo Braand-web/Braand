@@ -55,3 +55,6 @@
 .auth-password-toggle:hover { color: var(--ds-text, inherit); background: var(--ds-fill, rgba(127,127,127,.12)); }
 .auth-password-toggle:focus-visible { outline: 2px solid var(--ds-focus, currentColor); outline-offset: 1px; }
 .auth-alternatives { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; width: 100%; }
+.button.auth-google { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: min(100%, 360px); min-height: 48px; margin: 4px 0 14px; font-weight: 600; text-decoration: none; }
+.auth-google .google-icon { flex: none; }
+.auth-google:focus-visible { outline: 2px solid var(--ds-focus, currentColor); outline-offset: 2px; }

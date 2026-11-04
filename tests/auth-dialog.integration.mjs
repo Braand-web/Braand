@@ -32,10 +32,6 @@ const signedIn=ui.settings({...base,sessionState:'authenticated',user:{id:'curre
 assert.match(signedIn,/Current account/);assert.match(signedIn,/Se déconnecter/);assert.doesNotMatch(signedIn,/Connectez-vous pour retrouver/);
 for(const tab of ['help','legal']) assert.doesNotMatch(ui.settings({...base,tab,sessionState:'loading'}),/Vérification de votre session/);
 const form=ui.login();
-assert.match(form,/type="email"/);assert.match(form,/autocomplete="email"/i);assert.match(form,/Vérification de votre session/);
-assert.match(form,/<button[^>]+type="submit"[^>]+disabled/);
-assert.match(form,/Gardons vos idées ensemble\./);assert.match(form,/Choisir une option/);
-assert.match(form,/Se connecter/);assert.match(form,/Créer un compte/);
-assert.match(form,/type="password"/);assert.match(form,/Mot de passe oublié/);assert.match(form,/Recevoir un lien de connexion/);assert.match(form,/Afficher le mot de passe/);
-assert.doesNotMatch(form,/Retrouvez votre espace|Recevez un lien personnel|email-sign-in/);
-console.log('PASS: unresolved sessions never masquerade as signed-out accounts; email submission waits for its secure browser binding.');
+assert.match(form,/Vérification de votre session/);assert.match(form,/Gardons vos idées ensemble\./);assert.match(form,/créé automatiquement/);
+assert.doesNotMatch(form,/type="email"|type="password"|Mot de passe|Créer un compte|Recevoir un lien/);
+console.log('PASS: unresolved sessions never masquerade as signed-out accounts; sign-in is Google only and waits for its secure browser binding.');

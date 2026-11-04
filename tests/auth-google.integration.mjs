@@ -32,16 +32,25 @@ try{
  await check('one encrypted configuration enables Google and malformed configuration fails closed',async()=>{const broken={...env,AUTH_GOOGLE_CONFIG:'not-json'},form=await auth.handleAuth(req('/auth/form'),broken,now);assert.equal((await form.json()).googleAvailable,undefined);env.AUTH_GOOGLE_CONFIG=JSON.stringify({clientId:env.AUTH_GOOGLE_CLIENT_ID,clientSecret:env.AUTH_GOOGLE_CLIENT_SECRET});const ready=await auth.handleAuth(req('/auth/form'),env,now);assert.equal((await ready.json()).googleAvailable,true);});
  await check('signed Google identity verifies PKCE, creates one workspace and returns to the original route',async()=>{
   const flow=await begin();token=await signed(flow.state);const callback='/auth/google/callback?code=fixture-code&state='+encodeURIComponent(flow.state);
-  assert.equal((await auth.handleAuth(req(callback),env,now)).status,400);const result=await auth.handleAuth(req(callback,flow.cookie),env,now);assert.equal(result.status,303);assert.equal(result.headers.get('location'),'/?view=projects');
+  assert.equal((await auth.handleAuth(req(callback),env,now)).status,400);const result=await auth.handleAuth(req(callback,flow.cookie),env,now);assert.equal(result.status,303);assert.equal(result.headers.get('location'),'/?view=projects&accueil=nouveau');
+  const known=result.headers.getSetCookie().find(v=>v.startsWith('__Host-braand_known=')).split(';')[0];assert.equal((await (await auth.handleAuth(req('/auth/form',known),env,now)).json()).known,true);assert.equal((await (await auth.handleAuth(req('/auth/form'),env,now)).json()).known,undefined);
   const cookie=result.headers.getSetCookie().find(v=>v.startsWith('__Host-braand_session=')).split(';')[0],user=await auth.sessionIdentity(new Headers({cookie}),env,now);assert.equal(user.email,'owner@gmail.com');assert.equal(sql.prepare('SELECT COUNT(*) n FROM credit_lots WHERE source_id=?').get(user.userId).n,1);
   assert.equal((await auth.handleAuth(req(callback,flow.cookie),env,now)).status,400);assert.equal(calls,1);
+ });
+ await check('a returning Google user is recognized and keeps the same account',async()=>{
+  const flow=await begin('/');token=await signed(flow.state);const result=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(result.status,303);assert.equal(result.headers.get('location'),'/?accueil=retour');
+  assert.equal(sql.prepare("SELECT COUNT(*) n FROM auth_users WHERE email='owner@gmail.com'").get().n,1);assert.equal(sql.prepare('SELECT COUNT(*) n FROM credit_lots').get().n,1);
+ });
+ await check('e-mail links and passwords are retired',async()=>{
+  for(const route of ['/auth/request','/auth/password','/auth/verify']){const response=await auth.handleAuth(new Request('https://braand.test'+route,{method:'POST',headers:{origin:'https://braand.test','content-type':'application/x-www-form-urlencoded',accept:'application/json'},body:'email=a%40b.test&password=x'}),env,now);assert.equal(response.status,410);const page=await auth.handleAuth(req(route+'?id=x'),env,now);assert.equal(page.status,303);assert.equal(page.headers.get('location'),'/auth/sign-in');}
  });
  await check('unverified email, wrong nonce and wrong audience cannot create an account or session',async()=>{
   for(const wrong of [{email_verified:false},{nonce:'wrong-nonce'},{aud:'other-client'}]){const before=sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,flow=await begin();token=await signed(flow.state,wrong);const response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,503);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_sessions').get().n,before);}
  });
- await check('a verified non-Google address cannot silently take over an existing account',async()=>{
+ await check('an account from the former e-mail sign-in is linked once, then a different Google identity is refused',async()=>{
   sql.prepare('INSERT INTO auth_users(id,email,verified_at,created_at) VALUES (?,?,?,?)').run('existing-user','member@example.org',now,now);
-  const flow=await begin('https://evil.test/');token=await signed(flow.state,{email:'member@example.org',sub:'different-google-subject'});const response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,409);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_google_identities WHERE user_id=?').get('existing-user').n,0);
+  let flow=await begin('/');token=await signed(flow.state,{email:'member@example.org',sub:'member-google-subject'});let response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,303);assert.equal(response.headers.get('location'),'/?accueil=retour');assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_google_identities WHERE user_id=?').get('existing-user').n,1);
+  flow=await begin('https://evil.test/');token=await signed(flow.state,{email:'member@example.org',sub:'different-google-subject'});response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,409);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_google_identities WHERE user_id=?').get('existing-user').n,1);
  });
 }finally{globalThis.fetch=originalFetch;sql.close();}
 console.log(`${checks} Google authentication checks passed; no external provider requests.`);
