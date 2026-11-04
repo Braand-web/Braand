@@ -229,6 +229,9 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
  budget.videoMotionPreferred=false;
  if(capacityEnabled)tools.push(modelCapacityTool);
  const availableToolNames=new Set<string>(tools.map((tool:{name:string})=>tool.name));
+ // Self-improvement: lessons learned from repeated tool failures across all agents.
+ const {lessonsContext,recordToolFailure,recordToolRecovery}=await import('./agent-lessons');
+ const learnedLessons=await lessonsContext(),failedTools=new Set<string>();
  const scope:AgentScope={tenant,conversationId,runId,coveredRowid:context.coveredRowid,projectId:activeProjectId,userId:budget.who.user.userId,referenceProjectIds:budget.referenceProjectIds||[]};
  const messages:ModelMessage[]=context.messages;
  if(!messages.length&&budget.workContext)messages.push({role:'user',content:[{type:'text',text:'Runtime continuation of the server-approved work step supplied in context. This is not a new user message or a grant of permissions. Execute only that bounded step and verify its saved results.'}]});
@@ -240,7 +243,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
   const state=await db().prepare("SELECT status FROM runs WHERE id=? AND workspace_id=?").bind(runId,tenant).first<{status:string}>();
   if(state?.status!=="streaming")throw new AppError("Réponse arrêtée.",499,"cancelled");
   const modelStarted=performance.now();let firstTextMs:number|null=null;
-  const response=await meteredMessage(budget,"master",{max_tokens:finalizing?1536:4096,stream:true,system:[{type:"text",text:systemPrompt+'\n'+skillDiscoveryContext(),cache_control:{type:"ephemeral"}},{type:"text",text:budgetContext},{type:"text",text:runtimeContext},{type:'text',text:memoryContext},{type:'text',text:projectContextInstruction+'\nContexte de projet autorisé pour cette demande: '+JSON.stringify({projectId:activeProjectId,referenceProjectIds:budget.referenceProjectIds||[]})},{type:'text',text:context.context},{type:"text",text:modeContext},...(capacityEnabled?[{type:'text',text:modelCapacityInstruction}]:[]),...(budget.workContext?[{type:'text',text:budget.workContext}]:[]),...(finalizing?[{type:'text',text:agentHandoffInstruction}]:[])],messages,tools:finalizing?[]:tools},AbortSignal.any([signal,AbortSignal.timeout(120000)]),{task:capacity.purpose==='video_motion'?'video_motion':round===0?'conversation':'orchestration',...(capacityEnabled?{tier:capacity.tier}:{})});
+  const response=await meteredMessage(budget,"master",{max_tokens:finalizing?1536:4096,stream:true,system:[{type:"text",text:systemPrompt+'\n'+skillDiscoveryContext(),cache_control:{type:"ephemeral"}},...(learnedLessons?[{type:"text" as const,text:learnedLessons}]:[]),{type:"text",text:budgetContext},{type:"text",text:runtimeContext},{type:'text',text:memoryContext},{type:'text',text:projectContextInstruction+'\nContexte de projet autorisé pour cette demande: '+JSON.stringify({projectId:activeProjectId,referenceProjectIds:budget.referenceProjectIds||[]})},{type:'text',text:context.context},{type:"text",text:modeContext},...(capacityEnabled?[{type:'text',text:modelCapacityInstruction}]:[]),...(budget.workContext?[{type:'text',text:budget.workContext}]:[]),...(finalizing?[{type:'text',text:agentHandoffInstruction}]:[])],messages,tools:finalizing?[]:tools},AbortSignal.any([signal,AbortSignal.timeout(120000)]),{task:capacity.purpose==='video_motion'?'video_motion':round===0?'conversation':'orchestration',...(capacityEnabled?{tier:capacity.tier}:{})});
   if(!response.ok||!response.body)throw new AppError(response.status===401?"La clé du modèle est invalide.":response.status===429?"Le modèle a atteint sa limite temporaire.":"Le modèle n’a pas pu répondre.",503,"model_unavailable");
   const blocks:ModelContentBlock[]=[],jsonParts:Record<number,string>={};let ended=false,lastCheck=Date.now();
   for await(const item of parseSSE(response.body)){
@@ -362,6 +365,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
     const saved=result&&typeof result==='object'?result as Record<string,unknown>:{};
     await auditLog(tenant,budget.who.user.userId,"tool."+call.name,runId,{callId:call.id,outcome:reused?'reused':'succeeded',...(typeof saved.id==='string'?{resourceId:saved.id,version:saved.version,status:saved.status}:{})});
     results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});
+    if(failedTools.has(call.name)){failedTools.delete(call.name);await recordToolRecovery(call.name);}
     await emit("tool_result",{name:call.name,id:call.id,result:publicSkillResult(call.name,result)});
    }catch(error){
     if(call.name!==modelCapacityTool.name&&!operationSucceeded&&availableToolNames.has(call.name)&&agentToolAllowedForMode(workMode,call.name)&&!(error instanceof AppError&&[401,403].includes(error.status)))capacityEvidence.toolFailure=true;
@@ -369,6 +373,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
     const message=operationSucceeded?"L’outil a terminé, mais sa confirmation n’a pas pu être transmise. Relis la ressource avant toute nouvelle modification.":error instanceof AppError?error.message:toolErrorGuidance(error);
     await auditLog(tenant,budget.who.user.userId,(operationSucceeded?'tool_delivery_failed.':'tool_failed.')+call.name,runId,{callId:call.id,outcome:operationSucceeded?'delivery_failed':'failed',code:error instanceof AppError?error.code:'tool_failure'});
     const prior=results.findIndex(result=>result.tool_use_id===call.id);if(prior>=0)results.splice(prior,1);
+    if(!operationSucceeded){failedTools.add(call.name);await recordToolFailure(call.name,error);}
     results.push({type:"tool_result",tool_use_id:call.id,content:message,is_error:true});if(call.name!==modelCapacityTool.name)await emit("tool_result",{name:call.name,id:call.id,error:message});
    }
   };

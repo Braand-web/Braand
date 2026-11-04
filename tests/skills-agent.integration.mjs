@@ -23,7 +23,7 @@ const DB={prepare:query=>statement(query),async batch(statements){sql.exec('BEGI
 const packManifest=JSON.parse(readFileSync(path.join(project,'skills/packs/manifest.json'),'utf8'));
 const packedObjects=new Map(packManifest.objects.map(file=>['skills/packs/v1/'+file.sha256,file]));
 let packedReads=0;
-const BUCKET={async get(key){packedReads++;const file=packedObjects.get(key);assert.ok(file,'Object must be in the pinned pack');const bytes=readFileSync(path.join(project,file.path));return {size:bytes.length,async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);}};}};
+const BUCKET={async get(key){if(key.startsWith('internal/'))return null;packedReads++;const file=packedObjects.get(key);assert.ok(file,'Object must be in the pinned pack');const bytes=readFileSync(path.join(project,file.path));return {size:bytes.length,async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);}};}};
 const fixture={env:{DB,BUCKET},headers:new Headers({'x-braand-identity-id':'skills-integration-owner','x-braand-identity-email':'skills@test.invalid'}),requests:[],responses:[],external:[],events:[],beforeTools:0};
 globalThis.__skillsAgentTest=fixture;
 const out=path.join(project,'.local-build','skills-agent-test.mjs');

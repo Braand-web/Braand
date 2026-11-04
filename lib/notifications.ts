@@ -28,6 +28,14 @@ export async function enqueueOperationalNotification(id: string, payload: AlertP
   return {id, queued: true};
 }
 
+/** Weekly quality summary for operators: aggregate figures only, fixed recipient. */
+export async function enqueueQualityReport(id: string, text: string, now = Date.now()) {
+  if (!safeReference(id) || text.length > 4000) throw new AppError('Rapport qualité invalide.',400);
+  await db().prepare("INSERT OR IGNORE INTO notification_outbox(id,template,payload,created_at,updated_at) VALUES (?,'quality_report',?,?,?)")
+    .bind(id, JSON.stringify({text}), now, now).run();
+  return {id, queued: true};
+}
+
 // Only operational messages are supported here. No broadcast or arbitrary recipient/body API.
 export async function dispatchOperationalNotifications(limit = 10, now = Date.now()) {
   const readiness = emailReadiness();
@@ -48,15 +56,17 @@ export async function dispatchOperationalNotifications(limit = 10, now = Date.no
     const save = (status: string, code: string | null, providerId: string | null = null) => db().prepare('UPDATE notification_outbox SET status=?,error_code=?,provider_id=?,lease_token=NULL,lease_until=0,updated_at=? WHERE id=? AND lease_token=?')
       .bind(status, code, providerId, Date.now(), row.id, lease).run();
     try {
-      const payload = JSON.parse(row.payload) as AlertPayload;
-      if (row.template !== 'operations_alert' || !safeReference(payload.category) || !safeReference(payload.target)) {
+      const parsed = JSON.parse(row.payload) as AlertPayload & {text?: string};
+      const quality = row.template === 'quality_report' && typeof parsed.text === 'string' && parsed.text.length <= 4000;
+      if (!quality && (row.template !== 'operations_alert' || !safeReference(parsed.category) || !safeReference(parsed.target))) {
         await save('failed','notification_invalid'); failed++; continue;
       }
+      const payload = parsed;
       const c = config();
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST', headers: {'Authorization': 'Bearer ' + c.RESEND_API_KEY, 'Content-Type': 'application/json', 'Idempotency-Key': 'braand-ops/' + row.id},
         body: JSON.stringify({from: c.RESEND_FROM, to: [readiness.mode === 'sandbox' ? c.RESEND_TEST_RECIPIENT : c.OPS_ALERT_EMAIL],
-          subject: 'Braand — une intervention est nécessaire', text: `Une alerte technique requiert votre attention.\nCatégorie : ${payload.category}\nRéférence : ${payload.target}\nConsultez la console d’exploitation Braand. Aucun secret n’est inclus dans ce message.`}),
+          subject: quality ? 'Braand — rapport qualité des agents' : 'Braand — une intervention est nécessaire', text: quality ? String(payload.text) : `Une alerte technique requiert votre attention.\nCatégorie : ${payload.category}\nRéférence : ${payload.target}\nConsultez la console d’exploitation Braand. Aucun secret n’est inclus dans ce message.`}),
         signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) {

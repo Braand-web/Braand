@@ -1,6 +1,6 @@
 import {config, db, uid, identity} from './server';
 import {AppError} from './core.mjs';
-import {enqueueOperationalNotification, dispatchOperationalNotifications, emailReadiness} from './notifications';
+import {enqueueOperationalNotification, dispatchOperationalNotifications, emailReadiness,enqueueQualityReport} from './notifications';
 import {createEncryptedBackup, backupReadiness} from './backups';
 import {browserCleanup} from './browser';
 import {browserRPCCleanup} from './browser-runtime';
@@ -94,8 +94,15 @@ export async function runOperationsTick(now = Date.now()) {
   const browser = await runTrackedJob('browser_cleanup','browser_cleanup:' + slot,async() => {await browserCleanup(now);await browserRPCCleanup(now);},now);
   let backup: {id?:string;status:string;replayed?:boolean} = {status:'disabled'};
   if (config().BACKUP_ENABLED === 'true') backup = await runTrackedJob('backup','backup:' + new Date(now).toISOString().slice(0,10).replaceAll('-',''),() => createEncryptedBackup(now),now);
+  // Weekly agent quality report, Mondays from 06:00 UTC, once per ISO week.
+  let quality: {status:string;replayed?:boolean} = {status:'skipped'};
+  const date = new Date(now);
+  if (date.getUTCDay() === 1 && date.getUTCHours() >= 6) {
+    const week = new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())).toISOString().slice(0,10).replaceAll('-','');
+    quality = await runTrackedJob('quality_report','quality:' + week,async() => {const {agentQualityReport,qualitySummaryText}=await import('./agent-quality');const report=await agentQualityReport(7,now);await enqueueQualityReport('quality:' + week,qualitySummaryText(report),now);return {total:report.total};},now) as {status:string};
+  }
   const notifications = await dispatchOperationalNotifications(10,now);
-  return {monitor,backup,notifications,browser,pricing,usage};
+  return {monitor,backup,notifications,browser,pricing,usage,quality};
 }
 export async function operationsSummary() {
   const [jobs,alerts,notifications,backups] = await Promise.all([
