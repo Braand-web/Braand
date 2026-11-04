@@ -31,7 +31,7 @@ export function responsesBody(body:RecordValue,model:RoutedModel){
 }
 export function anthropicBody(body:RecordValue,model:RoutedModel):RecordValue{
  const messages=(Array.isArray(body.messages)?body.messages:[]).map(value=>{const message=record(value);return {...message,content:blocks(message.content).filter(block=>block.type!=='provider_state')};});
- return {...body,messages,model:model.model,stream:true,...(model.provider==='openrouter'?{provider:{require_parameters:true,allow_fallbacks:false}}:{})};
+ return {...body,messages,model:model.model,stream:true,...(model.provider==='openrouter'?{provider:{require_parameters:true,allow_fallbacks:true}}:{})};
 }
 export function routedRequest(model:RoutedModel,body:RecordValue,signal:AbortSignal){return {url:model.url,init:{method:'POST',headers:model.headers,body:JSON.stringify(model.provider==='openai'?responsesBody(body,model):anthropicBody(body,model)),signal} satisfies RequestInit};}
 

@@ -103,7 +103,7 @@ await check('production adaptive catalogue selects only explicitly configured mo
  assert.equal(router.routedModel(env).key,'haiku');assert.equal(router.routedModel(env,{task:'orchestration'}).key,'sonnet');assert.equal(router.routedModel(env,{task:'analysis'}).key,'opus');assert.equal(router.routedModel(env,{task:'video_motion',tier:'light'}).model,'anthropic/claude-opus-5.5');
  assert.equal(router.routedModel(env,{task:'conversation',escalation:{reason:'validation_failed',attempt:1}}).key,'sonnet');
  const selected=router.routedModel(env);assert.equal(selected.provider,'openrouter');assert.equal(selected.url,'https://openrouter.ai/api/v1/messages');
- const wire=JSON.parse(client.routedRequest(selected,body,new AbortController().signal).init.body);assert.deepEqual(wire.provider,{require_parameters:true,allow_fallbacks:false});assert.equal(wire.model,adaptiveCatalog.haiku.rate.model);
+ const wire=JSON.parse(client.routedRequest(selected,body,new AbortController().signal).init.body);assert.deepEqual(wire.provider,{require_parameters:true,allow_fallbacks:true});assert.equal(wire.model,adaptiveCatalog.haiku.rate.model);
  assert.throws(()=>router.routedModel({...env,OPENROUTER_API_KEY:undefined}),error=>error.code==='model_not_configured');
  assert.throws(()=>router.routedModel({...env,MODEL_ROUTING_CATALOG_JSON:JSON.stringify({...adaptiveCatalog,haiku:{...adaptiveCatalog.haiku,rate:{...adaptiveCatalog.haiku.rate,model:'unapproved/model'}}})}),error=>error.code==='rate_unverified');
 });

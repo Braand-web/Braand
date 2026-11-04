@@ -14,7 +14,7 @@ export function modelConnection(){
 }
 export function requireModel(){const model=modelConnection();if(!model.key)throw new AppError('Ajoutez la clé '+(model.provider==='openrouter'?'OpenRouter':'Anthropic')+' dans les secrets de l’hébergement pour activer Braand. Votre brouillon est conservé.',503,'model_not_configured');return model;}
 export function modelRequest(body:Record<string,unknown>,signal:AbortSignal){
- const m=requireModel();return {url:m.url,init:{method:'POST',headers:m.headers,body:JSON.stringify({...body,model:m.model,...(m.provider==='openrouter'?{provider:{require_parameters:true,allow_fallbacks:false}}:{})}),signal} satisfies RequestInit};
+ const m=requireModel();return {url:m.url,init:{method:'POST',headers:m.headers,body:JSON.stringify({...body,model:m.model,...(m.provider==='openrouter'?{provider:{require_parameters:true,allow_fallbacks:true}}:{})}),signal} satisfies RequestInit};
 }
 // OpenRouter has no documented Anthropic count_tokens endpoint. Use a generous
 // byte-based estimate plus separate headroom in metering; this is not a vendor quote.

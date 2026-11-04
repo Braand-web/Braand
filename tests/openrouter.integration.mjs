@@ -53,10 +53,11 @@ globalThis.fetch=async(url,init={})=>{
  }
  assert.equal(u.pathname,'/api/v1/messages');
  const request=JSON.parse(init.body);assert.equal(request.model,'anthropic/claude-opus-5.5');assert.equal(String(init.body).includes(secret),false);
- assert.deepEqual(request.provider,{require_parameters:true,allow_fallbacks:false});
+ assert.deepEqual(request.provider,{require_parameters:true,allow_fallbacks:true});
  if(mode==='network')throw new Error('simulated network interruption');
  if(mode==='http401')return Response.json({error:{message:'unauthorized fixture'}},{status:401});
  if(mode==='http503')return Response.json({error:{message:'unavailable fixture'}},{status:503});
+ if(mode==='http429once'){mode='success';return Response.json({error:{message:'rate limited fixture'}},{status:429,headers:{'Retry-After':'0.01'}});}
  const selected=mode==='sse_error'?[events[0],{type:'error',error:{type:'overloaded_error',message:'Try later'}}]:mode==='truncated'?events.slice(0,4):events;
  const text=mode==='invalid_sse'?encode([events[0]])+'event: content_block_delta\ndata: invalid-json\n\n':encode(selected);
  const bytes=new TextEncoder().encode(text);let offset=0;
@@ -116,6 +117,11 @@ await check('Output token ceiling adapts to a small accepted credit budget',asyn
 });
 await check('HTTP refusal is preserved without charging failed work',async()=>{
  reset('http401');const b=await budget(),response=await meter.meteredMessage(b,'master',body,signal());assert.equal(response.status,401);assert.equal((await response.json()).error.message,'unauthorized fixture');assert.equal(row(b).status,'rejected');await finish(b,'failed');assert.equal(hold(b).actual,0);
+});
+await check('A rate-limited call is retried once the provider frees up, then billed only once',async()=>{
+ reset('http429once');const b=await budget(),before=calls.filter(c=>c.url.endsWith('/messages')).length;const response=await meter.meteredMessage(b,'master',body,signal());assert.equal(response.status,200);await response.text();
+ assert.equal(calls.filter(c=>c.url.endsWith('/messages')).length,before+2);assert.equal(sql.prepare('SELECT COUNT(*) n FROM provider_usage WHERE run_id=?').get(b.runId).n,1);
+ await finish(b,'completed');
 });
 await check('Server error is unresolved and no automatic generation retry occurs',async()=>{
  reset('http503');const b=await budget(),before=calls.filter(c=>c.url.endsWith('/messages')).length;const response=await meter.meteredMessage(b,'master',body,signal());assert.equal(response.status,503);assert.equal(row(b).status,'unknown');await finish(b);assert.equal(hold(b).status,'needs_reconciliation');assert.equal(calls.filter(c=>c.url.endsWith('/messages')).length,before+1);

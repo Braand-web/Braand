@@ -97,6 +97,21 @@ export async function reconcileOpenRouterUsage(organization?:string,limit=10){
  await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id IN (SELECT c.id FROM resources c WHERE c.kind='conversation' AND c.status='streaming' AND c.updated_at<? AND EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status IN ('completed','failed','partial','cancelled')) AND NOT EXISTS(SELECT 1 FROM runs r WHERE r.conversation_id=c.id AND r.workspace_id=c.workspace_id AND r.status='streaming') LIMIT 50)").bind(Date.now(),Date.now()-300000).run();
  return {checked:rows.results.length};
 }
+// A provider can refuse a call for a few seconds: rate limit (429) or
+// overload (529). Such a refusal generates and bills nothing, so the same
+// request is sent again after a short wait, honouring Retry-After. Other 5xx
+// may hide a started generation and are never resent (reconciliation decides).
+export const MODEL_RETRY_STATUSES=new Set([429,529]);
+export async function fetchWithRetry(url:string,init:RequestInit,{attempts=4,wait=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))}:{attempts?:number;wait?:(ms:number)=>Promise<void>}={}){
+ for(let attempt=1;;attempt++){
+  const response=await fetch(url,init);
+  if(!MODEL_RETRY_STATUSES.has(response.status)||attempt>=attempts||init.signal?.aborted)return response;
+  const header=Number(response.headers.get('retry-after')),delay=Math.min(10000,Number.isFinite(header)&&header>0?header*1000:[1500,4000,8000][attempt-1]??8000);
+  await response.body?.cancel().catch(()=>undefined);
+  await wait(delay);
+  if(init.signal?.aborted)return response;
+ }
+}
 export async function meteredModel(b:RunBudget,role:string,url:string,init:RequestInit,selected?:RoutedModel,originalBody?:Record<string,unknown>){
  const auxiliary=await toolUsage(b.holdId);
  if(auxiliary.unresolved)throw new AppError('Un coût d’outil attend un rapprochement.',409,'tool_usage_unknown');
@@ -137,7 +152,7 @@ export async function meteredModel(b:RunBudget,role:string,url:string,init:Reque
  init=selected?routedRequest(selected,body,signal).init:{...init,body:JSON.stringify(body),signal};
  const id=uid(),claimed=await db().prepare("INSERT INTO provider_usage(id,organization_id,workspace_id,run_id,hold_id,provider,role,rate,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM provider_usage WHERE hold_id=? AND status IN ('pending','unknown')) AND (SELECT COUNT(*) FROM provider_usage WHERE hold_id=?)=? AND NOT EXISTS(SELECT 1 FROM agent_tool_usage WHERE hold_id=? AND status IN ('pending','unknown'))").bind(id,b.who.organization,b.who.tenant,b.runId,b.holdId,connection.provider,role,JSON.stringify({...rate,inputEstimate:inputTokens,inputMethod:connection.provider==='anthropic'?'anthropic_count_tokens':'conservative_estimate',...(selected?{routingTask:selected.routing.task,escalation:selected.routing.escalation}:{} )}),Date.now(),b.holdId,b.holdId,used.results.length,b.holdId).run();
  if(!claimed.meta.changes)throw new AppError('Le budget est utilisé par un autre appel ou attend un rapprochement.',409,'model_budget_busy');
- let response:Response;try{response=await fetch(url,init);}catch(error){await db().prepare("UPDATE provider_usage SET status='unknown' WHERE id=?").bind(id).run();throw error;}
+ let response:Response;try{response=await fetchWithRetry(url,init);}catch(error){await db().prepare("UPDATE provider_usage SET status='unknown' WHERE id=?").bind(id).run();throw error;}
  if(!response.ok||!response.body){await db().prepare("UPDATE provider_usage SET status=? WHERE id=?").bind(response.status>=500?'unknown':'rejected',id).run();return response;}
  let generationId=response.headers.get('x-generation-id');
  await db().prepare('UPDATE provider_usage SET request_id=? WHERE id=?').bind(connection.provider==='openrouter'?generationId:response.headers.get(connection.provider==='openai'?'x-request-id':'request-id'),id).run();
