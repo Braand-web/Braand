@@ -8,6 +8,8 @@ html:root:root body { background: var(--color-bg); color: var(--color-text); fon
 html:root:root :is(h1, .section-heading h1, .platform-heading h1) { letter-spacing: var(--tracking-display); }
 html:root:root ::selection { background: color-mix(in srgb, var(--color-action), transparent 70%); color: var(--color-text); }
 html:root:root :is(button, a, input, textarea, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+/* The composer pill shows focus itself (border); no second rectangle around its text field. */
+html:root:root :is(.composer, .chat-composer) :is(textarea, input):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 
 /* ---------- Buttons: one family, every legacy class ---------- */
 html:root:root :is(.button, .settings-button, .platform-button, .skills-upload, .followup-button, .skill-use, .auth-content .button, .panel-action) {
