@@ -7,7 +7,7 @@ import "./design-system.css";
 import "./workspace-shell.css";
 import {useState,useEffect,useRef,useCallback,useSyncExternalStore,lazy,Suspense,Fragment,type FormEvent} from "react";
 import Image from "next/image";
-import {Plus,Search,PanelLeftClose,ArrowUp,ArrowDown,ChevronDown,ChevronRight,ChevronsUpDown,Image as ImageIcon,Video,Globe,ChartNoAxesCombined,Megaphone,Folder,Clock3,ArrowUpRight,X,Check,LoaderCircle,Square,Paperclip,FileText,ExternalLink,Download,Maximize2,Minimize2,PanelRight,Monitor,Smartphone,Link2,MoreHorizontal,CheckCircle2,AlertCircle,Menu,LogIn,LogOut,Target,MessageSquare,CreditCard,ArrowLeftRight,CircleHelp,SlidersVertical,Sparkle,Pin,Activity as ActivityIcon,type LucideIcon} from "lucide-react";
+import {ShieldCheck,Plus,Search,PanelLeftClose,ArrowUp,ArrowDown,ChevronDown,ChevronRight,ChevronsUpDown,Image as ImageIcon,Video,Globe,ChartNoAxesCombined,Megaphone,Folder,Clock3,ArrowUpRight,X,Check,LoaderCircle,Square,Paperclip,FileText,ExternalLink,Download,Maximize2,Minimize2,PanelRight,Monitor,Smartphone,Link2,MoreHorizontal,CheckCircle2,AlertCircle,Menu,LogIn,LogOut,Target,MessageSquare,CreditCard,ArrowLeftRight,CircleHelp,SlidersVertical,Sparkle,Pin,Activity as ActivityIcon,type LucideIcon} from "lucide-react";
 import {useChatSessions} from "@/hooks/use-chat-sessions";
 import {useComposerDraft} from "@/hooks/use-composer-draft";
 import {recoverChatEvents} from "@/lib/chat-recovery";
@@ -314,6 +314,9 @@ export default function Studio(){
   }catch(e:unknown){flushStreamText();const cancelled=e instanceof Error&&e.name==="AbortError";if(!confirmedDone)setMessages(current=>current.map(message=>message.id===assistantId?{...message,status:cancelled?"cancelled":"error"}:message));setResponseStatus(current=>started?agentStatusEvent(current,cancelled?"cancelled":"error"):null);if(!cancelled)setError(errorMessage(e));if(!started){setDraft(current=>current?.trim()?current:text);setAttachments(current=>[...new Map([...sentAttachments,...current].map(item=>[item.id,item])).values()].slice(0,FILE_POLICY.currentComposerMaxFiles));}}finally{release?.();responseInFlight.current=false;flushStreamText();flushRef.current=null;setBusy(false);setActivity("");setRunId("");void refresh();}
  };
  // After an authorization, « C’est fait, continuer » sends the follow-up by itself.
+ // The « Administration » entry is shown only to platform administrators.
+ const [isAdmin,setIsAdmin]=useState(false);
+ useEffect(()=>{if(authRequired)return;let live=true;api<{admin:boolean}>("/api/admin/me").then(r=>{if(live)setIsAdmin(!!r.admin);}).catch(()=>undefined);return()=>{live=false;};},[authRequired]);
  const autoSend=useRef<string|null>(null);
  const continueWith=(text:string)=>{autoSend.current=text;prompt(text);};
  const sendRef=useRef(send);
@@ -454,6 +457,7 @@ export default function Studio(){
        <button type="button" className="account-menu-item" role="menuitem" onClick={()=>{closeAccountMenu(false);setSettingsTab("general");setModal("settings");}}><SlidersVertical size={18}/><span>Paramètres</span></button>
        <button type="button" className="account-menu-item" role="menuitem" onClick={()=>{closeAccountMenu(false);openBilling();}}><CreditCard size={18}/><span>Crédits et facturation</span><small>{availableCredits.toLocaleString("fr-FR")}</small></button>
        <button type="button" className="account-menu-item" role="menuitem" onClick={()=>{closeAccountMenu(false);setSettingsTab("team");setModal("settings");setMobileNav(false);}}><ArrowLeftRight size={18}/><span>Changer d’espace</span></button>
+       {isAdmin?<a className="account-menu-item" role="menuitem" href="/admin"><ShieldCheck size={18}/><span>Administration</span></a>:null}
        <div className="account-menu-divider"/>
        <button type="button" className="account-menu-item" role="menuitem" onClick={()=>{closeAccountMenu(false);setModal("help");}}><CircleHelp size={18}/><span>Aide et raccourcis</span><kbd>⌘ /</kbd></button>
        {authRequired?<button type="button" className="account-menu-item" role="menuitem" onClick={()=>{closeAccountMenu(false);setModal("auth");}}><LogOut size={18}/><span>Se connecter</span></button>:<form method="post" action="/auth/sign-out" target="_top" style={{display:'contents'}}><input type="hidden" name="confirm" value="yes"/><button type="submit" className="account-menu-item" role="menuitem"><LogOut size={18}/><span>Se déconnecter</span></button></form>}
