@@ -13,6 +13,32 @@ const SHOTS=[
  ['cutout',base+'isolated product packshot on a seamless cyan background, perfectly centered, crisp reflections, catalog photography'],
 ];
 await mkdir('film-assets',{recursive:true});
+async function run(model,input){
+ const submit=await fetch('https://queue.fal.run/'+model,{method:'POST',headers:{Authorization:'Key '+key,'Content-Type':'application/json'},body:JSON.stringify(input)});
+ if(!submit.ok)throw Error(model+' submit '+submit.status+' '+(await submit.text()).slice(0,300));
+ const {status_url,response_url}=await submit.json();
+ for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,2000));const s=await (await fetch(status_url,{headers:{Authorization:'Key '+key}})).json();if(s.status==='COMPLETED')return (await fetch(response_url,{headers:{Authorization:'Key '+key}})).json();if(['FAILED','ERROR'].includes(s.status))throw Error(model+' failed');}
+ throw Error(model+' timed out');
+}
+// French voice-over, one file per line, with the first ElevenLabs endpoint that accepts it.
+const VO=[
+ 'Une idée. Une phrase. Et Braand construit toute votre campagne.',
+ 'Décrivez simplement ce que vous voulez : un lancement produit, des visuels, une vidéo, une campagne.',
+ 'Braand prépare un plan complet. Vous l’approuvez une seule fois, avec un budget clair. Plusieurs agents travaillent en parallèle.',
+ 'Images, vidéos, voix. Chaque création est vérifiée, puis corrigée automatiquement si besoin.',
+ 'Un seul clic pour générer. Vous ne payez que ce qui est réellement utilisé.',
+ 'Tout reste dans votre espace : discussions, bibliothèque et campagnes.',
+ 'Plus rapide. Plus cohérent. Toujours fidèle à votre marque.',
+ 'Braand. De l’idée à l’impact. Essayez-le sur braand point fun.',
+];
+const TTS=['elevenlabs/tts/eleven-v4','fal-ai/elevenlabs/tts/eleven-v3','fal-ai/elevenlabs/tts/multilingual-v2'];
+let tts=null;
+for(const [index,text] of VO.entries()){
+ let result=null,lastError='';
+ for(const model of tts?[tts]:TTS){try{result=await run(model,{text});tts=model;break;}catch(error){lastError=String(error).slice(0,200);}}
+ const url=result?.audio?.url||result?.audio_file?.url||result?.url;if(!url)throw Error('voice-over failed: '+lastError);
+ await writeFile('film-assets/vo-'+String(index+1).padStart(2,'0')+'.mp3',Buffer.from(await (await fetch(url)).arrayBuffer()));console.log('ok voice',index+1,tts);
+}
 for(const [name,prompt] of SHOTS){
  const submit=await fetch('https://queue.fal.run/'+MODEL,{method:'POST',headers:{Authorization:'Key '+key,'Content-Type':'application/json'},body:JSON.stringify({prompt,image_size:'square_hd',num_images:1,enable_safety_checker:true})});
  if(!submit.ok)throw Error(name+' submit '+submit.status+' '+(await submit.text()).slice(0,300));
