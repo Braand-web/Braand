@@ -3,13 +3,13 @@ import {requireModel} from "@/lib/llm";
 import {routingEnabled,routedModel} from '@/lib/model-router';
 import {ensureModelPricing} from '@/lib/model-pricing';
 import {z} from "zod";
-import {identity,db,uid,getResource,createResource,failure,config} from "@/lib/server";
+import {identity,db,uid,getResource,createResource,failure,config,decode,type StoredResource} from "@/lib/server";
 import {runAgent} from "@/lib/agent";
 import {bufferedAgentEvents} from "@/lib/agent-events";
 import {AppError} from "@/lib/core.mjs";
 import {startRunBudget,finishRunBudget,type RunBudget} from '@/lib/metering';
 import {FILE_POLICY,safeFileDto} from '@/lib/file-policy.mjs';
-import type {FileRecord} from '@/lib/contracts';
+import type {FileRecord,Resource} from '@/lib/contracts';
 import {chatAttachmentBlocks} from '@/lib/chat-attachments.mjs';
 import {responseSources,responseStatus} from '@/lib/response-metadata.mjs';
 import {containsExplicitLoginSecret} from '@/lib/chat-secret-guard.mjs';
@@ -52,7 +52,17 @@ export async function GET(request:Request){try{
  type MessageBlock={type:string;text?:string;response?:unknown};
  const rows=await db().prepare("SELECT m.id,m.role,m.content,m.attachments,m.created_at,m.run_id,r.status run_status,f.feedback FROM messages m LEFT JOIN runs r ON r.id=m.run_id AND r.workspace_id=m.workspace_id LEFT JOIN response_feedback f ON f.message_id=m.id AND f.workspace_id=m.workspace_id AND f.user_id=? WHERE m.workspace_id=? AND m.conversation_id=? ORDER BY m.created_at,m.rowid").bind(user.userId,tenant,conversationId).all<StoredMessage>();
  const messages=await Promise.all(rows.results.map(async m=>{let ids:string[]=[];try{const value=JSON.parse(m.attachments||"[]") as unknown;if(Array.isArray(value))ids=value.filter((id):id is string=>typeof id==="string");}catch{}const attachments=await Promise.all(ids.map(async id=>{const file=await db().prepare("SELECT * FROM files WHERE id=? AND workspace_id=?").bind(id,tenant).first<FileRecord>();return file?safeFileDto(file):{id,workspaceId:tenant,name:"Fichier indisponible",size:0,mime:"application/octet-stream",status:"unavailable",createdAt:0,updatedAt:0,deletedAt:null};}));const storedContent=JSON.parse(m.content) as MessageBlock[];return {id:m.id,role:m.role,created_at:m.created_at,runId:m.run_id,attachments,...(m.role==='assistant'?{status:responseStatus(m.run_id,m.run_status),sources:responseSources(storedContent),feedback:m.feedback,richResponses:storedContent.filter(b=>b.type==='ui_response'&&b.response).map(b=>b.response)}:{}),content:storedContent.filter(block=>block.type==="text"||block.type==="image").map(block=>block.type==="image"?{type:"text",text:"[Image jointe]"}:block)};}));
- return Response.json({messages:messages.filter(m=>m.content.length||m.attachments.length||m.richResponses?.length)});
+ // Creations made during a run (media proposals, plans, pages…) stay attached to
+ // that run's last answer, so an inline approval card survives a reload.
+ const runIds=[...new Set(messages.filter(m=>m.role==='assistant'&&m.runId).map(m=>m.runId as string))].slice(-100);
+ const byRun=new Map<string,Resource[]>();
+ if(runIds.length){
+  const found=await db().prepare("SELECT DISTINCT e.run_id,r.* FROM events e JOIN resources r ON r.id=json_extract(e.data,'$.result.id') AND r.workspace_id=? WHERE e.type='tool_result' AND e.run_id IN ("+runIds.map(()=>'?').join(',')+") AND r.kind IN ('proposal','page','deliverable','media','campaign','brief','mission') AND r.status!='deleted'").bind(tenant,...runIds).all<StoredResource&{run_id:string}>();
+  for(const row of found.results){const list=byRun.get(row.run_id)||[];list.push(decode(row));byRun.set(row.run_id,list);}
+ }
+ const lastOfRun=new Map<string,string>();for(const m of messages)if(m.role==='assistant'&&m.runId)lastOfRun.set(m.runId,m.id);
+ const withResources=messages.map(m=>m.role==='assistant'&&m.runId&&lastOfRun.get(m.runId)===m.id&&byRun.has(m.runId)?{...m,resources:byRun.get(m.runId)}:m);
+ return Response.json({messages:withResources.filter(m=>m.content.length||m.attachments.length||m.richResponses?.length||('resources' in m&&m.resources?.length))});
  }catch(error){return failure(error);}}
 export async function PATCH(request:Request){try{
  const {tenant,user}=await identity(request);

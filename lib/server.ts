@@ -9,7 +9,7 @@ const LEGACY_WORKSPACE_COOKIE = ["ai", "ra", "_workspace"].join("");
 export const config=()=>falRateEnvironment(modelRateEnvironment(env)) as Cloudflare.Env & Record<string,string|undefined>;
 export function db(){if(!env.DB)throw new AppError("Stockage indisponible.",503,"storage_unavailable");return env.DB;}
 export const uid=()=>crypto.randomUUID();
-type StoredResource=Omit<Resource,'data'>&{data:string};
+export type StoredResource=Omit<Resource,'data'>&{data:string};
 export async function identity(request?:Request,action?:string){
  if(request&&request.method!=="GET"){const origin=request.headers.get("origin");if(origin&&origin!==new URL(request.url).origin)throw new AppError("Origine non autorisée.",403);}
  const user=await getBraandUser();if(!user)throw new AppError("Connectez-vous pour enregistrer votre travail.",401,"authentication_required");

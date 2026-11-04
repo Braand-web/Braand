@@ -38,19 +38,27 @@ export function approvedCatalogItems(now=Date.now()){
 export function approvedModels(){return cache.items;}
 
 async function readText(url:string,headers:Record<string,string>,maxBytes=2000000){
- const response=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});
+ let response=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)}).catch(()=>null);
+ // One retry: fal and BEAC can be briefly unavailable.
+ if(!response||response.status>=500||response.status===429){await new Promise(resolve=>setTimeout(resolve,800));response=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});}
  if(!response.ok){await response.body?.cancel();throw new AppError('Source fal indisponible.',502,'fal_source_unavailable');}
  const text=await response.text();if(text.length>maxBytes)throw new AppError('Réponse fal trop volumineuse.',502);return text;
 }
 
 /** Price a list of models from fal's pricing API and the BEAC reference rate. */
+// The BEAC reference rate is cached for six hours; a failed read keeps the last valid rate.
+let fxCache:{fx:{usdXaf:number;fxValueDate:string};at:number}|null=null;
+async function referenceRate(now:number){
+ if(fxCache&&now-fxCache.at<REPRICE&&now>=fxCache.at)return fxCache.fx;
+ try{const fx=parseBEACReference(await readText(FX_REFERENCE_URL,{Accept:'text/html'}),now) as {usdXaf:number;fxValueDate:string};fxCache={fx,at:now};return fx;}
+ catch(error){if(fxCache&&now-fxCache.at<DAY)return fxCache.fx;throw error;}
+}
 const unitKey=(unit:string)=>unit.trim().toLowerCase().replace(/s$/,'');
 export async function priceModels(key:string,items:(Pick<ApprovedModel,'id'|'unit'|'maxUnits'>&{limits?:Record<string,number>})[],now=Date.now()){
  if(!items.length)return new Map<string,z.infer<typeof quoteSchema>>();
  const url=new URL(FAL_PRICE_URL);for(const item of items)url.searchParams.append('endpoint_id',item.id);
- const [priceText,fxText]=await Promise.all([readText(url.href,{Authorization:'Key '+key},262144),readText(FX_REFERENCE_URL,{Accept:'text/html'})]);
+ const [priceText,fx]=await Promise.all([readText(url.href,{Authorization:'Key '+key},262144),referenceRate(now)]);
  const raw=JSON.parse(priceText) as unknown,rows=z.array(z.object({endpoint_id:z.string(),unit_price:z.number().finite().positive(),unit:z.string(),currency:z.string()})).parse(Array.isArray(raw)?raw:(raw as {prices?:unknown}).prices);
- const fx=parseBEACReference(fxText,now) as {usdXaf:number;fxValueDate:string};
  if(!Number.isFinite(fx.usdXaf)||fx.usdXaf<50||fx.usdXaf>5000)throw new AppError('Taux de change invalide.',502);
  const quotes=new Map<string,z.infer<typeof quoteSchema>>();
  for(const item of items){

@@ -1,0 +1,16 @@
+.proposal-card { display: grid; gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); max-width: 560px; animation: ds-rise var(--duration-base) var(--ease-out) both; }
+.proposal-card-head { display: flex; gap: var(--space-3); align-items: center; }
+.proposal-card-head > div { display: grid; gap: 2px; min-width: 0; }
+.proposal-card-head strong { font-size: var(--text-base); line-height: var(--leading-sm, 1.3); overflow-wrap: anywhere; }
+.proposal-card-head small { color: var(--color-text-muted); font-size: var(--text-xs); }
+.proposal-card-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--color-action), transparent 85%); color: var(--color-action); }
+.proposal-card-prompt { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 1.5; }
+.proposal-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.proposal-card-error { margin: 0; color: var(--color-danger); font-size: var(--text-sm); }
+.proposal-card-note { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.proposal-card-result { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.proposal-card-result .proposal-card-link { grid-column: 1 / -1; }
+.proposal-card-media { width: 100%; border-radius: var(--radius-md); background: var(--color-surface-2); animation: ds-fade var(--duration-slow) var(--ease-out) both; }
+.proposal-card-link { justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--color-link, var(--color-accent)); font-size: var(--text-sm); cursor: pointer; }
+.proposal-card-plan { padding: var(--space-3); }
+@media (prefers-reduced-motion: reduce) { .proposal-card, .proposal-card-media { animation: none; } }
