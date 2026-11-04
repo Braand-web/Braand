@@ -17,7 +17,8 @@ const mandateSchema=z.object({version:z.number().int().positive(),approved:z.lit
 const planSchema=missionSchema.extend({maxCredits:z.number().int().min(1).max(1000),mode:z.literal('autonomous')});
 async function audit(who:BillingIdentity,action:string,target:string){await q('INSERT INTO audit(id,workspace_id,actor,action,target,detail,created_at) VALUES (?,?,?,?,?,?,?)',uid(),who.tenant,who.user.userId,action,target,'{}',Date.now()).run();}
 export function durableReadiness(){return {enabled:config().AUTONOMY_ENABLED==='true'&&config().AUTONOMY_SCHEDULER_VERIFIED==='true'&&!!config().SCHEDULER_SECRET,scope:'analysis_drafts_and_approved_connected_reads',externalWrites:'separate_approval_required'};}
-async function requireMissionPlan(organization:string){if(!['pro','business'].includes((await activeRights(organization)).plan))throw new AppError('Un forfait Pro ou Business actif est nécessaire pour une mission autonome.',403,'mission_plan_required');}
+// Missions are paid in reserved credits; no subscription tier is required.
+async function requireMissionPlan(organization:string){await activeRights(organization);}
 type StepResult=Record<string,unknown>&{validation?:{status?:string;digest?:string}};
 function stepResult(step:DurableStep):StepResult{try{const value:unknown=JSON.parse(step.result||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value as StepResult:{};}catch{return {};}}
 const stepDecisionSchema=z.object({version:z.number().int().positive(),ordinal:z.number().int().nonnegative(),runId:z.string().min(1),digest:z.string().regex(/^[a-f0-9]{64}$/),approved:z.literal(true)}).strict();
