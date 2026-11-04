@@ -2,14 +2,14 @@
 name: braand-motion-production
 description: Produire une vidéo de motion design de qualité professionnelle (pub, lancement produit, explainer, typographie animée) avec render_motion - storyboard, composition HTML/CSS/JS, rendu brouillon, contrôle, rendu final et livraison téléchargeable. Utile pour toute demande d'animation, de motion design, de vidéo produit ou de GIF.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: "Braand"
   origin: "original"
 ---
 
 # Production motion design avec render_motion
 
-Méthode originale Braand. Elle s'appuie sur les outils du bac à sable (`code_import_file`, `code_write_file`, `render_motion`, `code_run`, `code_export_file`). Sans bac à sable configuré, livrer le storyboard et la composition, et dire clairement qu'aucune vidéo n'a été rendue.
+Méthode originale Braand. Pour un film de plus de 8 s, un lancement ou toute vidéo à enjeu, suivre la méthode complète `braand-motion-studio` (brief, référence, états, ressorts, critique, portes). Elle s'appuie sur les outils du bac à sable (`code_import_file`, `code_write_file`, `render_motion`, `code_run`, `code_export_file`). Sans bac à sable configuré, livrer le storyboard et la composition, et dire clairement qu'aucune vidéo n'a été rendue.
 
 ## 1. Storyboard avant le code
 
@@ -22,7 +22,7 @@ Méthode originale Braand. Elle s'appuie sur les outils du bac à sable (`code_i
 
 - Importer les visuels du client (`code_import_file`) et les référencer en chemins relatifs. Aucune ressource réseau : polices locales (Inter, Noto), pas de CDN.
 - Un seul fichier HTML, `body` exactement à la taille cible, `overflow:hidden`, fond défini.
-- Animer avec `@keyframes` et `animation-delay` pour la chorégraphie, ou un `requestAnimationFrame` piloté par le temps (jamais par un compteur d'images). Le moteur fige l'horloge : tout ce qui dépend de `performance.now()` ou du temps de l'animation est rendu exactement.
+- Préférer le contrat de rendu `window.__braandSeek(t)` : une fonction qui peint exactement l'image de la seconde t, avec des ressorts analytiques et un bruit à graine (squelette dans `braand-motion-studio`). Les `@keyframes` restent acceptés pour un petit élément : le moteur fige l'horloge. Jamais de `setTimeout`, de transition CSS ni de `Math.random` en rendu.
 - Qualité : échelle typographique nette (titre 96 à 140 px en 9:16), contraste AA, 2 à 3 couleurs de marque, easing `cubic-bezier(.2,.8,.2,1)` pour les entrées et ease-in pour les sorties, décalages de 80 à 150 ms entre éléments, mouvement secondaire discret (parallaxe, dérive du fond) pour éviter l'image figée, marges de sécurité de 8 % en haut et 15 à 20 % en bas.
 - Principes de motion : anticipation, ralenti en entrée et en sortie, chevauchement des mouvements, une seule zone d'attention à la fois. Consulter les méthodes communautaires `motion-design` et `gsap-timeline` pour aller plus loin.
 
@@ -30,7 +30,7 @@ Méthode originale Braand. Elle s'appuie sur les outils du bac à sable (`code_i
 
 1. `render_motion` avec `quality: draft`, durée réelle, `poster` vers une image PNG.
 2. Contrôler avec `code_run` et `ffprobe` (durée, dimensions, codec). Si le style doit être validé, construire une planche de 4 images (`ffmpeg -vf "select=…,tile=4x1"`) et la livrer.
-3. Corriger les défauts : texte coupé, chevauchements, rythme trop rapide, contraste.
+3. Critiquer les images rendues (planche-contact à 2 images/s, test téléphone à 360 px) et noter accroche, lisibilité, mouvement, variété, son, marque ; corriger les 3 pires défauts et recommencer jusqu'à 8 partout. Ne jamais livrer le premier rendu.
 4. Rendu final `quality: high` (30 i/s, 60 si mouvement très rapide), musique éventuelle normalisée à -14 LUFS.
 
 ## 4. Livraison
