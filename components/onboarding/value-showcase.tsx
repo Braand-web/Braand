@@ -18,15 +18,15 @@ const PROMPTS={
  teach:"Je vais t’apprendre comment je fais une tâche que je répète souvent. Pose-moi des questions, puis enregistre la méthode pour la réutiliser.",
 };
 
-function DemoVideo(){
+export function DemoVideo({compact=false}:{compact?:boolean}={}){
  const [open,setOpen]=useState(false),ref=useRef<HTMLVideoElement>(null);
  useEffect(()=>{if(!open)return;const k=(e:KeyboardEvent)=>{if(e.key==="Escape")setOpen(false);};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k);},[open]);
  return <>
-  <button type="button" className="ob-card ob-hero" onClick={()=>setOpen(true)} onMouseEnter={()=>{void ref.current?.play().catch(()=>undefined);}} onMouseLeave={()=>ref.current?.pause()} aria-label="Regarder la démonstration de Braand (60 secondes)">
+  {compact?<button type="button" className="ob-pill primary" onClick={()=>setOpen(true)}><Play size={14} fill="currentColor"/>Voir la démo · 60 s</button>:<button type="button" className="ob-card ob-hero" onClick={()=>setOpen(true)} onMouseEnter={()=>{void ref.current?.play().catch(()=>undefined);}} onMouseLeave={()=>ref.current?.pause()} aria-label="Regarder la démonstration de Braand (60 secondes)">
    <video ref={ref} className="ob-media" src="/onboarding/demo-1280.mp4" poster="/onboarding/demo-poster.jpg" muted loop playsInline preload="none"/>
    <span className="ob-play"><Play size={18} fill="currentColor"/></span>
    <span className="ob-caption"><strong>Regardez Braand en 60 secondes</strong><small>Une phrase, et Braand construit toute votre campagne.</small></span>
-  </button>
+  </button>}
   {open?<div className="ob-modal" role="dialog" aria-label="Démonstration de Braand" onClick={()=>setOpen(false)}>
    <button type="button" className="ob-close" aria-label="Fermer" onClick={()=>setOpen(false)}><X size={18}/></button>
    <video className="ob-modal-video" controls autoPlay playsInline poster="/onboarding/demo-poster.jpg" onClick={e=>e.stopPropagation()}>
@@ -83,4 +83,22 @@ export function StartChecklist({resources,onPrompt}:{resources:Resource[];onProm
   <div className="ob-progress"><span style={{width:Math.round(count/STEPS.length*100)+"%"}}/></div>
   <ol>{STEPS.map(([title,hint,,prompt],i)=><li key={title} className={done[i]?"done":""}><span className="ob-step">{done[i]?<Check size={13}/>:i+1}</span><span><strong>{title}</strong><small>{hint}</small></span>{done[i]?null:<button type="button" onClick={()=>onPrompt(prompt)}>Faire maintenant</button>}</li>)}</ol>
  </section>;
+}
+
+/** Compact entry on the home screen (keeps it on one screen): demo, discovery sheet, getting-started progress. */
+export function OnboardingStrip({onPrompt,motionReady,resources,signedIn}:{onPrompt:(text:string)=>void;motionReady:boolean;resources:Resource[];signedIn:boolean}){
+ const [open,setOpen]=useState(false);
+ const count=STEPS.filter(([, ,check])=>check(resources)).length;
+ useEffect(()=>{if(!open)return;const k=(e:KeyboardEvent)=>{if(e.key==="Escape")setOpen(false);};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k);},[open]);
+ const run=(text:string)=>{setOpen(false);onPrompt(text);};
+ return <div className="ob-strip">
+  <DemoVideo compact/>
+  <button type="button" className="ob-pill" onClick={()=>setOpen(true)}>Découvrir tout ce que Braand fait</button>
+  {signedIn&&count<STEPS.length?<button type="button" className="ob-pill" onClick={()=>setOpen(true)}>Bien démarrer · {count}/{STEPS.length}</button>:null}
+  {open?<div className="ob-sheet-back" onClick={()=>setOpen(false)}><div className="ob-sheet" role="dialog" aria-label="Ce que Braand fait pour vous" onClick={e=>e.stopPropagation()}>
+   <button type="button" className="ob-sheet-close" aria-label="Fermer" onClick={()=>setOpen(false)}><X size={18}/></button>
+   {signedIn?<StartChecklist resources={resources} onPrompt={run}/>:null}
+   <ValueShowcase onPrompt={run} motionReady={motionReady}/>
+  </div></div>:null}
+ </div>;
 }
