@@ -17,6 +17,9 @@ export async function executePlatformTool(name: string, input: unknown, scope: A
         case 'prepare_routine': return (await import('./routines')).prepareRoutine(budget.who,input);
         case 'get_routine': return (await import('./routines')).getRoutine(scope.tenant,parseId());
         case 'export_deliverable': return (await import('./document-delivery')).exportDeliverable(budget.who,input);
+        case 'create_office_document': return (await import('./office-document-delivery')).createOfficeDocument(budget.who,input);
+        case 'get_company_profile': {z.object({}).strict().parse(input);return (await import('./company-profile')).getCompanyProfile(budget.who);}
+        case 'save_company_profile': return (await import('./company-profile')).saveCompanyProfile(budget.who,input);
         case 'render_visual': return (await import('./visual-delivery')).renderVisual(budget.who,input);
         case 'capabilities': return (await import('./capabilities')).workspaceCapabilities(budget.who);
         case 'prepare_brief': return (await import('./brief')).prepareBrief(budget.who, input);

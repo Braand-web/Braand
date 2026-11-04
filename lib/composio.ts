@@ -131,7 +131,7 @@ export async function diagnoseConnectors(who:BillingIdentity,input:unknown){
 export const connectorActionTools=[
  {name:'braand_connector_status',description:'Inspect actual connection status for up to eight discovered toolkits in this user/workspace. Distinguishes active, expired and missing accounts without external tool execution. ACTIVE does not prove publish or ads permissions. Reconnect expired accounts with braand_connect_toolkit; discover read tools to verify actual Page/ad-account access.',input_schema:{type:'object',properties:{toolkits:{type:'array',items:{type:'string'},minItems:1,maxItems:8}},required:['toolkits'],additionalProperties:false}},
  {name:'braand_connector_receipt',description:'Read the authoritative status and actual result of this user’s previously proposed connector action after approval. A pending or uncertain receipt never proves success.',input_schema:{type:'object',properties:{id:{type:'string'}},required:['id'],additionalProperties:false}},
- {name:'braand_connect_toolkit',description:'Generate the user authorization link for a discovered toolkit. User must click and consent. Never create auth configs or handle tokens.',input_schema:{type:'object',properties:{toolkit:{type:'string'}},required:['toolkit'],additionalProperties:false}},
+ {name:'braand_connect_toolkit',description:'Show the user an « Autoriser » card for a discovered toolkit they have not connected (or whose connection expired). reason: one plain-French sentence saying why Braand needs it for the current task. The user clicks, consents on the provider page, then « C’est fait, continuer » resumes the conversation. Never create auth configs or handle tokens.',input_schema:{type:'object',properties:{toolkit:{type:'string'},reason:{type:'string',maxLength:240}},required:['toolkit'],additionalProperties:false}},
  {name:'braand_connector_action',description:'Use a discovered app tool with this user’s connected account. Only verified read-only tools run immediately. Every write/unknown operation and every paid Instant call creates an exact-arguments approval card, and does NOT execute. Read its schema first. Instant is only available for administrator-verified priced tools. Never pass credentials or account overrides.',input_schema:{type:'object',properties:{toolkit:{type:'string'},toolSlug:{type:'string'},arguments:{type:'object'},mode:{type:'string',enum:['connected','instant']}},required:['toolkit','toolSlug','arguments'],additionalProperties:false}}
 ];
 export async function connectorAgentTools(who:BillingIdentity,conversationId:string){
@@ -218,7 +218,7 @@ export async function executeConnectorAgentTool(who:BillingIdentity,conversation
   if(!row)throw new AppError('Action introuvable pour cet utilisateur.',404);
   return {id,status:row.status,result:row.result?JSON.parse(row.result):null,logId:row.log_id};
  }
- if(name==='braand_connect_toolkit')return authorizeConnector(who,z.object({toolkit:toolkitSchema}).strict().parse(input).toolkit);
+ if(name==='braand_connect_toolkit'){const p=z.object({toolkit:toolkitSchema,reason:z.string().trim().max(240).optional()}).strict().parse(input);const {redirectUrl}=await authorizeConnector(who,p.toolkit);return {kind:'connect_request',toolkit:p.toolkit,reason:p.reason||'',redirectUrl,notice:'Une carte « Autoriser » est affichée à l’utilisateur. Attends qu’il revienne ; ne prétends pas que le service est connecté.'};}
  const {sdk,session}=await connectorSession(who,conversationId);
  if(SAFE_META.has(name)){
   try{

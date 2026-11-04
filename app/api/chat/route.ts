@@ -57,7 +57,7 @@ export async function GET(request:Request){try{
  const runIds=[...new Set(messages.filter(m=>m.role==='assistant'&&m.runId).map(m=>m.runId as string))].slice(-100);
  const byRun=new Map<string,Resource[]>();
  if(runIds.length){
-  const found=await db().prepare("SELECT DISTINCT e.run_id,r.* FROM events e JOIN resources r ON r.id=json_extract(e.data,'$.result.id') AND r.workspace_id=? WHERE e.type='tool_result' AND e.run_id IN ("+runIds.map(()=>'?').join(',')+") AND r.kind IN ('proposal','page','deliverable','media','campaign','brief','mission','work') AND r.status!='deleted'").bind(tenant,...runIds).all<StoredResource&{run_id:string}>();
+  const found=await db().prepare("SELECT DISTINCT e.run_id,r.* FROM events e JOIN resources r ON r.id=json_extract(e.data,'$.result.id') AND r.workspace_id=? WHERE e.type='tool_result' AND e.run_id IN ("+runIds.map(()=>'?').join(',')+") AND r.kind IN ('proposal','page','deliverable','media','campaign','brief','mission','work','file') AND r.status!='deleted'").bind(tenant,...runIds).all<StoredResource&{run_id:string}>();
   for(const row of found.results){const list=byRun.get(row.run_id)||[];list.push(decode(row));byRun.set(row.run_id,list);}
  }
  const lastOfRun=new Map<string,string>();for(const m of messages)if(m.role==='assistant'&&m.runId)lastOfRun.set(m.runId,m.id);
