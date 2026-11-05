@@ -6,12 +6,13 @@ import Link from "next/link";
 import {api,post} from "@/lib/client-api";
 import "./admin.css";
 
-type View="overview"|"users"|"finance"|"sites"|"ai"|"quality"|"media"|"system"|"audit";
+type View="overview"|"users"|"finance"|"sites"|"feedback"|"ai"|"quality"|"media"|"system"|"audit";
 const VIEWS:{id:View;label:string;help:string}[]=[
  {id:"overview",label:"Vue d’ensemble",help:"L’essentiel de Braand en un coup d’œil : utilisateurs, activité, argent et ce qui demande votre attention."},
  {id:"users",label:"Utilisateurs",help:"Tous les comptes, leurs crédits et leur activité. Cliquez sur un compte pour agir : offrir des crédits, déconnecter, suspendre."},
  {id:"finance",label:"Revenus & crédits",help:"Commandes, abonnements, remboursements et mouvements de crédits."},
  {id:"sites",label:"Sites & forfaits",help:"Les sites publiés par vos clients (adresse, propriétaire, demandes reçues) et le catalogue des forfaits avec les abonnements actifs. Le contenu des sites n’est jamais affiché ici."},
+ {id:"feedback",label:"Suggestions",help:"Les idées et bugs des membres : ouvrir ou fermer l’onglet, traiter les signalements, faire avancer les statuts, répondre au nom de l’équipe et fusionner les doublons."},
  {id:"ai",label:"IA & coûts",help:"Combien coûtent les réponses de l’agent et quel cerveau (Haiku, Sonnet, Opus) a répondu."},
  {id:"quality",label:"Qualité de l’agent",help:"Réponses réussies ou échouées, outils qui posent problème, avis des utilisateurs et leçons apprises automatiquement."},
  {id:"media",label:"Médias",help:"Images, vidéos et voix générées, par modèle, avec leur statut."},
@@ -195,6 +196,37 @@ function Sites({notify}:{notify:(message:string,error?:boolean)=>void}){
  </>;
 }
 
+const FEEDBACK_STATUS:Record<string,string>={new:"Nouveau",under_review:"À l’étude",planned:"Prévu",in_progress:"En cours",done:"Livré",declined:"Refusé",duplicate:"Doublon"};
+type FeedbackRow={id:string;type:string;title:string;status:string;voteCount:number;paidVoteCount:number;commentCount:number;reportCount:number;pinned:boolean;private:boolean;hiddenAt:number|null;authorName:string;createdAt:number};
+function FeedbackReplies({postId,act,busy}:{postId:string;act:(body:Json,confirmText?:string)=>Promise<void>;busy:boolean}){
+ const {data,reload}=useData<Json>("/api/feedback/"+encodeURIComponent(postId));
+ const comments=((data?.comments||[]) as {id:string;body:string;authorName:string;isTeam:boolean;pinned:boolean;hiddenAt:number|null;createdAt:number}[]);
+ const run=(body:Json,text?:string)=>act(body,text).then(reload);
+ return <section><h3>Réponses ({comments.length})</h3>{!data?<div className="adm-skel" style={{height:48}}/>:comments.length?<div className="adm-list">{comments.map(c=><div key={c.id} className="adm-card" style={{padding:12,opacity:c.hiddenAt?.55:1}}><div style={{fontSize:12,color:"var(--color-text-muted)"}}>{c.isTeam?"Équipe Braand":c.authorName} · {ago(c.createdAt)}{c.pinned?" · épinglée":""}{c.hiddenAt?" · masquée":""}</div><p style={{margin:"6px 0 8px",whiteSpace:"pre-wrap"}}>{c.body}</p><div className="adm-toolbar" style={{marginBottom:0}}><button className="adm-btn" disabled={busy} onClick={()=>void run({action:"pin_comment",commentId:c.id,pinned:!c.pinned})}>{c.pinned?"Désépingler":"Épingler"}</button><button className="adm-btn danger" disabled={busy} onClick={()=>void run({action:"hide_comment",commentId:c.id,hidden:!c.hiddenAt},c.hiddenAt?undefined:"Masquer cette réponse ?")}>{c.hiddenAt?"Rendre visible":"Masquer"}</button></div></div>)}</div>:<p style={{fontSize:13,color:"var(--color-text-muted)"}}>Aucune réponse.</p>}</section>;
+}
+function FeedbackAdmin({notify}:{notify:(message:string,error?:boolean)=>void}){
+ const {data,error,reload}=useData<Json>("/api/admin/feedback");const [busy,setBusy]=useState(false),[open,setOpen]=useState<string|null>(null),[reply,setReply]=useState(""),[target,setTarget]=useState("");
+ if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
+ const posts=data.posts as FeedbackRow[],reports=data.reports as {id:string;postId:string;commentId:string|null;reason:string;title:string;comment:string|null;createdAt:number}[],counts=(data.statusCounts||{}) as Record<string,number>;
+ const act=async(body:Json,confirmText?:string)=>{if(confirmText&&!window.confirm(confirmText))return;setBusy(true);try{const r=await api<{message:string}>("/api/admin/feedback",post(body));notify(r.message);reload();}catch(e){notify(e instanceof Error?e.message:"Action impossible.",true);}finally{setBusy(false);}};
+ const selected=posts.find(p=>p.id===open);
+ return <>
+  <div className="adm-attention"><span className={"adm-chip "+(data.enabled?"ok":"warn")}>{data.enabled?"Onglet ouvert à tous les membres":"Onglet fermé aux membres (vous seul le voyez)"}</span><button className={"adm-btn"+(data.enabled?" danger":" primary")} disabled={busy} onClick={()=>void act({action:"toggle_flag",enabled:!data.enabled},data.enabled?"Fermer l’onglet Suggestions pour tous les membres ?":"Ouvrir l’onglet Suggestions à tous les membres ?")}>{data.enabled?"Fermer aux membres":"Ouvrir aux membres"}</button></div>
+  <div className="adm-grid">{Object.keys(FEEDBACK_STATUS).map(k=><Kpi key={k} label={FEEDBACK_STATUS[k]} value={fmt(counts[k]||0)}/>)}<Kpi label="Signalements à traiter" value={fmt(reports.length)} tone={reports.length?"bad":undefined}/></div>
+  {reports.length>0&&<div className="adm-card" style={{marginBottom:18}}><h2>Signalements</h2><Table head={["Suggestion","Réponse visée","Raison","Reçu","",""]} rows={reports.map(r=>[r.title,r.comment||"—",r.reason||"—",ago(r.createdAt),<button key="o" className="adm-btn" onClick={()=>setOpen(r.postId)}>Ouvrir</button>,<button key="r" className="adm-btn" disabled={busy} onClick={()=>void act({action:"resolve_report",reportId:r.id})}>Traité</button>])}/></div>}
+  <div className="adm-card"><h2>Toutes les suggestions</h2><Table head={["Titre","Type","Statut","Votes","dont payants","Réponses","Signal.","Auteur","Créée"]} onRow={i=>{setOpen(posts[i].id);setReply("");setTarget("");}} rows={posts.map(p=>[<span key="t">{p.pinned?"📌 ":""}{p.title}{p.private?<> <span className="adm-tag warn">privé</span></>:null}{p.hiddenAt?<> <span className="adm-tag bad">masqué</span></>:null}</span>,p.type==="bug"?"Bug":"Fonctionnalité",<span key="s" className="adm-tag">{FEEDBACK_STATUS[p.status]||p.status}</span>,fmt(p.voteCount),fmt(p.paidVoteCount),fmt(p.commentCount),p.reportCount?<span key="r" className="adm-tag bad">{p.reportCount}</span>:"0",p.authorName,date(p.createdAt)])} empty="Aucune suggestion pour le moment."/></div>
+  {selected&&<><div className="adm-drawer-back" onClick={()=>setOpen(null)}/><aside className="adm-drawer" role="dialog" aria-label={selected.title}>
+   <h2>{selected.title}</h2><p style={{color:"var(--color-text-muted)",fontSize:13}}>{selected.type==="bug"?"Bug":"Fonctionnalité"} · {fmt(selected.voteCount)} votes · {selected.authorName}</p>
+   <section><h3>Statut</h3><div className="adm-toolbar">{Object.keys(FEEDBACK_STATUS).filter(k=>k!=="duplicate").map(k=><button key={k} className={"adm-btn"+(selected.status===k?" primary":"")} disabled={busy||selected.status===k} onClick={()=>void act({action:"status",postId:selected.id,status:k})}>{FEEDBACK_STATUS[k]}</button>)}</div></section>
+   <section><h3>Affichage</h3><div className="adm-toolbar"><button className="adm-btn" disabled={busy} onClick={()=>void act({action:"pin",postId:selected.id,pinned:!selected.pinned})}>{selected.pinned?"Désépingler":"Épingler"}</button><button className="adm-btn danger" disabled={busy} onClick={()=>void act({action:"hide",postId:selected.id,hidden:!selected.hiddenAt},selected.hiddenAt?undefined:"Masquer cette suggestion aux membres ?")}>{selected.hiddenAt?"Rendre visible":"Masquer"}</button><a className="adm-btn" href={"/?view=suggestions&id="+encodeURIComponent(selected.id)} target="_blank" rel="noopener">Voir comme un membre</a></div></section>
+   <FeedbackReplies postId={selected.id} act={act} busy={busy}/>
+   <section><h3>Répondre au nom de l’équipe</h3><div className="adm-form"><label>Réponse<textarea rows={4} maxLength={3000} value={reply} onChange={e=>setReply(e.target.value)} style={{padding:"8px 10px",borderRadius:8,border:"1px solid var(--color-border)",background:"var(--color-surface)",color:"var(--color-text)",font:"inherit"}}/></label><button className="adm-btn primary" disabled={busy||!reply.trim()} onClick={()=>void act({action:"team_reply",postId:selected.id,body:reply}).then(()=>setReply(""))}>Publier la réponse</button></div></section>
+   <section><h3>Fusionner comme doublon de…</h3><div className="adm-form"><label>Suggestion d’origine<select value={target} onChange={e=>setTarget(e.target.value)} style={{padding:8,borderRadius:8}}><option value="">Choisir</option>{posts.filter(p=>p.id!==selected.id&&p.status!=="duplicate"&&!p.hiddenAt).map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label><button className="adm-btn danger" disabled={busy||!target||selected.status==="duplicate"} onClick={()=>void act({action:"merge",sourceId:selected.id,targetId:target},"Fusionner ? Les votes rejoindront la suggestion d’origine.").then(()=>setOpen(null))}>Fusionner</button></div></section>
+   <p style={{marginTop:18}}><button className="adm-btn" onClick={()=>setOpen(null)}>Fermer</button></p>
+  </aside></>}
+ </>;
+}
+
 function Media(){
  const {data,error}=useData<Json>("/api/admin/media");
  if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
@@ -235,7 +267,7 @@ export function AdminDashboard(){
    <div className="adm-mobile-tabs" role="tablist">{VIEWS.map(v=><button key={v.id} aria-current={v.id===view?"page":undefined} onClick={()=>go(v.id)}>{v.label}</button>)}</div>
    <main className="adm-main" key={view+refresh}>
     <div className="adm-head"><div><h1>{current.label}</h1><p>{current.help}</p></div><button className="adm-btn" onClick={()=>setRefresh(r=>r+1)}>Actualiser</button></div>
-    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality"/>:view==="media"?<Media/>:view==="system"?<System part="system"/>:<Audit/>}
+    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="feedback"?<FeedbackAdmin notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality"/>:view==="media"?<Media/>:view==="system"?<System part="system"/>:<Audit/>}
    </main>
   </div>
   {notice?<div className={"adm-notice"+(notice.error?" error":"")} role="status">{notice.text}</div>:null}
