@@ -29,7 +29,8 @@ const server=createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({headless:true});let page;const checks=[];
 try{
- const drawing=await browser.newPage({viewport:{width:1280,height:720}});await drawing.setContent('<body style="margin:0;background:#edf2f8;font:24px system-ui;padding:60px"><h1>Site de recette local</h1><p>Cette page est une fixture de test.</p><label>Connexion <input type="password"></label></body>');const jpeg=(await drawing.screenshot({type:'jpeg'})).toString('base64');await drawing.close();
+ const drawing=await browser.newPage({viewport:{width:1280,height:720}});await drawing.setContent('<body style="margin:0;background:#edf2f8;font:24px system-ui;padding:60px"><h1>Site de recette local</h1><p>Cette page est une fixture de test.</p><label>Connexion <input type="password"></label></body>');// Headless Chromium on CI can refuse the very first capture; try again before failing.
+ let shot;for(let attempt=0;attempt<3&&!shot;attempt++){try{await drawing.waitForTimeout(100*attempt);shot=await drawing.screenshot({type:'jpeg'});}catch(error){if(attempt===2)throw error;}}const jpeg=shot.toString('base64');await drawing.close();
  const context=await browser.newContext({viewport:{width:1200,height:1000}});
  await context.addInitScript(({image})=>{
   const state={mode:'agent',version:1,sockets:[],inputs:[]};window.fixture=state;
