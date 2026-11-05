@@ -85,6 +85,12 @@ try{
     const controls=()=>page.locator('.composer-tools').evaluate(node=>{const clone=node.cloneNode(true);clone.querySelectorAll('[disabled]').forEach(button=>button.removeAttribute('disabled'));return clone.outerHTML;});
     const before=await controls(),empty=await composer.boundingBox();
     if(width>=768)assert.equal(empty.height,58);
+    if(securePreview){
+      const plus=await page.getByRole('button',{name:'Joindre une image ou un document',exact:true}).boundingBox(),screen=await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).boundingBox();
+      assert.ok(plus&&screen&&plus.width>=28&&screen.width>=28,'both composer buttons are visible');
+      assert.ok(plus.x+plus.width<=screen.x||screen.x+screen.width<=plus.x,'the + button is not covered by the screen button');
+      const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Joindre une image ou un document',exact:true}).click();await (await chooser).setFiles([]);
+    }
     await field.fill('Mon brouillon');
     await page.locator('input[type="file"][multiple]').setInputFiles((securePreview?files.slice(0,3):files.slice(0,1)).map(file=>({name:file.name,mimeType:file.mime,buffer:png})));
     await page.waitForFunction((minimum)=>document.querySelectorAll('.file-card-attachment:not(.file-card-uploading)').length===minimum&&Array.from(document.querySelectorAll('.file-card-attachment:not(.file-card-uploading) img')).filter(img=>img.complete&&img.naturalWidth>0).length===(minimum===3?2:1),securePreview?3:1);
