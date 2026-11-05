@@ -1,6 +1,6 @@
 import {z} from 'zod';
 
-export type PlanName='essential'|'pro'|'business';
+export type PlanName='essential'|'pro'|'business'|'enterprise';
 export type BillingCycle='period'|'annual';
 export type QuoteInput={kind:'topup';quantity:number}|{kind:'subscription';plan:PlanName;cycle:BillingCycle}|{kind:'upgrade';plan?:PlanName};
 export type TaxRule={mode:'exclusive'|'inclusive';rateBps:number;jurisdiction:string;version:string;validatedAt:string};

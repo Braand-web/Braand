@@ -363,11 +363,11 @@ try{
   assert.equal(await billingNavigation.getByRole('button',{name:'Paiements',exact:true}).getAttribute('aria-current'),'page');
   assert.equal(await settings.locator('.billing-heading h1').count(),0,'Embedded billing must not render the central-page hero');
   await billingNavigation.getByRole('button',{name:'Forfait',exact:true}).click();await settings.getByRole('button',{name:'Choisir Pro',exact:true}).waitFor();
-  for(const name of ['Essentiel','Pro','Business'])assert.equal(await embeddedBilling.getByRole('heading',{name,exact:true}).count(),1);
-  assert.equal(await embeddedBilling.getByRole('button',{name:/^Choisir (Essentiel|Pro|Business)$/}).count(),3);
+  for(const name of ['Essentiel','Pro','Business','Entreprise'])assert.equal(await embeddedBilling.getByRole('heading',{name,exact:true}).count(),1);
+  assert.equal(await embeddedBilling.getByRole('button',{name:/^Choisir (Essentiel|Pro|Business|Entreprise)$/}).count(),4);
   assert.equal(await embeddedBilling.getByRole('button',{name:'Annuel',exact:true}).isDisabled(),true,'The server closes annual sales in this isolated fixture');
   await embeddedBilling.getByText('Pour 30 jours · hors taxes',{exact:true}).waitFor();
-  for(const amount of [4900,9900,24900])assert.equal(await embeddedBilling.getByText(money(amount),{exact:true}).count(),1);
+  for(const amount of [4900,9900,24900,79900])assert.equal(await embeddedBilling.getByText(money(amount),{exact:true}).count(),1);
   const planCarousel=embeddedBilling.getByRole('region',{name:'Forfaits disponibles',exact:true});
   const previousPlans=embeddedBilling.getByRole('button',{name:'Forfaits précédents',exact:true}),nextPlans=embeddedBilling.getByRole('button',{name:'Forfaits suivants',exact:true});
   const planLayout=()=>planCarousel.evaluate(element=>{
@@ -385,17 +385,18 @@ try{
   assert.ok(desktopPlans.cards[2].visible>0&&desktopPlans.cards[2].visible<desktopPlans.cards[2].width,'A sliver of the third plan reveals the horizontal comparison');
   assert.equal(await previousPlans.isDisabled(),true);assert.equal(await nextPlans.isDisabled(),false);
   await capture({path:path.join(output,'billing-offers-desktop.png'),fullPage:true});
-  await nextPlans.click();await waitForLastPlan();
+  for(let step=0;step<4&&!await nextPlans.isDisabled();step++){await nextPlans.click();await page.waitForTimeout(400);}await waitForLastPlan();
   await page.waitForFunction(()=>document.querySelector('button[aria-label="Forfaits suivants"]').disabled);
   assert.equal(await previousPlans.isDisabled(),false);
   await capture({path:path.join(output,'billing-offers-desktop-last.png'),fullPage:true});
   await planCarousel.focus();await planCarousel.press('Home');
   await page.waitForFunction(()=>document.querySelector('[aria-label="Forfaits disponibles"]').scrollLeft<1);
-  await planCarousel.press('ArrowRight');await waitForLastPlan();
+  await planCarousel.press('ArrowRight');await page.waitForFunction(()=>document.querySelector('[aria-label="Forfaits disponibles"]').scrollLeft>1);
+  await planCarousel.press('End');await waitForLastPlan();
   await planCarousel.press('Home');
   await page.waitForFunction(()=>document.querySelector('[aria-label="Forfaits disponibles"]').scrollLeft<1);
-  await planCarousel.hover();await page.mouse.wheel(400,0);await waitForLastPlan();
-  await previousPlans.click();await page.waitForFunction(()=>document.querySelector('[aria-label="Forfaits disponibles"]').scrollLeft<1);
+  await planCarousel.hover();await page.mouse.wheel(1600,0);await waitForLastPlan();
+  await planCarousel.focus();await planCarousel.press('Home');await page.waitForFunction(()=>document.querySelector('[aria-label="Forfaits disponibles"]').scrollLeft<1);
   checks.push('Plan comparison shows two complete desktop cards and a preview of the third; arrows, keyboard and trackpad reveal the last plan without a purchase');
   assert.equal(await embeddedBilling.locator('svg circle[cx="200"][cy="200"][r="150"]').count(),0,'Embedded plan comparison omits the large credits dial');
   assert.equal(quoteRequests.length,0);assert.equal(checkoutCalls,0);
@@ -451,7 +452,7 @@ try{
   const mobileRefresh=await settings.getByRole('button',{name:'Actualiser la facturation',exact:true}).boundingBox();assert.ok(mobileRefresh.x+mobileRefresh.width<=390);
   assert.ok(await settings.evaluate(element=>element.scrollWidth<=element.clientWidth));
   await billingNavigation.getByRole('button',{name:'Forfait',exact:true}).click();
-  for(const name of ['Essentiel','Pro','Business'])assert.equal(await embeddedBilling.getByRole('heading',{name,exact:true}).count(),1);
+  for(const name of ['Essentiel','Pro','Business','Entreprise'])assert.equal(await embeddedBilling.getByRole('heading',{name,exact:true}).count(),1);
   const mobilePlans=await planLayout();
   assert.equal(mobilePlans.cards.filter(card=>card.visible>=card.width-1).length,1,'Mobile shows one complete plan card');
   assert.ok(mobilePlans.cards[1].visible>0&&mobilePlans.cards[1].visible<mobilePlans.cards[1].width);

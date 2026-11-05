@@ -1,7 +1,7 @@
 import {db,uid,auditLog} from './server';
 import {AppError} from './core.mjs';
 import {activeRights,type BillingIdentity} from './billing';
-import {roleAllows} from './billing-core.mjs';
+import {roleAllows,teamPlan} from './billing-core.mjs';
 const q=(sql:string,...args:unknown[])=>db().prepare(sql).bind(...args);
 type OrganizationChange={action:'space';name:string}|{action:'invite';email:string;role:string;spaces:string[]}|{action:'revoke';userId:string}|{action:'limit';scope:'organization'|'workspace'|'member';scopeId:string;credits:number};
 export async function organizationSummary(who:BillingIdentity){
@@ -15,7 +15,7 @@ export async function organizationSummary(who:BillingIdentity){
 export async function changeOrganization(who:BillingIdentity,input:OrganizationChange){
  if(!roleAllows(who.role,'manage'))throw new AppError('Gestion réservée au propriétaire ou à un administrateur.',403);
  const {plan,limits}=await activeRights(who.organization);
- if(plan!=='business')throw new AppError('Un abonnement Business actif est nécessaire.',403);
+ if(!teamPlan(plan))throw new AppError('Un abonnement Business ou Entreprise actif est nécessaire.',403);
  if(input.action==='space'){
   const id=uid();const result=await q("INSERT INTO workspaces(id,name,created_at,organization_id) SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM workspaces WHERE organization_id=?)<?",id,input.name,Date.now(),who.organization,who.organization,limits.spaces).run();
   if(!result.meta.changes)throw new AppError('Le nombre maximal d’espaces est atteint.',409);
@@ -47,7 +47,7 @@ async function digest(value:string){return Array.from(new Uint8Array(await crypt
 export async function acceptInvite(who:BillingIdentity,token:string){
  const invite=await q("SELECT * FROM billing_invites WHERE token_hash=? AND status='pending' AND expires_at>?",await digest(token),Date.now()).first<{id:string;organization_id:string;email:string;role:string;spaces:string}>();
  if(!invite||invite.email!==who.user.email.toLowerCase())throw new AppError('Invitation invalide ou destinée à un autre compte.',403);
- if((await activeRights(invite.organization_id)).plan!=='business')throw new AppError('L’organisation n’a pas de forfait Business actif.',409);
+ if(!teamPlan((await activeRights(invite.organization_id)).plan))throw new AppError('L’organisation n’a pas de forfait Business ou Entreprise actif.',409);
  const existing=await q('SELECT role FROM organization_members WHERE organization_id=? AND user_id=?',invite.organization_id,who.user.userId).first<{role:string}>();
  if(existing?.role==='owner')throw new AppError('Le propriétaire possède déjà cet espace.',409);
  await db().batch([

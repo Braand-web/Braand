@@ -44,7 +44,8 @@ test('new sales commitments include twelve months of annual costs, with no fake 
 
 test('a negative scenario headroom is preserved and all sales packs are included', () => {
   const commitments = salesCommitments();
-  assert.equal(commitments.length, 9);
+  assert.equal(commitments.length, 11);
+  for (const row of commitments.filter(row=>row.id.startsWith('enterprise:'))) assert(designHeadroom(row,{paymentFeeBps:350,taxBps:0}).remainingVariableCostBudgetXaf > 0, 'Entreprise keeps a positive design headroom');
   assert.deepEqual(commitments.filter(row=>row.id.startsWith('topup:')).map(row=>[row.credits,row.grossXaf]),[[50,2500],[125,5000],[300,10000]]);
   assert(designHeadroom({id:'test',grossXaf:100,credits:100}, {paymentFeeBps:0,taxBps:0}).remainingVariableCostBudgetXaf < 0);
   for (const invalid of [NaN, Infinity, -1, 10001]) {

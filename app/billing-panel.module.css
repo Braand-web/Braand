@@ -155,3 +155,9 @@
 @container(max-width:480px){.compactPlans{grid-auto-columns:calc(100% - 32px)}}
 @container(max-width:440px){.packChoices{grid-template-columns:repeat(2,minmax(0,1fr))}.compactToolbar>span{max-width:55%}.compactToolbar :global(.button)>span{display:none}.compactSummary{align-items:flex-start}.paymentRow{flex-wrap:wrap;gap:8px}.paymentRow>div:last-child{margin-left:auto}.paymentRows>li.invoiceRow{align-items:flex-start;flex-wrap:wrap}.discoveryRow{align-items:flex-start;flex-wrap:wrap}}
 @media(max-width:640px){.embedded :is(button,a):not(summary){min-height:44px}.compactTabs>button{font-size:var(--text-xs);line-height:18px}.paymentFilters{gap:0}}
+
+.compactPlan.recommended{box-shadow:inset 0 0 0 1px var(--ds-accent,#5b8cff)}
+.compactPlan.recommended .currentPlan{background:color-mix(in srgb,var(--ds-accent,#5b8cff),transparent 82%);color:var(--ds-text)}
+.planDetails a{color:var(--ds-text);text-decoration:underline;text-underline-offset:3px}
+.compactPlan>header>h3{white-space:nowrap}
+.compactPlan .currentPlan{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}

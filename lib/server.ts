@@ -35,12 +35,12 @@ export async function authorize(tenant:string,userId:string,action='read'){
  const row=await db().prepare("SELECT w.organization_id,om.role,o.owner_id FROM workspaces w JOIN organizations o ON o.id=w.organization_id JOIN organization_members om ON om.organization_id=o.id AND om.user_id=? AND om.active=1 WHERE w.id=? AND (om.role='owner' OR EXISTS(SELECT 1 FROM members m WHERE m.workspace_id=w.id AND m.user_id=om.user_id))").bind(userId,tenant).first<{organization_id:string;role:string;owner_id:string}>();
  if(!row)throw new AppError('Accès à cet espace non autorisé.',403);
  if(row.role==='owner'&&tenant!==row.owner_id&&action!=='read'){
- const business=await db().prepare("SELECT id FROM billing_subscriptions WHERE organization_id=? AND plan='business' AND status='active' AND start_at<=? AND end_at>?").bind(row.organization_id,Date.now(),Date.now()).first();
- if(!business)throw new AppError('Cet espace est en lecture seule. Un forfait Business actif est nécessaire.',403);
+ const business=await db().prepare("SELECT id FROM billing_subscriptions WHERE organization_id=? AND plan IN ('business','enterprise') AND status='active' AND start_at<=? AND end_at>?").bind(row.organization_id,Date.now(),Date.now()).first();
+ if(!business)throw new AppError('Cet espace est en lecture seule. Un forfait Business ou Entreprise actif est nécessaire.',403);
  }
  if(row.role!=='owner'){
- const sub=await db().prepare("SELECT id FROM billing_subscriptions WHERE organization_id=? AND plan='business' AND status='active' AND start_at<=? AND end_at>?").bind(row.organization_id,Date.now(),Date.now()).first();
- if(!sub)throw new AppError('Les fonctions d’équipe nécessitent un abonnement Business actif.',403);
+ const sub=await db().prepare("SELECT id FROM billing_subscriptions WHERE organization_id=? AND plan IN ('business','enterprise') AND status='active' AND start_at<=? AND end_at>?").bind(row.organization_id,Date.now(),Date.now()).first();
+ if(!sub)throw new AppError('Les fonctions d’équipe nécessitent un abonnement Business ou Entreprise actif.',403);
  }
  const {roleAllows}=await import('./billing-core.mjs');if(!roleAllows(row.role,action))throw new AppError('Votre rôle ne permet pas cette action.',403);
  return row;

@@ -44,7 +44,7 @@ export async function GET(request:Request,context:Context){try{
 export async function POST(request:Request,context:Context){try{
  const who=await identity(request),{path}=await context.params,body=await privateJSON(request,1048576);
  if(path[0]==='quotes'){
-  const p=z.discriminatedUnion('kind',[z.object({kind:z.literal('topup'),quantity:z.number().int().refine(value=>[50,125,300].includes(value))}),z.object({kind:z.literal('subscription'),plan:z.enum(['essential','pro','business']),cycle:z.enum(['period','annual'])}),z.object({kind:z.literal('upgrade'),plan:z.enum(['essential','pro','business']).optional()})]).parse(body);
+  const p=z.discriminatedUnion('kind',[z.object({kind:z.literal('topup'),quantity:z.number().int().refine(value=>[50,125,300].includes(value))}),z.object({kind:z.literal('subscription'),plan:z.enum(['essential','pro','business','enterprise']),cycle:z.enum(['period','annual'])}),z.object({kind:z.literal('upgrade'),plan:z.enum(['essential','pro','business','enterprise']).optional()})]).parse(body);
   return Response.json(await makeQuote(who,p),{status:201});
  }
  if(path[0]==='checkout'){
@@ -55,7 +55,7 @@ export async function POST(request:Request,context:Context){try{
   const p=z.object({orderId:z.string().uuid(),reason:z.string().trim().min(10).max(2000)}).parse(body);return Response.json(await requestRefund(who,p.orderId,p.reason),{status:201});
  }
  if(path[0]==='plan-changes'){
-  const p=z.object({plan:z.enum(['essential','pro','business']),cycle:z.enum(['period','annual']),immediate:z.boolean().default(false)}).parse(body);
+  const p=z.object({plan:z.enum(['essential','pro','business','enterprise']),cycle:z.enum(['period','annual']),immediate:z.boolean().default(false)}).parse(body);
   return Response.json(await makeQuote(who,p.immediate?{kind:'upgrade',plan:p.plan}:{kind:'subscription',plan:p.plan,cycle:p.cycle}));
  }
  if(path[0]==='organization'){

@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {authorize,config,createResource,db,getResource,updateResource,uid,auditLog} from './server';
 import {AppError} from './core.mjs';
 import {currentSubscription,type BillingIdentity} from './billing';
+import {PLANS} from './billing-core.mjs';
 import type {Resource} from './contracts';
 import {SITE_LIMITS,TEXT_EXTENSIONS,normalizeSitePath,siteExtension,siteMime,siteReferences,siteSlug} from './site-files.mjs';
 
@@ -179,9 +180,9 @@ export async function sitePreviewUrl(who:BillingIdentity,siteId:string){
  return {url:`${origin}/__preview/${token}/`,expiresInMinutes:30};
 }
 async function entitlement(who:BillingIdentity,resourceId:string){
- const subscribed=!!await currentSubscription(who.organization);
+ const sub=await currentSubscription(who.organization),subscribed=!!sub,planSites=sub?PLANS[sub.plan as keyof typeof PLANS]?.sites:undefined;
  const live=await db().prepare("SELECT COUNT(*) n FROM site_publications WHERE organization_id=? AND status='published' AND resource_id!=?").bind(who.organization,resourceId).first<{n:number}>();
- const limit=subscribed?SITE_LIMITS.paidSites:SITE_LIMITS.freeSites;
+ const limit=subscribed?(planSites??SITE_LIMITS.paidSites):SITE_LIMITS.freeSites;
  if((live?.n||0)>=limit)throw new AppError(subscribed?`Votre offre permet ${limit} sites en ligne. Retirez-en un pour publier celui-ci.`:'Le compte gratuit permet 1 site en ligne. Retirez l’autre site ou passez à une offre payante pour en publier davantage.',402,'site_limit_reached');
  return {badge:!subscribed};
 }

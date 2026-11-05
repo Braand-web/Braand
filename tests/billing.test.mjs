@@ -7,7 +7,7 @@ import {topupPrice,PLANS,LEGACY_PLANS,PACKS,periods,anniversary,marginCheck,prod
 test('Only the three approved packs can be sold at exact integer XAF prices',()=>{
  assert.deepEqual(PACKS,[50,125,300]);assert.deepEqual(PACKS.map(topupPrice),[2500,5000,10000]);
  for(const value of [-1,0,49,50.5,100,150,250,1000,10000,10001,NaN,Infinity,'125'])assert.throws(()=>topupPrice(value));
- for(const [plan,amount,credits] of [['essential',4900,100],['pro',9900,250],['business',24900,600]]){
+ for(const [plan,amount,credits] of [['essential',4900,100],['pro',9900,250],['business',24900,600],['enterprise',79900,2500]]){
   assert.deepEqual([product({kind:'subscription',plan,cycle:'period'}).amount,PLANS[plan].credits],[amount,credits]);
   const annual=product({kind:'subscription',plan,cycle:'annual'});
   assert.equal(annual.amount,amount*10);assert.equal(annual.cycle,'annual');assert.equal(annual.credits,credits);

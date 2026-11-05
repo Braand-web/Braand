@@ -6,11 +6,19 @@ import styles from './billing-offers.module.css';
 
 export type BillingPlan = {
  name:string;periodPrice:number;annualPrice:number|null;credits:number;members:number;
- spaces:number;projects:number;storage:number;transfer:number;concurrency:number;
+ spaces:number;projects:number;storage:number;transfer:number;concurrency:number;sites?:number;
 };
-export type PlanId='essential'|'pro'|'business';
-export const PLAN_IDS:PlanId[]=['essential','pro','business'];
-export const planName=(plan:unknown)=>plan==='essential'?'Essentiel':plan==='pro'?'Pro':plan==='business'?'Business':'Braand';
+export type PlanId='essential'|'pro'|'business'|'enterprise';
+export const PLAN_IDS:PlanId[]=['essential','pro','business','enterprise'];
+export const planName=(plan:unknown)=>plan==='essential'?'Essentiel':plan==='pro'?'Pro':plan==='business'?'Business':plan==='enterprise'?'Entreprise':'Braand';
+// What each plan changes for the customer, in plain words: results first, no technical names.
+export const PLAN_COPY:Record<PlanId,{audience:string;intro:string;autonomy:string;support:string}>={
+ essential:{audience:'Pour démarrer seul',intro:'Vos textes, documents, visuels et sites prêts en quelques minutes, sans rien installer.',autonomy:'Missions guidées, une à la fois',support:'Aide par e-mail'},
+ pro:{audience:'Recommandé',intro:'Tout l’Essentiel, plus des missions qui avancent seules pendant que vous êtes occupé.',autonomy:'Navigateur et missions autonomes',support:'Aide prioritaire'},
+ business:{audience:'Pour une petite équipe',intro:'Tout le Pro, plus un solde partagé et des validations : l’équipe avance, vous gardez la main.',autonomy:'Équipe : rôles, budgets, validations',support:'Aide prioritaire'},
+ enterprise:{audience:'Pour une organisation',intro:'Tout le Business, à l’échelle de votre organisation, avec un accompagnement dédié.',autonomy:'Gouvernance complète et journal d’audit',support:'Support dédié et prise en main'},
+};
+export const SITES_FALLBACK:Record<PlanId,number>={essential:3,pro:10,business:25,enterprise:100};
 type Props={
  plans:Record<PlanId,BillingPlan>;free:{credits:number;days:number;enabled:boolean};
  paymentsEnabled:boolean;priceLabel:string;annualAvailable?:boolean;
@@ -48,15 +56,16 @@ export default function BillingOffers({plans,free,paymentsEnabled,priceLabel,ann
  const [cycle,setCycle]=useState<'period'|'annual'>('period');
  const canChooseAnnual=annualAvailable&&PLAN_IDS.every(id=>Number.isSafeInteger(plans[id].annualPrice)&&(plans[id].annualPrice??0)>0);
  const annual=cycle==='annual'&&canChooseAnnual;
- const plan=plans[selected],business=plans.business;
+ const plan=plans[selected],top=plans.enterprise??plans.business,copy=PLAN_COPY[selected],sites=(id:PlanId)=>plans[id].sites??SITES_FALLBACK[id];
+ const price=annual?plan.annualPrice!:plan.periodPrice,perDay=Math.round(price/(annual?365:30));
  const specs=[
-  {label:'Équipe',value:plan.members===1?'1 utilisateur':`${number(plan.members)} membres, propriétaire compris`,quantity:plan.members,max:business.members},
-  {label:'Marques',value:`${number(plan.spaces)} espace${plan.spaces>1?'s de marques':' de marque'}`,quantity:plan.spaces,max:business.spaces},
-  {label:'Projets',value:`${number(plan.projects)} projets actifs`,quantity:plan.projects,max:business.projects},
-  {label:'Stockage',value:`${number(plan.storage/1024**3)} Go`,quantity:plan.storage,max:business.storage},
-  {label:'Transfert',value:`${number(plan.transfer/1024**3)} Go`,quantity:plan.transfer,max:business.transfer},
-  {label:'Navigateur et autonomie',value:selected==='essential'?'À partir de Pro':'Sous plafond approuvé',quantity:selected==='essential'?0:plan.concurrency,max:business.concurrency},
-  {label:'Gouvernance',value:selected==='business'?'Rôles, budgets et validations':'—',quantity:selected==='business'?1:0,max:1},
+  {label:'Équipe',value:plan.members===1?'1 utilisateur':`${number(plan.members)} membres`,quantity:plan.members,max:top.members},
+  {label:'Marques et projets',value:`${number(plan.spaces)} marque${plan.spaces>1?'s':''} · ${number(plan.projects)} projets`,quantity:plan.projects,max:top.projects},
+  {label:'Stockage',value:`${number(plan.storage/1024**3)} Go`,quantity:plan.storage,max:top.storage},
+  {label:'Sites en ligne',value:`${number(sites(selected))} site${sites(selected)>1?'s':''}${selected==='essential'?'':' sans mention Braand'}`,quantity:sites(selected),max:sites('enterprise')},
+  {label:'Travail en parallèle',value:plan.concurrency===1?'1 tâche à la fois':`${number(plan.concurrency)} tâches en même temps`,quantity:plan.concurrency,max:top.concurrency},
+  {label:'Autonomie',value:copy.autonomy,quantity:PLAN_IDS.indexOf(selected)+1,max:PLAN_IDS.length},
+  {label:'Accompagnement',value:copy.support,quantity:PLAN_IDS.indexOf(selected)+1,max:PLAN_IDS.length},
  ];
  return <div className={styles.offers}>
   <div className={styles.toolbar}>
@@ -65,18 +74,18 @@ export default function BillingOffers({plans,free,paymentsEnabled,priceLabel,ann
   </div>
   <section className={styles.instrument} aria-label="Comparer les forfaits">
    <div className={styles.stage}>
-    <CreditInstrument credits={plan.credits} maximum={business.credits} annual={annual}/>
+    <CreditInstrument credits={plan.credits} maximum={top.credits} annual={annual}/>
     <div className={styles.planSwitch} role="group" aria-label="Choisir un forfait à comparer">
-     {PLAN_IDS.map(id=><button type="button" key={id} aria-pressed={selected===id} onClick={()=>onSelect(id)}><strong>{plans[id].name}</strong><span>{number(annual?plans[id].annualPrice!:plans[id].periodPrice)} FCFA</span></button>)}
+     {PLAN_IDS.filter(id=>plans[id]).map(id=><button type="button" key={id} aria-pressed={selected===id} aria-label={`${plans[id].name}, ${number(annual?plans[id].annualPrice!:plans[id].periodPrice)} FCFA`} onClick={()=>onSelect(id)}><strong>{plans[id].name}</strong><span>{number(annual?plans[id].annualPrice!:plans[id].periodPrice)}</span></button>)}
     </div>
    </div>
    <div className={styles.details}>
-    <div className={styles.planIntro}><div><h2>{plan.name}</h2><span className={styles.planChip}>{currentPlan===selected?'Votre forfait':selected==='business'?'Pour une équipe':'Pour une marque'}</span></div><p>{selected==='essential'?'Discutez, rédigez et créez pour votre marque.':selected==='pro'?'Votre assistant pour créer et mener vos missions.':'Un solde partagé pour vos marques et votre équipe.'}</p></div>
-    <div className={styles.priceBlock}><div className={styles.price}><strong>{number(annual?plan.annualPrice!:plan.periodPrice)}</strong><span>FCFA</span></div><p>{annual?'Pour 12 mois':'Pour 30 jours'} · {priceLabel}</p></div>
+    <div className={styles.planIntro}><div><h2>{plan.name}</h2><span className={styles.planChip}>{currentPlan===selected?'Votre forfait':copy.audience}</span></div><p>{copy.intro}</p></div>
+    <div className={styles.priceBlock}><div className={styles.price}>{selected==='enterprise'&&<span>À partir de</span>}<strong>{number(price)}</strong><span>FCFA</span></div><p>{annual?'Pour 12 mois · 2 mois offerts':'Pour 30 jours'} · soit {number(perDay)} FCFA/jour{selected==='enterprise'?` pour ${number(plan.members)} membres`:''} · {priceLabel}</p></div>
     <button type="button" className={styles.choose} disabled={busy||!owner||!paymentsEnabled} onClick={()=>onChoose(selected,annual?'annual':'period')}>{busy?'Préparation…':`${currentPlan===selected?'Renouveler':'Choisir'} ${plan.name}`}<ArrowUpRight size={17} aria-hidden="true"/></button>
     {!owner&&<p className={styles.ownerNote}>Seul le propriétaire de l’espace peut gérer les paiements.</p>}
-    <div><dl className={styles.specs}>{specs.map(spec=><div key={spec.label}><div className={styles.specLine}><dt>{spec.label}</dt><dd>{spec.value}</dd></div><span className={styles.bar} aria-hidden="true"><span style={{width:`${spec.max>0?Math.min(100,spec.quantity/spec.max*100):0}%`}}/></span></div>)}</dl><p className={styles.comparisonNote}>Les barres comparent chaque ligne au forfait Business.</p></div>
-    <p className={styles.annualNote}>{annual?'Paiement annuel unique. Les crédits sont renouvelés chaque mois et expirent à la fin de chaque mois d’abonnement.':'Un seul solde pour la conversation, les créations et les outils. Les crédits du forfait expirent à la fin de la période.'}</p>
+    <div><dl className={styles.specs}>{specs.map(spec=><div key={spec.label}><div className={styles.specLine}><dt>{spec.label}</dt><dd>{spec.value}</dd></div><span className={styles.bar} aria-hidden="true"><span style={{width:`${spec.max>0?Math.min(100,spec.quantity/spec.max*100):0}%`}}/></span></div>)}</dl><p className={styles.comparisonNote}>Sur tous les forfaits : un cerveau qui s’adapte à chaque demande, rapide au quotidien et expert sur vos dossiers importants. Les barres comparent au forfait Entreprise.</p></div>
+    <p className={styles.annualNote}>{selected==='enterprise'&&<><a className={styles.contact} href={'mailto:novacore629@gmail.com?subject='+encodeURIComponent('Braand Entreprise : besoin sur mesure')}>Besoin de plus ? Contrat sur mesure</a> · </>}{annual?'Paiement annuel unique. Les crédits sont renouvelés chaque mois et expirent à la fin de chaque mois d’abonnement.':'Un seul solde pour la conversation, les créations et les outils. Les crédits du forfait expirent à la fin de la période.'}</p>
    </div>
   </section>
   {currentPlan&&PLAN_IDS.includes(currentPlan as PlanId)&&PLAN_IDS.indexOf(selected)>PLAN_IDS.indexOf(currentPlan as PlanId)&&<button type="button" className="button secondary" disabled={busy||!owner} onClick={()=>onUpgrade(selected)}>Passer à {plan.name} maintenant · voir le prorata<ArrowUpRight size={16}/></button>}

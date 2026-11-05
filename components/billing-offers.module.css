@@ -80,3 +80,11 @@
 @container (max-width:680px){.offers{gap:24px}.instrument{grid-template-columns:1fr}.stage{padding:28px 24px;gap:24px}.gauge{width:min(330px,100%)}.gaugeValue strong{font-size:clamp(76px,22cqw,106px)}.details{padding:32px 24px;border-left:0;border-top:1px solid var(--ds-line)}.price strong{font-size:clamp(48px,13cqw,70px)}.price{min-height:0}.planIntro p{min-height:0}.ticket{width:100px;padding:24px 16px}.ticket strong{font-size:var(--text-3xl)}.discoveryBody{padding:24px 20px}.discoveryBody h2{font-size:var(--text-xl);line-height:30px}.discoveryBody p{font-size:var(--text-sm)}}
 @container (max-width:360px){.ticket{width:72px;padding:24px 10px}.ticket strong{font-size:var(--text-3xl)}.discoveryBody{padding:24px 16px}.planIntro>div{align-items:flex-start;flex-wrap:wrap}.specLine{gap:12px}.specLine dd{font-size:var(--text-xs)}.explainerGrid article{gap:12px;padding:16px}.period>span{font-size:var(--text-xs)}}
 @media(prefers-reduced-motion:reduce){.offers *,.offers *::before,.offers *::after{animation:none!important;transition:none!important}}
+/* Four plans in the same switch width: tighter padding, price without currency (said in the label). */
+.planSwitch{gap:4px;padding:5px}
+.planSwitch button{padding:11px 10px}
+.planSwitch strong{white-space:nowrap}
+.contact{color:var(--ds-text);text-decoration:underline;text-underline-offset:3px}
+.contact:hover{color:var(--ds-text)}
+@container (max-width:900px){.planSwitch button{padding:10px 8px}}
+@container (max-width:680px){.planSwitch{overflow-x:auto;scrollbar-width:none}.planSwitch::-webkit-scrollbar{display:none}.planSwitch button{flex:1 0 auto;padding:10px 8px}.planSwitch strong{font-size:13px}}

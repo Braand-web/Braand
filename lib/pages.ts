@@ -15,7 +15,7 @@ export function pagesOrigin(){
  return url.origin;
 }
 async function digest(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}
-async function canHostPage(organization:string,workspace:string){const sub=await currentSubscription(organization);if(!sub)return false;if(sub.plan==='business')return true;const owner=await db().prepare('SELECT owner_id FROM organizations WHERE id=?').bind(organization).first<{owner_id:string}>();return owner?.owner_id===workspace;}
+async function canHostPage(organization:string,workspace:string){const sub=await currentSubscription(organization);if(!sub)return false;if(sub.plan==='business'||sub.plan==='enterprise')return true;const owner=await db().prepare('SELECT owner_id FROM organizations WHERE id=?').bind(organization).first<{owner_id:string}>();return owner?.owner_id===workspace;}
 async function pageEntitlement(organization:string,workspace:string){if(!await canHostPage(organization,workspace))throw new AppError('La publication de cet espace nécessite un abonnement actif adapté.',403,'page_subscription_required');}
 function publicUrl(id:string){return pagesOrigin()+'/api/published/'+encodeURIComponent(id);}
 async function publicationAudit(who:BillingIdentity,action:string,id:string){await db().prepare('INSERT INTO audit(id,workspace_id,actor,action,target,detail,created_at) VALUES (?,?,?,?,?,?,?)').bind(uid(),who.tenant,who.user.userId,action,id,'{}',Date.now()).run();}
