@@ -36,9 +36,10 @@ if(database.type!=='d1'||files.type!=='r2_bucket'||backups.type!=='r2_bucket'||b
 // missing subdomain can never block the app deploy.
 let sitesOrigin='';
 try{
- const sub=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/subdomain`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(15000)}).then(r=>r.json());
+ const answer=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/subdomain`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(15000)}),sub=await answer.json().catch(()=>null);
  if(sub?.success&&/^[a-z0-9-]{1,63}$/.test(sub.result?.subdomain||''))sitesOrigin=`https://${script}.${sub.result.subdomain}.workers.dev`;
- else console.log('No readable workers.dev subdomain: published sites stay off.');
+ // Cloudflare's own reason (status and error codes only, never the token).
+ else console.log(`No readable workers.dev subdomain (HTTP ${answer.status}; ${(sub?.errors||[]).map(e=>`${e.code}: ${e.message}`).join(' | ')||'no subdomain registered'}): published sites stay off.`);
 }catch{console.log('workers.dev subdomain unavailable: published sites stay off.');}
 if(sitesOrigin&&process.env.GITHUB_ENV)(await import('node:fs')).appendFileSync(process.env.GITHUB_ENV,`BRAAND_SITES_ORIGIN=${sitesOrigin}\n`);
 const config={name:script,account_id:account,main:path.join(root,'dist/server/index.js'),no_bundle:true,
