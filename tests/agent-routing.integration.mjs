@@ -11,7 +11,7 @@ function statement(query,args=[]){return {bind(...v){return statement(query,v);}
 const DB={prepare:q=>statement(q),async batch(ss){sql.exec('BEGIN');try{const r=ss.map(s=>s._run());sql.exec('COMMIT');return r;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 const fixture={env:{DB},headers:new Headers({'x-braand-identity-id':'agent-routing-owner','x-braand-identity-email':'owner@test.invalid'}),requests:[],responses:[],external:[],events:[],beforeTools:0};globalThis.__agentRoutingTest=fixture;
 const out=path.join(project,'.local-build','agent-routing-test.mjs');mkdirSync(path.dirname(out),{recursive:true});
-await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(project,'lib/agent.ts').replaceAll('\\','/'))};export * as context from ${JSON.stringify(path.join(project,'lib/project-context.ts').replaceAll('\\','/'))};export * as interaction from ${JSON.stringify(path.join(project,'app/api/chat/interaction/route.ts').replaceAll('\\','/'))};export * as server from ${JSON.stringify(path.join(project,'lib/server.ts').replaceAll('\\','/'))};export * as memory from ${JSON.stringify(path.join(project,'lib/agent-memory.ts').replaceAll('\\','/'))};`,resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'agent-routing-isolation',setup(b){
+await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(project,'lib/agent.ts').replaceAll('\\','/'))};export * as uiContext from ${JSON.stringify(path.join(project,'lib/ui-context.ts').replaceAll('\\','/'))};export * as context from ${JSON.stringify(path.join(project,'lib/project-context.ts').replaceAll('\\','/'))};export * as interaction from ${JSON.stringify(path.join(project,'app/api/chat/interaction/route.ts').replaceAll('\\','/'))};export * as server from ${JSON.stringify(path.join(project,'lib/server.ts').replaceAll('\\','/'))};export * as memory from ${JSON.stringify(path.join(project,'lib/agent-memory.ts').replaceAll('\\','/'))};`,resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'agent-routing-isolation',setup(b){
  b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},a=>({path:a.path,namespace:'bindings'}));
  b.onLoad({filter:/.*/,namespace:'bindings'},a=>({contents:a.path==='cloudflare:workers'?'export const env=globalThis.__agentRoutingTest.env;':a.path==='next/headers'?'export async function headers(){return globalThis.__agentRoutingTest.headers;}':'export function redirect(){throw Error("Unexpected redirect");}'}));
  b.onResolve({filter:/^\.\/(metering|composio|browser|browser-agent|providers|platform-runtime)$/},a=>({path:a.path,namespace:'fixture'}));
@@ -24,7 +24,7 @@ await build({stdin:{contents:`export * as agent from ${JSON.stringify(path.join(
   './browser-agent':`export async function runBrowserAgentTurn(){throw Error('Unexpected browser runner');}`,
  }[a.path]}));
 }}]});
-const {agent,server,context,interaction,memory}=await import(pathToFileURL(out).href),who=await server.identity(new Request('https://braand.test/api/chat'));
+const {agent,server,context,interaction,memory,uiContext}=await import(pathToFileURL(out).href),who=await server.identity(new Request('https://braand.test/api/chat'));
 globalThis.fetch=async()=>{throw Error('Network forbidden in orchestrator routing tests');};
 const emit=async(type,data)=>{fixture.events.push({type,data});},signal=()=>new AbortController().signal;
 function stream(blocks){return [{type:'message_start',message:{model:'fixture',usage:{}}},...blocks.flatMap((block,index)=>block.type==='tool_use'?[{type:'content_block_start',index,content_block:{...block,input:{}}},{type:'content_block_delta',index,delta:{type:'input_json_delta',partial_json:JSON.stringify(block.input)}},{type:'content_block_stop',index}]:[{type:'content_block_start',index,content_block:{...block,text:''}},{type:'content_block_delta',index,delta:{type:'text_delta',text:block.text||''}},{type:'content_block_stop',index}]),{type:'message_stop'}].map(event=>'event: '+event.type+'\ndata: '+JSON.stringify(event)+'\n\n').join('');}
@@ -411,6 +411,18 @@ await check('adaptive selection is model-led, silent, bounded and resets for eac
  assert.equal(fixture.requests[1].body.messages[0].content[0].text,'Contexte privé de cet espace');
  const next=await setup();fixture.responses=[text('Bonjour.')];await run(next);assert.equal(fixture.requests.length,1);assert.equal(fixture.requests[0].routing.tier,'light');
  delete fixture.env.MODEL_ROUTING_ENABLED;delete fixture.env.MODEL_ROUTING_POLICY;
+});
+await check('Braand opens its own screens, asks for a screenshot, and sees where the user is',async()=>{
+ const execution=await setup();
+ execution.budget.uiContext=await uiContext.describeUiContext(who.tenant,{view:'files',modal:'settings',settingsTab:'billing',device:'mobile',lastError:'Paiement indisponible',panel:{resourceId:'resource-of-another-workspace'}});
+ fixture.responses=[call('nav','navigate_ui',{target:'settings:billing'}),call('admin','navigate_ui',{target:'admin'}),call('missing','navigate_ui',{target:'resource'}),call('foreign','navigate_ui',{target:'resource',resourceId:'resource-of-another-workspace'}),call('capture','request_screen_capture',{reason:'Voir l’erreur'}),call('bad','navigate_ui',{target:'view:nowhere'}),text('Je vous ai ouvert la facturation.')];
+ await run(execution);
+ const nav=fixture.events.filter(event=>event.type==='navigate_ui');assert.equal(nav.length,1);assert.deepEqual({target:nav[0].data.target,label:nav[0].data.label},{target:'settings:billing',label:'Paramètres → Facturation'});
+ assert.equal(fixture.events.filter(event=>event.type==='screen_capture_request').length,1);
+ const results=fixture.requests.at(-1).body.messages.flatMap(message=>Array.isArray(message.content)?message.content:[]).filter(block=>block.type==='tool_result');
+ for(const id of ['admin','missing','foreign','bad'])assert.equal(results.find(result=>result.tool_use_id===id)?.is_error,true,id);
+ const system=JSON.stringify(fixture.requests[0].body.system);assert.match(system,/Écran : Fichiers/);assert.match(system,/Paramètres → Facturation/);assert.match(system,/téléphone/);assert.match(system,/Paiement indisponible/);assert.doesNotMatch(system,/resource-of-another-workspace/);
+ assert.ok(fixture.requests[0].body.tools.some(tool=>tool.name==='navigate_ui'));
 });
 await check('ordinary tool use does not itself force an expensive model and invalid escalation does not change capacity',async()=>{
  enableAdaptive();

@@ -9,12 +9,10 @@ import {releaseReadiness} from './billing';
 import {modelReadiness} from './metering';
 import {routingEnabled,routingReadiness} from './model-router';
 
-// Platform owner (verified account). Worker variables are full, so the owner
-// is declared in code; OPS_ADMIN_IDS / BILLING_ADMIN_IDS still add admins.
-export const PLATFORM_OWNER_IDS=['0301d63c-9f01-4181-bc06-1e1162d4908f'];
+export {PLATFORM_OWNER_IDS,platformAdminIds} from './platform-owners';
+import {platformAdminIds} from './platform-owners';
 const DAY=86400000;
 
-export function platformAdminIds(){const c=config();return new Set([...PLATFORM_OWNER_IDS,...[c.OPS_ADMIN_IDS,c.BILLING_ADMIN_IDS].flatMap(v=>(v||'').split(',')).map(v=>v.trim()).filter(Boolean)]);}
 export async function isPlatformAdmin(userId:string){return platformAdminIds().has(userId);}
 export async function requirePlatformAdmin(request:Request){
  const who=await identity(request,'read');

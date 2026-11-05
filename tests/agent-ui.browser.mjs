@@ -29,7 +29,7 @@ const sources=[{id:'source-real',title:'Rapport de test',domain:'example.org',ur
 const history=[];const votes=new Map();
 const workspaceResources=[proposal,conversation],workspaceMutations=[];
 let failSkills=false,browserWrites=0,anonymousSession=false,authSends=0;
-let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,failFeedback=false;
+let lastUi=null;let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,failFeedback=false;
 const firstChatHeaders=Promise.withResolvers();
 const backgroundCompletion=Promise.withResolvers();
 const deferredDelivery=Promise.withResolvers();
@@ -141,6 +141,11 @@ if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JS
       emit('assistant_message',{messageId:'background-message-'+index,runId:'background-'+index,sources:[]});emit('done',{runId:'background-'+index});res.end();return;
     }
     const generatedText=body.text==='Markdown multilingue'?'# Résumé\n\n- **مرحبا**\n- 世界\n\n| Pos. | Équipe | J | G | N | P | BP | BC | Diff. | Pts |\n|-|-|-|-|-|-|-|-|-|-|\n| 1 | | | | | | | | | |\n| 2 | | | | | | | | | |\n\n```json\n{"safe":"<img src=x onerror=alert(1)>"}\n```':'Résultat de test conservé.';
+    if(body.text==='Où changer mon forfait ?'){
+      lastUi=body.ui;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});const emit=(event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
+      emit('run',{runId:'ui-'+chatCalls,conversationId:'conversation-fixture'});emit('navigate_ui',{target:'settings:billing',resourceId:null,label:'Paramètres → Facturation'});emit('screen_capture_request',{reason:'Voir ce que vous voyez'});emit('text_delta',{text:'Je vous ai ouvert la facturation.'});
+      emit('assistant_message',{messageId:'ui-message-'+chatCalls,runId:'ui-'+chatCalls,sources:[]});emit('done',{runId:'ui-'+chatCalls});res.end();return;
+    }
     if(body.text==='Bonjour')await firstChatHeaders.promise;
     res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});
     const emit=(event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
@@ -786,6 +791,16 @@ try{
   assert.equal(browserWrites,0);assert.equal(checkoutCalls,0);checks.push('Atelier uses one content selector, handles unavailable navigation honestly, keeps the latest page/source, and restores chat and focus after expanded Escape');
 
   await page.setViewportSize({width:1280,height:800});await page.locator('.new-chat-icon').click();const liveDraft=page.getByRole('textbox',{name:'Votre demande à Braand'});await liveDraft.fill('Préserver le navigateur');await liveDraft.press('Enter');await page.getByText('Préparation du livrable de la fixture.',{exact:true}).waitFor();await page.getByRole('button',{name:'Ouvrir l’espace de travail',exact:true}).click();await picker.click();await page.getByRole('group',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByRole('button',{name:'Navigateur',exact:true}).click();await panel.getByRole('heading',{name:'Activation en attente',exact:true}).waitFor();deferredDelivery.resolve();await page.locator('.message.assistant .artifact-links button').filter({hasText:'Livrable pendant la navigation'}).waitFor();assert.ok(await panel.getByRole('heading',{name:'Sessions privées',exact:true}).isVisible());assert.equal(await panel.locator('.artifact-heading').count(),0);assert.equal(browserWrites,0);checks.push('A streamed deliverable appears in chat without taking over a manually selected browser context');
+  // Braand sees where the user is and opens its own screens.
+  await page.locator('.new-chat-icon').click();const uiDraft=page.getByRole('textbox',{name:'Votre demande à Braand'});await uiDraft.fill('Où changer mon forfait ?');await uiDraft.press('Enter');
+  const billingDialog=page.getByRole('dialog').filter({hasText:'Facturation'});await billingDialog.first().waitFor();
+  assert.equal(lastUi.view,'chat');assert.ok(['mobile','tablet','desktop'].includes(lastUi.device));assert.ok(['light','dark'].includes(lastUi.theme));
+  const navToast=page.locator('.nav-toast');await navToast.waitFor();assert.match(await navToast.innerText(),/Braand a ouvert Paramètres → Facturation/);
+  const captureCard=page.getByRole('dialog',{name:'Braand aimerait voir votre écran'});await captureCard.waitFor();assert.match(await captureCard.innerText(),/Voir ce que vous voyez/);
+  await captureCard.getByRole('button',{name:'Non merci',exact:true}).click();assert.equal(await captureCard.count(),0);
+  await navToast.getByRole('button',{name:'Revenir',exact:true}).click();await page.waitForFunction(()=>!new URL(location.href).searchParams.get('settings'));
+  assert.equal(await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).count(),1);
+  checks.push('Braand receives the open screen with each message, opens Settings → Facturation itself with a way back, and asks to see the screen only through a card the user can decline');
   // The reported 774px layout must stay aligned, compact and usable with a real draft.
   await page.setViewportSize({width:1280,height:800});await page.goto(origin);await page.locator('.account-trigger:not(:disabled)').waitFor();
   const callsBeforeLayout=chatCalls;

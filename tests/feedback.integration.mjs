@@ -18,9 +18,9 @@ globalThis.__fb={db:D1,env:{BUCKET:{async get(k){const b=objects.get(k);return b
 const stubs={
  './server':`const F=globalThis.__fb;export const db=()=>F.db;export const config=()=>F.env;export const uid=()=>crypto.randomUUID();`,
  './billing':`export async function currentSubscription(org){return globalThis.__fb.paid.has(org)?{plan:'pro'}:null;}`,
- './platform-admin':`export const platformAdminIds=()=>new Set(['admin']);`,
+ './platform-owners':`export const platformAdminIds=()=>new Set(['admin']);`,
 };
-await build({entryPoints:[path.join(root,'lib/feedback.ts')],outfile:path.join(out,'feedback.mjs'),bundle:true,platform:'node',format:'esm',external:['zod'],plugins:[{name:'stubs',setup(b){b.onResolve({filter:/^\.\/(server|billing|platform-admin)$/},a=>({path:a.path,namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js',resolveDir:root}));}}]});
+await build({entryPoints:[path.join(root,'lib/feedback.ts')],outfile:path.join(out,'feedback.mjs'),bundle:true,platform:'node',format:'esm',external:['zod'],plugins:[{name:'stubs',setup(b){b.onResolve({filter:/^\.\/(server|billing|platform-owners)$/},a=>({path:a.path,namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js',resolveDir:root}));}}]});
 const fb=await import(pathToFileURL(path.join(out,'feedback.mjs')));
 const who=(id,name)=>({tenant:'ws-'+id,organization:'org-'+id,user:{userId:id,email:id+'@exemple.cm',displayName:id,fullName:name}});
 const marie=who('marie','Marie Dupont'),paul=who('paul','Paul Mbarga'),awa=who('awa',null),admin=who('admin','Équipe');

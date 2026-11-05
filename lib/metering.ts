@@ -9,7 +9,7 @@ import {routedRequest,normalizedResponses,anthropicBody} from './model-client';
 import {ensureModelPricing,currentPricingRate} from './model-pricing';
 import {toolUsage} from './tool-usage';
 export type {ModelRate} from './model-protocol';
-export type RunBudget={referenceProjectIds?:string[];who:BillingIdentity;holdId:string;limit:number;runId:string;rate:ModelRate;videoMotionPreferred?:boolean;workId?:string;workStepId?:string;workContext?:string;beforeTool?:()=>Promise<void>;beforeModel?:()=>Promise<void>};
+export type RunBudget={referenceProjectIds?:string[];uiContext?:string|null;who:BillingIdentity;holdId:string;limit:number;runId:string;rate:ModelRate;videoMotionPreferred?:boolean;workId?:string;workStepId?:string;workContext?:string;beforeTool?:()=>Promise<void>;beforeModel?:()=>Promise<void>};
 export type RunSettlementBudget=Pick<RunBudget,'runId'|'holdId'>&{rate?:ModelRate};
 type ReconciliationUsage=ModelCostRow&{id:string;rate:string;request_id:string;run_id:string;hold_id:string};
 type ModelRateIssue='missing_rate'|'invalid_rate'|'invalid_verified_at'|'future_rate'|'stale_rate'|'model_mismatch'|'funding_fee_unverified';

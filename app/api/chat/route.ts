@@ -20,7 +20,7 @@ export async function POST(request:Request){
   const who=await identity(request);tenant=who.tenant;
   await ensureModelPricing();
   if(routingEnabled(config()))routedModel(config(),{task:'conversation'});else requireModel();
-  const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().max(160).optional(),projectId:z.string().max(160).nullable().optional(),referenceProjectIds:z.array(z.string().max(160)).max(3).default([]),attachments:z.array(z.string().max(160)).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied")}).parse(await privateJSON(request,80000));
+  const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().max(160).optional(),projectId:z.string().max(160).nullable().optional(),referenceProjectIds:z.array(z.string().max(160)).max(3).default([]),attachments:z.array(z.string().max(160)).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied"),ui:z.unknown().optional()}).parse(await privateJSON(request,80000));
   if(containsExplicitLoginSecret(body.text))throw new AppError('Cette saisie semble contenir un identifiant secret. Utilisez la saisie sécurisée dans Paramètres → Autorisations, ou dans le navigateur sous votre contrôle.',400,'secure_login_input_required');
   if((body.projectId||body.referenceProjectIds.length)&&config().PROJECT_CONTEXT_V1!=='true')throw new AppError('Le contexte par projet n’est pas encore activé.',409,'project_context_unavailable');
   if(body.projectId)await checkedProject(tenant,body.projectId);for(const id of body.referenceProjectIds)await checkedProject(tenant,id);
@@ -30,7 +30,7 @@ export async function POST(request:Request){
   const content:Array<Record<string,unknown>>=[{type:"text",text:body.text}];
   for(const id of body.attachments){const file=await getResource(tenant,id);if(file.kind!=="file")throw new AppError("Pièce jointe invalide.");const fileRow=await db().prepare("SELECT * FROM files WHERE id=? AND workspace_id=?").bind(id,tenant).first<FileRecord>();if(!fileRow||fileRow.status!=="ready")throw new AppError("Cette pièce jointe n’est pas encore disponible.",409,"file_not_ready");const bucket=(await import("cloudflare:workers")).env.BUCKET;content.push(...await chatAttachmentBlocks({title:file.title,data:{...file.data,mime:fileRow.detected_mime,key:fileRow.storage_key}},key=>bucket?.get(key)??Promise.resolve(null)));}
   const runId=uid(),now=Date.now();
-  budget=await startRunBudget(who,runId,body.maxCredits);budget.referenceProjectIds=body.referenceProjectIds;
+  budget=await startRunBudget(who,runId,body.maxCredits);budget.referenceProjectIds=body.referenceProjectIds;budget.uiContext=await (await import('@/lib/ui-context')).describeUiContext(tenant,body.ui).catch(()=>null);
   await db().batch([db().prepare("INSERT INTO messages (id,workspace_id,conversation_id,role,content,attachments,created_at) VALUES (?,?,?,'user',?,?,?)").bind(uid(),tenant,conversationId,JSON.stringify(content),JSON.stringify(body.attachments),now),db().prepare("INSERT INTO runs (id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,'streaming',?,?)").bind(runId,tenant,conversationId,now,now)]);
   const encoder=new TextEncoder(),abort=new AbortController();let clientClosed=false,lastHeartbeat=Date.now();
   const stream=new ReadableStream({

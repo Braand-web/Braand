@@ -6,7 +6,7 @@ import {z} from 'zod';
 import {config,db,uid} from './server';
 import {AppError} from './core.mjs';
 import {currentSubscription,type BillingIdentity} from './billing';
-import {platformAdminIds} from './platform-admin';
+import {platformAdminIds} from './platform-owners';
 import {FEEDBACK_SCHEMA,FEEDBACK_STATUSES} from './feedback-schema.mjs';
 import {FEEDBACK_LIMITS,FeedbackRuleError,canSee,publicName,similarPosts,sortPosts,toPublicComment,toPublicPost,validateComment,validatePost,validateReason,SORTS,isStatus} from './feedback-rules.mjs';
 
