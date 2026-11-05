@@ -7,13 +7,15 @@ export function resourceImage(resource:Resource):string|null{
  const value=text(object(images[0]).url);
  try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)?url.href:null;}catch{return null;}
 }
+export type LibraryCategory='creations'|'documents'|'files'|'pages';
 export function libraryPresentation(resource:Resource){
  const mime=text(resource.data.mime),output=object(resource.data.output),format=text(resource.data.format);
  const video=Boolean(output.video)||Array.isArray(output.videos)&&output.videos.length>0||mime.startsWith('video/');
  const audio=Boolean(output.audio)||mime.startsWith('audio/');
  const image=Boolean(resourceImage(resource))||mime.startsWith('image/');
  const source=format==='source-project'||/zip|javascript|json/.test(mime);
- const category=resource.kind==='page'?'pages':['media','proposal'].includes(resource.kind)||image||video||audio?'creations':'documents';
+ // Imported files keep their own tab; what Braand produced is a visual or a document.
+ const category:LibraryCategory=resource.kind==='page'?'pages':resource.kind==='file'?'files':['media','proposal'].includes(resource.kind)||image||video||audio?'creations':'documents';
  const type=resource.kind==='page'?'Page':resource.kind==='proposal'?'Demande de création':video?'Vidéo':audio?'Audio':image?'Image':source?'Sources':mime==='application/pdf'?'PDF':resource.kind==='deliverable'?'Livrable':resource.kind==='file'?'Fichier':'Document';
  const title=text(resource.data.title)||resource.title;
  const sections=Array.isArray(resource.data.sections)?resource.data.sections:[];

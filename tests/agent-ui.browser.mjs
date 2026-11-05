@@ -714,7 +714,7 @@ try{
    {...conversation,id:'gallery-foreign',workspace_id:'other-workspace',kind:'deliverable',title:'Document d’un autre espace',data:{}}
   );
   await page.setViewportSize({width:1280,height:800});await page.goto(origin+'/?view=library');await page.getByRole('heading',{name:'Bibliothèque',exact:true}).waitFor();
-  const library=page.locator('[data-library-gallery]'),libraryFilters=library.getByRole('group',{name:'Contenu de la bibliothèque',exact:true}),libraryItems=library.locator('[data-library-resource]');
+  const library=page.locator('[data-library-gallery]'),libraryFilters=library.getByRole('navigation',{name:'Sections de la bibliothèque',exact:true}),libraryItems=library.locator('[data-library-resource]');
   const libraryCalls=chatCalls;
   assert.equal(await library.getByRole('button',{name:'Ouvrir Document d’un autre espace',exact:true}).count(),0);
   assert.equal(await library.getByRole('button',{name:'Ouvrir Document en validation.pdf',exact:true}).isDisabled(),true);
@@ -725,9 +725,9 @@ try{
   await library.getByRole('searchbox',{name:'Rechercher dans la bibliothèque',exact:true}).fill('Rapport de la bibliothèque');assert.equal(await libraryItems.count(),1);assert.match(await libraryItems.innerText(),/Livrable/);
   await library.getByRole('searchbox',{name:'Rechercher dans la bibliothèque',exact:true}).fill('aucun-résultat-unique');await library.getByRole('heading',{name:'Aucune correspondance',exact:true}).waitFor();await library.getByRole('button',{name:'Voir toutes les ressources',exact:true}).click();
   await page.evaluate(()=>localStorage.setItem('braand.library.pins:other-user:other-workspace',JSON.stringify(['campaign-asset'])));
-  await library.getByRole('button',{name:'Épingler Rapport de la bibliothèque',exact:true}).click();await libraryFilters.getByRole('button',{name:'Épinglés',exact:true}).click();assert.equal(await libraryItems.count(),1);assert.match(await libraryItems.innerText(),/Rapport de la bibliothèque/);
-  await page.reload();await library.waitFor();await libraryFilters.getByRole('button',{name:'Épinglés',exact:true}).click();assert.equal(await libraryItems.count(),1);assert.match(await libraryItems.innerText(),/Rapport de la bibliothèque/);assert.equal(await page.evaluate(()=>localStorage.getItem('braand.library.pins:other-user:other-workspace')),'["campaign-asset"]');
-  await libraryFilters.getByRole('button',{name:'Tout',exact:true}).click();await library.getByRole('button',{name:'Vue galerie',exact:true}).click();
+  await library.getByRole('button',{name:'Épingler Rapport de la bibliothèque',exact:true}).click();const pinnedItems=library.getByRole('region',{name:'Épinglés',exact:true}).locator('[data-library-resource]');assert.equal(await pinnedItems.count(),1);assert.match(await pinnedItems.innerText(),/Rapport de la bibliothèque/);assert.equal(await libraryItems.first().getAttribute('data-pinned'),'true');
+  await page.reload();await library.waitFor();assert.equal(await pinnedItems.count(),1);assert.match(await pinnedItems.innerText(),/Rapport de la bibliothèque/);assert.equal(await library.getByRole('button',{name:'Vue liste',exact:true}).getAttribute('aria-pressed'),'true','the list view is remembered on this device');assert.equal(await page.evaluate(()=>localStorage.getItem('braand.library.pins:other-user:other-workspace')),'["campaign-asset"]');
+  await library.getByRole('button',{name:'Désépingler Rapport de la bibliothèque',exact:true}).click();await libraryFilters.getByRole('button',{name:'Tout',exact:true}).click();await library.getByRole('button',{name:'Vue galerie',exact:true}).click();
   await capture({path:path.join(output,'library-gallery-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await capture({path:path.join(output,'library-gallery-mobile.png'),fullPage:true});await library.getByRole('button',{name:'Vue liste',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await capture({path:path.join(output,'library-list-mobile.png'),fullPage:true});
   await page.setViewportSize({width:1280,height:800});await library.getByRole('button',{name:'Vue galerie',exact:true}).click();assert.equal(chatCalls,libraryCalls);
@@ -739,10 +739,10 @@ try{
   assert.equal(await primary.getByRole('button',{name:'Connecteurs',exact:true}).count(),0);
   assert.ok(await primary.getByRole('region',{name:'Projets',exact:true}).isVisible());
   assert.ok(await primary.getByRole('region',{name:'Historique des discussions',exact:true}).isVisible());
-  await page.getByRole('group',{name:'Contenu de la bibliothèque',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();
+  await page.getByRole('navigation',{name:'Sections de la bibliothèque',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();await page.waitForURL(url=>new URL(url).searchParams.get('view')==='pages');
   assert.equal(await page.locator('[data-library-resource]').count(),workspaceResources.filter(r=>r.kind==='page').length);
   const librarySections=page.getByRole('navigation',{name:'Sections de la bibliothèque',exact:true});
-  await librarySections.getByRole('button',{name:'Visuels',exact:true}).click();await page.getByRole('heading',{name:'Créations',exact:true}).waitFor();
+  await librarySections.getByRole('button',{name:'Visuels',exact:true}).click();await page.waitForURL(url=>new URL(url).searchParams.get('view')==='creations');await page.getByRole('heading',{name:'Bibliothèque',exact:true}).waitFor();assert.equal(await librarySections.getByRole('button',{name:'Visuels',exact:true}).getAttribute('aria-current'),'page');
   assert.equal(await primary.getByRole('button',{name:'Bibliothèque',exact:true}).getAttribute('aria-current'),'page');
   await librarySections.getByRole('button',{name:'Publications',exact:true}).click();await page.getByRole('heading',{name:'Publications',exact:true}).waitFor();
   await primary.getByRole('button',{name:'Activité',exact:true}).click();await page.getByRole('heading',{name:'Missions',exact:true}).waitFor();assert.equal(new URL(page.url()).searchParams.has('section'),false);
@@ -772,7 +772,7 @@ try{
   await panel.getByRole('button',{name:'Agrandir',exact:true}).click();assert.equal(await page.locator('.main-area').isVisible(),false);
   await picker.press('ArrowDown');await page.keyboard.press('Escape');assert.equal(await panel.isVisible(),true);
   await page.keyboard.press('Escape');assert.equal(await panel.count(),0);assert.equal(await page.locator('.main-area').isVisible(),true);await page.waitForFunction(()=>document.activeElement?.hasAttribute('data-workspace-trigger'));
-  await primary.getByRole('button',{name:'Bibliothèque',exact:true}).click();await page.getByRole('group',{name:'Contenu de la bibliothèque',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();
+  await primary.getByRole('button',{name:'Bibliothèque',exact:true}).click();await page.getByRole('navigation',{name:'Sections de la bibliothèque',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();
   await page.getByRole('button',{name:'Ouvrir Page de contrôle A',exact:true}).click();
   await picker.click();await page.getByRole('group',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByRole('button',{name:'Page de contrôle B',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.page-frame iframe')?.getAttribute('srcdoc')?.includes('Page B'));
