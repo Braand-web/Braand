@@ -9,7 +9,8 @@ const {unzipSync}=createRequire(path.join(process.env.BRAAND_TOOLCHAIN||path.res
 
 test('native tool metadata imports without a bundler and discovery still requires readiness and write access',()=>{
  for(const [area,read,write] of [['analysis','get_analysis_result','analyze_data'],['software','get_source_project','save_source_project']]){
-  assert.deepEqual(discoveredPlatformTools(area,{[area]:{ready:true},canWrite:false}).map(t=>t.name),[read]);
+  assert.deepEqual(discoveredPlatformTools(area,{[area]:{ready:true},canWrite:false}).map(t=>t.name).sort(),(area==='software'?[read,'list_site_files','read_site_file','check_site']:[read]).sort());
+  if(area==='software')assert.ok(!discoveredPlatformTools(area,{[area]:{ready:true},canWrite:false}).some(t=>['create_site','write_site_file','import_site_asset','delete_site_file'].includes(t.name)));
   assert.ok(!discoveredPlatformTools(area,{[area]:{ready:false},canWrite:true}).some(t=>t.name===write));
   assert.ok(discoveredPlatformTools(area,{[area]:{ready:true},canWrite:true}).some(t=>t.name===write));
  }

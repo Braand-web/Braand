@@ -14,3 +14,7 @@
 .proposal-card-link { justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--color-link, var(--color-accent)); font-size: var(--text-sm); cursor: pointer; }
 .proposal-card-plan { padding: var(--space-3); }
 @media (prefers-reduced-motion: reduce) { .proposal-card, .proposal-card-media { animation: none; } }
+.site-preview{position:fixed;inset:24px;z-index:80;display:flex;flex-direction:column;border:1px solid var(--ds-line,rgba(0,0,0,.12));border-radius:16px;overflow:hidden;background:var(--ds-surface,#fff);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.site-preview-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--ds-line,rgba(0,0,0,.12));font-size:13px;font-weight:600}
+.site-preview iframe{flex:1;width:100%;border:0;background:#fff}
+@media(max-width:640px){.site-preview{inset:0;border-radius:0}}

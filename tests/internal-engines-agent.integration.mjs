@@ -55,7 +55,7 @@ await check('autonomy discovers computation and saves a verifiable private artif
 });
 await check('the real principal receives the new policy and runtime and can read guides and time',async()=>{
  const execution=await setup();fixture.responses=[stream([tool('context-discover','capabilities',{area:'context'})]),stream([tool('clock','get_current_time',{timezone:'Europe/Paris'}),tool('guide','read_agent_guide',{topic:'tool-map'})]),text('Voici les capacités et l’heure vérifiées.')];await run(execution);
- const initial=fixture.requests[0].body;assert.match(initial.system[0].text,/IDENTITÉ ET RELATION/);assert.ok(initial.system.some(block=>block.text.includes('braand-personal-agent-v3')));
+ const initial=fixture.requests[0].body;assert.match(initial.system[0].text,/IDENTITÉ ET RELATION/);assert.ok(initial.system.some(block=>block.text.includes('braand-personal-agent-v4')));
  assert.equal(initial.tools.some(t=>t.name==='read_agent_context'),false);assert.equal(fixture.requests[1].body.tools.some(t=>t.name==='read_agent_context'),true);assert.equal(fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='clock').data.result.timezone,'Europe/Paris');assert.match(fixture.events.find(e=>e.type==='tool_result'&&e.data.id==='guide').data.result.content,/Correspondance/);assert.deepEqual(fixture.external,[]);
 });
 await check('profile updates have durable receipts and appear in the next real conversation',async()=>{

@@ -18,6 +18,13 @@ export async function executePlatformTool(name: string, input: unknown, scope: A
         case 'get_routine': return (await import('./routines')).getRoutine(scope.tenant,parseId());
         case 'export_deliverable': return (await import('./document-delivery')).exportDeliverable(budget.who,input);
         case 'create_office_document': return (await import('./office-document-delivery')).createOfficeDocument(budget.who,input);
+        case 'create_site': return (await import('./sites')).createSite(budget.who,input);
+        case 'write_site_file': return (await import('./sites')).writeSiteFile(budget.who,input);
+        case 'import_site_asset': return (await import('./sites')).importSiteAsset(budget.who,input);
+        case 'read_site_file': return (await import('./sites')).readSiteFile(budget.who,input);
+        case 'list_site_files': return (await import('./sites')).listSiteFiles(budget.who,input);
+        case 'delete_site_file': return (await import('./sites')).deleteSiteFile(budget.who,input);
+        case 'check_site': return (await import('./sites')).checkSite(budget.who,input);
         case 'get_company_profile': {z.object({}).strict().parse(input);return (await import('./company-profile')).getCompanyProfile(budget.who);}
         case 'save_company_profile': return (await import('./company-profile')).saveCompanyProfile(budget.who,input);
         case 'render_visual': return (await import('./visual-delivery')).renderVisual(budget.who,input);
