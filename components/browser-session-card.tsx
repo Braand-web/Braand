@@ -2,14 +2,15 @@
 // A browser session in the conversation: the mission, one clear status, the
 // step in progress and the latest real picture of the page. Opens the panel.
 import {useEffect,useState} from "react";
-import {Globe2,ShieldAlert} from "lucide-react";
+import {Globe2} from "lucide-react";
 import type {BrowserSessionDTO} from "@/lib/browser-contracts";
 import {currentStep,sessionState} from "@/lib/browser-state.mjs";
 import {lastBrowserFrames} from "./browser-live-view";
+import {BrowserActionApproval} from "./approval-card";
 import "./browser-session-card.css";
 
 export function BrowserSessionCard({sessionId,onOpen}:{sessionId:string;onOpen:()=>void}){
- const [session,setSession]=useState<BrowserSessionDTO|null>(null),[thumb,setThumb]=useState<string|null>(null),[failed,setFailed]=useState(false);
+ const [session,setSession]=useState<BrowserSessionDTO|null>(null),[reload,setReload]=useState(0),[thumb,setThumb]=useState<string|null>(null),[failed,setFailed]=useState(false);
  useEffect(()=>{
   let stop=false,timer:ReturnType<typeof setTimeout>|undefined;
   const load=async()=>{
@@ -27,9 +28,9 @@ export function BrowserSessionCard({sessionId,onOpen}:{sessionId:string;onOpen:(
   };
   void load();
   return()=>{stop=true;clearTimeout(timer);};
- },[sessionId]);
+ },[sessionId,reload]);
  const state=session?sessionState(session):null,step=session?currentStep(session):"";
- return <div className="browser-card" role="group" aria-label={"Navigateur : "+(session?.objective||"session")} data-tone={state?.tone||"progress"}>
+ return <><div className="browser-card" role="group" aria-label={"Navigateur : "+(session?.objective||"session")} data-tone={state?.tone||"progress"}>
   <div className="browser-card-head"><span className="browser-card-icon"><Globe2 size={17} aria-hidden="true"/></span><div><strong>{session?.objective||"Session de navigateur"}</strong><span className="browser-card-status">{state?state.label:failed?"État indisponible":"Chargement…"}{step?<> · <span>{step}</span></>:null}</span></div></div>
   <button type="button" className="browser-card-thumb" onClick={onOpen} aria-label="Ouvrir le navigateur">
    {thumb?
@@ -38,7 +39,6 @@ export function BrowserSessionCard({sessionId,onOpen}:{sessionId:string;onOpen:(
     :<span className="browser-card-empty">{state?.live?"Le navigateur s’ouvre…":"Aucune image pour cette session"}</span>}
    {state&&!state.terminal&&<span className="browser-card-live" aria-hidden="true">{state.phase==="running"?"En direct":state.label}</span>}
   </button>
-  {session?.pendingAction&&<p className="browser-card-attention"><ShieldAlert size={15} aria-hidden="true"/>Votre accord est requis avant cette action.</p>}
-  <button type="button" className="button secondary browser-card-open" onClick={onOpen}>{session?.pendingAction?"Vérifier l’action":"Ouvrir le navigateur"}</button>
- </div>;
+  <button type="button" className="button secondary browser-card-open" onClick={onOpen}>Ouvrir le navigateur</button>
+ </div>{session?.pendingAction&&session.control!=="human"&&!state?.terminal&&<BrowserActionApproval key={session.pendingAction.id} session={session} action={session.pendingAction} onDecided={()=>setReload(value=>value+1)}/>}</>;
 }

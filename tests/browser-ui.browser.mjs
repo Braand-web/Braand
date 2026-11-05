@@ -13,7 +13,7 @@ const {chromium} = await import(playwright ? pathToFileURL(path.resolve(playwrig
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, '.tmp', 'browser-ui-browser');
 await mkdir(output, {recursive: true});
-await build({
+await build({external: ['/fonts/*'],
   stdin: {
     contents: 'import React from "react";import {createRoot} from "react-dom/client";import BrowserPanel from "./components/browser-panel";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/design-system.css";createRoot(document.getElementById("root")).render(<BrowserPanel conversationId="conversation-browser-fixture"/>);',
     resolveDir: root, loader: 'tsx',

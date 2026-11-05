@@ -5,7 +5,7 @@ import {ensureModelPricing} from '@/lib/model-pricing';
 import {z} from "zod";
 import {identity,db,uid,getResource,createResource,failure,config,decode,type StoredResource} from "@/lib/server";
 import {runAgent} from "@/lib/agent";
-import {bufferedAgentEvents} from "@/lib/agent-events";
+import {batchedEventWriter,bufferedAgentEvents} from "@/lib/agent-events";
 import {AppError} from "@/lib/core.mjs";
 import {startRunBudget,finishRunBudget,type RunBudget} from '@/lib/metering';
 import {FILE_POLICY,safeFileDto} from '@/lib/file-policy.mjs';
@@ -35,10 +35,15 @@ export async function POST(request:Request){
   const encoder=new TextEncoder(),abort=new AbortController();let clientClosed=false,lastHeartbeat=Date.now();
   const stream=new ReadableStream({
    async start(controller){
-    const buffered=bufferedAgentEvents(async(type:string,data:unknown)=>{if(Date.now()-lastHeartbeat>30000){lastHeartbeat=Date.now();await db().prepare("UPDATE runs SET updated_at=? WHERE id=? AND status='streaming'").bind(lastHeartbeat,runId).run();await db().prepare("UPDATE resources SET updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(lastHeartbeat,conversationId,tenant).run();}const saved=await db().prepare("INSERT INTO events (run_id,type,data,created_at) VALUES (?,?,?,?)").bind(runId,type,JSON.stringify(data),Date.now()).run();if(!clientClosed)controller.enqueue(encoder.encode("id: "+saved.meta.last_row_id+"\nevent: "+type+"\ndata: "+JSON.stringify(data)+"\n\n"));});const emit=buffered.emit;
+    const send=(chunk:string)=>{if(!clientClosed)try{controller.enqueue(encoder.encode(chunk));}catch{clientClosed=true;}};
+    // Keeps proxies and mobile networks from closing a quiet stream (long tool steps).
+    const keepAlive=setInterval(()=>send(": ping\n\n"),15000);
+    const touch=()=>{if(Date.now()-lastHeartbeat<=30000)return;lastHeartbeat=Date.now();void db().batch([db().prepare("UPDATE runs SET updated_at=? WHERE id=? AND status='streaming'").bind(lastHeartbeat,runId),db().prepare("UPDATE resources SET updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(lastHeartbeat,conversationId,tenant)]).catch(()=>undefined);};
+    const writer=batchedEventWriter(async events=>{touch();const now=Date.now();const results=await db().batch(events.map(event=>db().prepare("INSERT INTO events (run_id,type,data,created_at) VALUES (?,?,?,?)").bind(runId,event.type,JSON.stringify(event.data),now)));return results.map(result=>Number(result.meta.last_row_id));},(seq,type,data)=>send("id: "+seq+"\nevent: "+type+"\ndata: "+JSON.stringify(data)+"\n\n"));
+    const buffered=bufferedAgentEvents(writer);const emit=buffered.emit;
     try{await emit("run",{runId,conversationId});await runAgent(tenant,conversationId,runId,emit,abort.signal,budget!,body.workMode);const completed=await db().prepare("UPDATE runs SET status='completed',updated_at=? WHERE id=? AND workspace_id=? AND status='streaming'").bind(Date.now(),runId,tenant).run();if(!completed.meta.changes)throw new AppError('Réponse arrêtée.',499,'cancelled');await emit("done",{runId});}
     catch(error){await buffered.flush().catch(()=>undefined);await persistPartialText(tenant,conversationId,runId);const message=error instanceof AppError?error.message:"Le flux a été interrompu. Les étapes terminées restent enregistrées.";await db().prepare("UPDATE runs SET status=CASE WHEN status='cancelled' THEN status WHEN ? IN ('budget_exhausted','step_limit') THEN 'partial' ELSE 'failed' END,error=?,updated_at=? WHERE id=?").bind(error instanceof AppError?error.code:"technical_failure",message,Date.now(),runId).run();await emit("error",{message,code:error instanceof AppError?error.code:"technical_failure",runId});console.error(JSON.stringify({event:"agent_run_failed",runId,code:error instanceof AppError?error.code:"technical_failure"}));}
-    finally{try{await buffered.flush().catch(()=>undefined);await finishRunBudget(budget!);}finally{await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id=? AND workspace_id=?").bind(Date.now(),conversationId,tenant).run();if(!clientClosed)controller.close();}}
+    finally{clearInterval(keepAlive);try{await buffered.flush().catch(()=>undefined);await finishRunBudget(budget!);}finally{await db().prepare("UPDATE resources SET status='saved',updated_at=? WHERE id=? AND workspace_id=?").bind(Date.now(),conversationId,tenant).run();if(!clientClosed)controller.close();}}
    },cancel(){clientClosed=true;abort.abort();}
   });
   return new Response(stream,{headers:{"Content-Type":"text/event-stream","Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"}});
@@ -57,7 +62,7 @@ export async function GET(request:Request){try{
  const runIds=[...new Set(messages.filter(m=>m.role==='assistant'&&m.runId).map(m=>m.runId as string))].slice(-100);
  const byRun=new Map<string,Resource[]>();
  if(runIds.length){
-  const found=await db().prepare("SELECT DISTINCT e.run_id,r.* FROM events e JOIN resources r ON r.id=json_extract(e.data,'$.result.id') AND r.workspace_id=? WHERE e.type='tool_result' AND e.run_id IN ("+runIds.map(()=>'?').join(',')+") AND r.kind IN ('proposal','page','deliverable','media','campaign','brief','mission','work','file','skill') AND r.status!='deleted'").bind(tenant,...runIds).all<StoredResource&{run_id:string}>();
+  const found=await db().prepare("SELECT DISTINCT e.run_id,r.* FROM events e JOIN resources r ON r.id=json_extract(e.data,'$.result.id') AND r.workspace_id=? WHERE e.type='tool_result' AND e.run_id IN ("+runIds.map(()=>'?').join(',')+") AND r.kind IN ('proposal','page','deliverable','media','campaign','brief','mission','work','file','skill','connector_action') AND r.status!='deleted'").bind(tenant,...runIds).all<StoredResource&{run_id:string}>();
   for(const row of found.results){const list=byRun.get(row.run_id)||[];list.push(decode(row));byRun.set(row.run_id,list);}
  }
  const lastOfRun=new Map<string,string>();for(const m of messages)if(m.role==='assistant'&&m.runId)lastOfRun.set(m.runId,m.id);

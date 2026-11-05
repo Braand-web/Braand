@@ -21,4 +21,25 @@ function CopyTableButton({headers,rows}:{headers:string[];rows:string[][]}){
  return <button type="button" className="markdown-table-copy" onClick={()=>void copy()} aria-live="polite">{state==='done'?'Copié : collez dans Excel avec Ctrl+V':state==='failed'?'Copie impossible : sélectionnez le tableau':'Copier pour Excel'}</button>;
 }
 const Segment=memo(function Segment({kind,text,level,ordered,headers,rows,align}:Block){if(kind==='table')return <div className="markdown-table-block"><CopyTableButton headers={headers||[]} rows={rows||[]}/><div className="markdown-table-scroll" role="region" aria-label="Tableau de la réponse" tabIndex={0}><table><thead><tr>{headers?.map((cell,index)=><th scope="col" key={index} style={{textAlign:align?.[index]}}>{inline(cell)}</th>)}</tr></thead><tbody>{rows?.map((row,index)=><tr key={index}>{row.map((cell,column)=><td key={column} style={{textAlign:align?.[column]}}>{cell?inline(cell):<span className="markdown-empty-cell" aria-label="Non renseigné">—</span>}</td>)}</tr>)}</tbody></table></div></div>;if(kind==='code')return <pre style={{maxWidth:'100%',whiteSpace:'pre-wrap',overflowWrap:'anywhere',overflowX:'auto'}}><code>{text}</code></pre>;if(kind==='heading'){const Heading=level===1?'h2':level===2?'h3':'h4';return <Heading className="text-heading">{inline(text)}</Heading>;}if(kind==='list'){const List=ordered?'ol':'ul';return <List>{text.split('\n').map((item,index)=><li key={index}>{inline(item)}</li>)}</List>;}return <p style={{whiteSpace:'pre-wrap'}}>{inline(text)}</p>;});
-export const StreamingMarkdown=memo(function StreamingMarkdown({text}:{text:string}){const blocks=useMemo(()=>parse(text),[text]);return <div className="message-text">{blocks.map((block,index)=><Segment key={index} {...block}/>)}</div>;});
+export {parse as parseMarkdownBlocks};
+/** End of the last finished paragraph: a blank line outside any code block. */
+export function stableCut(text:string){
+ let cut=text.lastIndexOf('\n\n');
+ while(cut>0){const fences=(text.slice(0,cut).match(/^\s*```/gm)||[]).length;if(fences%2===0)return cut;cut=text.lastIndexOf('\n\n',cut-1);}
+ return 0;
+}
+/** Same blocks as parse(text): the finished part is reused, only the tail is read again. */
+export function joinBlocks(head:Block[],tail:Block[]):Block[]{
+ const last=head.at(-1),first=tail[0];
+ // A list may continue after a blank line: merge exactly as one parse would.
+ if(last?.kind==='list'&&first?.kind==='list'&&last.ordered===first.ordered)return [...head.slice(0,-1),{...last,text:last.text+'\n'+first.text},...tail.slice(1)];
+ return [...head,...tail];
+}
+// While a reply streams in, finished paragraphs are parsed once and kept; each
+// new piece of text only re-reads the paragraph being written.
+export const StreamingMarkdown=memo(function StreamingMarkdown({text}:{text:string}){
+ const cut=stableCut(text),head=text.slice(0,cut),tail=text.slice(cut);
+ const headBlocks=useMemo(()=>parse(head),[head]),tailBlocks=useMemo(()=>parse(tail),[tail]);
+ const blocks=useMemo(()=>joinBlocks(headBlocks,tailBlocks),[headBlocks,tailBlocks]);
+ return <div className="message-text">{blocks.map((block,index)=><Segment key={index} {...block}/>)}</div>;
+});

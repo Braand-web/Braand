@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,writeFileSync} from 'node:fs';
-import {bufferedAgentEvents} from '../lib/agent-events.ts';
+import {batchedEventWriter,bufferedAgentEvents} from '../lib/agent-events.ts';
 import {recoverChatEvents} from '../lib/chat-recovery.ts';
 import {parseSSE} from '../lib/core.mjs';
 const stream=text=>new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(text));controller.close();}});
@@ -38,4 +38,22 @@ test('local reproducible benchmark compares per-chunk writes against batched wri
  const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE events(seq INTEGER PRIMARY KEY,data TEXT)');const insert=db.prepare('INSERT INTO events(data) VALUES (?)');const chunks=Array.from({length:256},(_,i)=>i%2?'abc':'你好');let beforeFirst=null;const start=performance.now();for(const chunk of chunks){insert.run(chunk);beforeFirst??=performance.now()-start;}const baselineMs=performance.now()-start,baselineWrites=db.prepare('SELECT COUNT(*) n FROM events').get().n;
  db.exec('DELETE FROM events');let afterFirst=null;const afterStart=performance.now(),buffered=bufferedAgentEvents(async(type,data)=>{if(type==='text_delta'){insert.run(data.text);afterFirst??=performance.now()-afterStart;}},10000,256);for(const text of chunks)await buffered.emit('text_delta',{text});await buffered.flush();const afterMs=performance.now()-afterStart,rows=db.prepare('SELECT data FROM events ORDER BY seq').all();assert.equal(rows.map(row=>row.data).join(''),chunks.join(''));assert.ok(rows.length<baselineWrites);
  mkdirSync('.tmp',{recursive:true});writeFileSync('.tmp/agent-event-benchmark.json',JSON.stringify({environment:'isolated local Node/SQLite; not Cloudflare or real model latency',chunks:chunks.length,baseline:{writes:baselineWrites,totalMs:baselineMs,firstPersistedTextMs:beforeFirst},after:{writes:rows.length,totalMs:afterMs,firstPersistedTextMs:afterFirst},textIdentical:true,providerCalls:0,productionLatency:null,productionCost:null},null,2));db.close();
+});
+
+test('batched storage sends every event once, in order, with its stored number, in few database trips',async()=>{
+ let next=0;const trips=[],sent=[];
+ const write=batchedEventWriter(async events=>{trips.push(events.length);await new Promise(resolve=>setTimeout(resolve,5));return events.map(()=>++next);},(seq,type,data)=>sent.push({seq,type,text:data.text}));
+ const buffered=bufferedAgentEvents(write,10000,1);
+ await buffered.emit('run',{runId:'r'});
+ for(const text of ['Bon','jour',' à',' tous'])await buffered.emit('text_delta',{text});
+ await buffered.emit('done',{});
+ assert.deepEqual(sent.map(event=>event.seq),[1,2,3,4,5,6]);
+ assert.equal(sent.filter(event=>event.type==='text_delta').map(event=>event.text).join(''),'Bonjour à tous');
+ assert.ok(trips.length<6,'events that arrive together share one trip: '+trips);
+});
+test('a storage failure in a batch rejects that batch and everything after it',async()=>{
+ const sent=[];let calls=0;
+ const write=batchedEventWriter(async events=>{if(++calls===2)throw Error('D1 unavailable');return events.map((_,index)=>index+1);},seq=>sent.push(seq));
+ await write('run',{});await assert.rejects(()=>write('text_delta',{text:'x'}),/D1 unavailable/);await assert.rejects(()=>write('done',{}),/D1 unavailable/);
+ assert.deepEqual(sent,[1]);
 });
