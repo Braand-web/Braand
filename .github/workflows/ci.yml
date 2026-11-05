@@ -57,6 +57,7 @@ jobs:
           node tests/routines-ui.browser.mjs
           node tests/browser-live-vault-ui.browser.mjs
           node tests/feedback-ui.browser.mjs
+          node tests/composer-attachments.browser.mjs
       - name: Keep fixture screenshots online
         if: always()
         uses: actions/upload-artifact@v4

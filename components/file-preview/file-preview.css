@@ -170,3 +170,17 @@
   .file-preview-icon-button,.file-preview-zoom-value,.file-card,.file-preview-image { transition: none; }
   .file-preview-dialog .spin { animation: none; }
 }
+/* A file being sent: its own card, faded, with a small progress ring. */
+.file-card-uploading { position: relative; display: flex; flex-direction: column; }
+.composer .attachments-file-cards .file-card-uploading[data-kind="file"] { height: 150px; }
+.file-card-uploading .file-card-attachment-visual img { opacity: .55; }
+.file-uploading-ring { position: absolute; inset: 0; display: grid; place-items: center; }
+.file-uploading-ring svg { padding: 4px; border-radius: 50%; background: rgba(0,0,0,.55); box-sizing: content-box; }
+.file-uploading-ring circle { fill: none; stroke-width: 2.5; }
+.file-uploading-ring .track { stroke: rgba(255,255,255,.25); }
+.file-uploading-ring .bar { stroke: #fff; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .25s ease; }
+.file-uploading-ring[data-known="false"] .bar { animation: file-uploading-spin .9s linear infinite; }
+@keyframes file-uploading-spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) { .file-uploading-ring[data-known="false"] .bar { animation-duration: 2.5s; } }
+.file-uploading-cancel { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; }
+.file-uploading-cancel:focus-visible { outline: 2px solid var(--ds-action, #fff); outline-offset: 2px; }

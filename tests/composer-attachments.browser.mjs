@@ -8,11 +8,11 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {build} from 'esbuild';
 
 const require=createRequire(import.meta.url);
-const {chromium}=await import(process.env.AIRA_PLAYWRIGHT_MODULE?pathToFileURL(process.env.AIRA_PLAYWRIGHT_MODULE).href:require.resolve('playwright'));
+const {chromium}=await import((process.env.BRAAND_PLAYWRIGHT_MODULE||process.env.AIRA_PLAYWRIGHT_MODULE)?pathToFileURL(process.env.BRAAND_PLAYWRIGHT_MODULE||process.env.AIRA_PLAYWRIGHT_MODULE).href:require.resolve('playwright'));
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'.tmp','composer-attachments-browser');
 await mkdir(output,{recursive:true});
-await build({stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/design-tokens.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";createRoot(document.getElementById("root")).render(<FilePreviewProvider><Studio/></FilePreviewProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
+await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/design-tokens.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";createRoot(document.getElementById("root")).render(<FilePreviewProvider><Studio/></FilePreviewProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
 let png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const files=[
   {id:'image-1',name:'reference-produit.png',mime:'image/png',size:png.length,status:'ready'},
@@ -29,6 +29,7 @@ const server=createServer(async(req,res)=>{
   if(url.pathname.startsWith('/api/'))apiCalls.push({path:url.pathname,method:req.method});
   if(url.pathname==='/api/workspace')return json(res,{user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:10,reserved:0},resources:[],catalog:[],capabilities:{model:false,modelReady:false,filePreview:securePreview}});
   if(url.pathname==='/api/files/uploads'&&req.method==='GET')return json(res,{uploads:[]});
+  if(url.pathname==='/api/files/uploads'&&req.method==='PUT'){for await(const chunk of req)void chunk;await new Promise(resolve=>setTimeout(resolve,1500));return json(res,{ok:true});}
   if(url.pathname==='/api/files'&&req.method==='POST'){
     let uploadBytes=0;for await(const chunk of req)uploadBytes+=chunk.length;
     if(!uploadBytes)return json(res,{error:'Import vide'},400);
@@ -37,7 +38,10 @@ const server=createServer(async(req,res)=>{
   }
   if(url.pathname==='/api/files/uploads'&&req.method==='POST'){
     let body='';for await(const chunk of req)body+=chunk;
-    const {name}=JSON.parse(body);const resource=resources.find(file=>file.title===name);
+    const parsed=JSON.parse(body);
+    if(parsed.action==='complete')return json(res,{resource:resources[0]});
+    if(parsed.name==='envoi-lent.png')return json(res,{upload:{uploadId:'slow-upload',name:parsed.name,size:parsed.size,sha256:parsed.sha256,partCount:1,chunkBytes:8*1024*1024,uploadedParts:[],expiresAt:Date.now()+60000}});
+    const resource=resources.find(file=>file.title===parsed.name);
     return json(res,{deduplicated:true,resource});
   }
   if(match){
@@ -83,8 +87,8 @@ try{
     if(width>=768)assert.equal(empty.height,58);
     await field.fill('Mon brouillon');
     await page.locator('input[type="file"][multiple]').setInputFiles((securePreview?files.slice(0,3):files.slice(0,1)).map(file=>({name:file.name,mimeType:file.mime,buffer:png})));
-    await page.waitForFunction((minimum)=>document.querySelectorAll('.file-card-attachment').length===minimum&&Array.from(document.querySelectorAll('.file-card-attachment img')).filter(img=>img.complete&&img.naturalWidth>0).length===(minimum===3?2:1),securePreview?3:1);
-    const tiles=page.locator('.attachments-file-cards .file-card-attachment');
+    await page.waitForFunction((minimum)=>document.querySelectorAll('.file-card-attachment:not(.file-card-uploading)').length===minimum&&Array.from(document.querySelectorAll('.file-card-attachment:not(.file-card-uploading) img')).filter(img=>img.complete&&img.naturalWidth>0).length===(minimum===3?2:1),securePreview?3:1);
+    const tiles=page.locator('.attachments-file-cards .file-card-attachment:not(.file-card-uploading)');
     assert.equal(await controls(),before,'Bottom action markup and labels stay unchanged');
     for(let index=0;index<(securePreview?3:1);index++){
       const tile=tiles.nth(index),box=await tile.boundingBox();assert.equal(box.height,150);assert.equal(box.width,index===2?200:150);
@@ -93,7 +97,7 @@ try{
     }
     const bounds=await composer.boundingBox();assert.equal(bounds.width,empty.width);assert.ok(bounds.height>empty.height);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const text=await field.boundingBox(),buttons=await page.locator('.composer-tools .attach').boundingBox();assert.ok(buttons.y>=text.y+text.height);
+    const text=await field.boundingBox(),buttons=await page.locator('.composer-tools .attach').first().boundingBox();assert.ok(buttons.y>=text.y+text.height);
     await composer.screenshot({path:path.join(output,`attachments-${width}.png`)});
     if(securePreview){
       const documentTile=tiles.nth(2);assert.equal(await documentTile.locator('.file-card-attachment-caption').innerText(),files[2].name);
@@ -108,15 +112,25 @@ try{
     await tiles.first().hover();await page.getByRole('button',{name:'Retirer '+files[0].name,exact:true}).click();assert.equal(await tiles.count(),securePreview?2:0);
     if(!securePreview){await field.fill('');await page.waitForFunction(()=>!document.querySelector('.composer-entry').hasAttribute('data-expanded'));assert.equal((await composer.boundingBox()).height,empty.height);assert.equal(await controls(),before);await context.close();console.log(`PASS ${width}px legacy mode: private inline image, original controls and compact reset`);continue;}
     await page.locator('input[type="file"][multiple]').setInputFiles({name:files[3].name,mimeType:'image/png',buffer:png});
-    await page.waitForFunction(()=>document.querySelectorAll('.file-card-attachment').length===3&&document.querySelectorAll('.file-card-attachment img').length===1);
+    await page.waitForFunction(()=>document.querySelectorAll('.file-card-attachment:not(.file-card-uploading)').length===3&&document.querySelectorAll('.file-card-attachment:not(.file-card-uploading) img').length===1);
     const broken=page.getByRole('button',{name:'Ouvrir l’aperçu de '+files[3].name,exact:true});assert.ok(await broken.isEnabled());assert.ok(await broken.locator('svg').isVisible());
     for(const file of files.slice(1)){
       const remove=page.getByRole('button',{name:'Retirer '+file.name,exact:true});await remove.focus();await remove.click();
     }
+    // A slow upload shows only its own card with a small loader, never banners or bars.
+    await page.locator('input[type="file"][multiple]').setInputFiles({name:'envoi-lent.png',mimeType:'image/png',buffer:png});
+    const sending=page.locator('.file-card-uploading');await sending.waitFor();
+    assert.equal(await sending.count(),1);assert.ok(await sending.locator('.file-uploading-ring svg').isVisible());assert.ok(await sending.locator('img').isVisible(),'the card shows the file itself');
+    assert.ok(await page.getByRole('button',{name:'Annuler l’envoi de envoi-lent.png',exact:true}).isVisible());
+    assert.equal(await page.locator('.file-resume-list,.file-upload-progress,progress').count(),0,'no resume banner or progress bar');
+    const card=await sending.boundingBox();assert.equal(card.height,150);assert.ok(card.y+card.height<=(await field.boundingBox()).y);
+    await page.screenshot({path:path.join(output,`uploading-${width}.png`)});
+    await sending.waitFor({state:'detached',timeout:10000});
+    await page.getByRole('button',{name:'Retirer '+files[0].name,exact:true}).click();
     await field.fill('');await page.waitForFunction(()=>!document.querySelector('.composer-entry').hasAttribute('data-expanded'));
     assert.equal((await composer.boundingBox()).height,empty.height);assert.equal(await controls(),before);
     await context.close();console.log(`PASS ${width}px: image tiles, document caption, preview, removal, fallback, compact reset and unchanged actions`);
   }
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
-  assert.ok(apiCalls.every(call=>call.method==='GET'||call.path==='/api/files/uploads'||call.path==='/api/files'||/^\/api\/files\/[^/]+\/url$/.test(call.path)),'No messages, payments or production writes');
+  assert.ok(apiCalls.every(call=>call.method==='GET'||call.path==='/api/drafts'||call.path==='/api/files/uploads'||call.path==='/api/files'||/^\/api\/files\/[^/]+\/url$/.test(call.path)),'No messages, payments or production writes');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
