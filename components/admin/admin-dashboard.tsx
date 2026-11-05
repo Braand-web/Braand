@@ -6,11 +6,12 @@ import Link from "next/link";
 import {api,post} from "@/lib/client-api";
 import "./admin.css";
 
-type View="overview"|"users"|"finance"|"ai"|"quality"|"media"|"system"|"audit";
+type View="overview"|"users"|"finance"|"sites"|"ai"|"quality"|"media"|"system"|"audit";
 const VIEWS:{id:View;label:string;help:string}[]=[
  {id:"overview",label:"Vue d’ensemble",help:"L’essentiel de Braand en un coup d’œil : utilisateurs, activité, argent et ce qui demande votre attention."},
  {id:"users",label:"Utilisateurs",help:"Tous les comptes, leurs crédits et leur activité. Cliquez sur un compte pour agir : offrir des crédits, déconnecter, suspendre."},
  {id:"finance",label:"Revenus & crédits",help:"Commandes, abonnements, remboursements et mouvements de crédits."},
+ {id:"sites",label:"Sites & forfaits",help:"Les sites publiés par vos clients (adresse, propriétaire, demandes reçues) et le catalogue des forfaits avec les abonnements actifs. Le contenu des sites n’est jamais affiché ici."},
  {id:"ai",label:"IA & coûts",help:"Combien coûtent les réponses de l’agent et quel cerveau (Haiku, Sonnet, Opus) a répondu."},
  {id:"quality",label:"Qualité de l’agent",help:"Réponses réussies ou échouées, outils qui posent problème, avis des utilisateurs et leçons apprises automatiquement."},
  {id:"media",label:"Médias",help:"Images, vidéos et voix générées, par modèle, avec leur statut."},
@@ -88,7 +89,7 @@ function Users({notify}:{notify:(m:string,e?:boolean)=>void}){
   <div className="adm-toolbar"><input className="adm-input" placeholder="Rechercher un e-mail…" value={q} onChange={e=>setQ(e.target.value)} aria-label="Rechercher un utilisateur"/>
    <select className="adm-btn" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Trier"><option value="recent">Plus récents</option><option value="active">Derniers actifs</option><option value="credits">Plus de crédits</option><option value="cost">Plus gros coût IA</option></select></div>
   {error?<p role="alert">{error}</p>:!data?<Skeleton/>:<Table head={["Compte","Inscription","Dernière activité","Réponses","Solde (crédits)","Coût IA","Abonnement","État"]} onRow={i=>setOpen(users[i].id)} empty="Aucun compte ne correspond."
-   rows={users.map(u=>[<span key="e"><strong>{u.email}</strong>{u.admin?<> <span className="adm-tag ok">admin</span></>:null}</span>,date(u.createdAt),ago(u.lastActive),fmt(u.answers),fmt(u.credits,2),xaf(u.costXaf),u.plan||"Gratuit",u.blocked?<span key="b" className="adm-tag bad">suspendu</span>:u.verified?<span key="v" className="adm-tag ok">actif</span>:<span key="n" className="adm-tag warn">non vérifié</span>])}/>}
+   rows={users.map(u=>[<span key="e"><strong>{u.email}</strong>{u.admin?<> <span className="adm-tag ok">admin</span></>:null}</span>,date(u.createdAt),ago(u.lastActive),fmt(u.answers),fmt(u.credits,2),xaf(u.costXaf),(u.plan?PLAN_LABELS[u.plan]||u.plan:"Gratuit"),u.blocked?<span key="b" className="adm-tag bad">suspendu</span>:u.verified?<span key="v" className="adm-tag ok">actif</span>:<span key="n" className="adm-tag warn">non vérifié</span>])}/>}
   {open?<UserDrawer id={open} onClose={()=>setOpen(null)} onChange={()=>reload()} notify={notify}/>:null}
  </>;
 }
@@ -130,7 +131,7 @@ function Finance(){
   <div className="adm-grid">{status.map(s=><Kpi key={String(s.status)} label={"Commandes « "+String(s.status)+" »"} value={fmt(s.n)} hint={xaf(s.xaf)}/>)}{lots.map(l=><Kpi key={String(l.source)} label={"Crédits « "+String(l.source)+" »"} value={fmt(l.granted)} hint={`${fmt(l.remaining,2)} encore disponibles · ${fmt(l.lots)} lot(s)`}/>)}</div>
   <div className="adm-card" style={{marginBottom:12}}><h2>Commandes</h2><Table head={["Date","Client","Produit","Montant","Statut"]} rows={orders.map(o=>[dateTime(o.created_at),String(o.email||"—"),String(o.product||"—"),xaf(o.amount),statusTag(o.status)])}/></div>
   <div className="adm-row">
-   <div className="adm-card"><h2>Abonnements</h2><Table head={["Client","Formule","Statut","Fin"]} rows={subs.map(s=>[String(s.email||"—"),String(s.plan)+" · "+String(s.cycle||""),statusTag(s.status),date(s.end_at)])} empty="Aucun abonnement pour le moment."/></div>
+   <div className="adm-card"><h2>Abonnements</h2><Table head={["Client","Formule","Statut","Fin"]} rows={subs.map(s=>[String(s.email||"—"),(PLAN_LABELS[String(s.plan)]||String(s.plan))+" · "+String(s.cycle||""),statusTag(s.status),date(s.end_at)])} empty="Aucun abonnement pour le moment."/></div>
    <div className="adm-card"><h2>Remboursements</h2><Table head={["Date","Client","Montant","Statut"]} rows={refunds.map(r=>[date(r.created_at),String(r.email||"—"),xaf(r.amount),statusTag(r.status)])} empty="Aucune demande de remboursement."/><p style={{fontSize:12.5,marginTop:8}}><a href="/admin/billing">Traiter un remboursement →</a></p></div>
   </div>
   <div className="adm-card"><h2>Derniers mouvements de crédits</h2><Table head={["Date","Client","Type","Crédits"]} rows={ledger.map(l=>[dateTime(l.createdAt),String(l.email||"—"),String(l.kind),fmt(l.credits,2)])}/></div>
@@ -180,6 +181,20 @@ function System({part}:{part:"system"|"quality"}){
  </>;
 }
 
+const PLAN_LABELS:Record<string,string>={essential:"Essentiel",pro:"Pro",business:"Business",enterprise:"Entreprise"};
+function Sites({notify}:{notify:(message:string,error?:boolean)=>void}){
+ const {data,error,reload}=useData<Json>("/api/admin/sites");const [busy,setBusy]=useState(false);
+ if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
+ const sites=data.sites as {id:string;slug:string;title:string;status:string;badge:boolean;owner:string|null;leads:number;publishedAt:number|null;url:string|null}[],plans=data.plans as Json[],byStatus=data.byStatus as Json[],count=(status:string)=>Number(byStatus.find(r=>r.status===status)?.n||0);
+ const suspend=async(site:{id:string;slug:string})=>{const reason=window.prompt(`Pourquoi retirer « ${site.slug} » ? (visible dans le journal)`);if(!reason||reason.trim().length<3)return;setBusy(true);try{const r=await api<{message:string}>("/api/admin/sites",post({action:"suspend_site",siteId:site.id,reason}));notify(r.message);reload();}catch(e){notify(e instanceof Error?e.message:"Action impossible.",true);}finally{setBusy(false);}};
+ return <>
+  <div className="adm-attention"><span className={"adm-chip "+(data.origin?"ok":"warn")}>{data.origin?"Hébergement des sites actif":"Hébergement des sites pas encore activé"}</span>{data.origin?<a className="adm-btn" href={String(data.origin)} target="_blank" rel="noopener noreferrer">{String(data.origin).replace("https://","")}</a>:null}</div>
+  <div className="adm-grid"><Kpi label="Sites en brouillon" value={fmt(data.drafts)} hint="Créés par Braand pour vos clients."/><Kpi label="Sites en ligne" value={fmt(count("published"))} tone={count("published")?"good":undefined}/><Kpi label="En attente de publication" value={fmt(count("awaiting_approval"))}/><Kpi label="Retirés" value={fmt(count("suspended"))}/><Kpi label="Demandes reçues (30 j)" value={fmt(data.leads30d)} hint="Formulaires de contact des sites."/></div>
+  <div className="adm-card" style={{marginBottom:18}}><h2>Sites publiés</h2><Table head={["Site","Propriétaire","Statut","Mention Braand","Demandes","Publié le",""]} rows={sites.map(site=>[site.url&&site.status==="published"?<a key="u" href={site.url} target="_blank" rel="noopener noreferrer">{site.title}</a>:site.title,site.owner||"—",<span key="t" className={"adm-tag "+(site.status==="published"?"ok":site.status==="suspended"?"bad":"warn")}>{site.status==="published"?"En ligne":site.status==="suspended"?"Retiré":"En attente"}</span>,site.badge?"Oui (gratuit)":"Non",fmt(site.leads),date(site.publishedAt),site.status==="published"?<button key="s" className="adm-btn danger" disabled={busy} onClick={()=>void suspend(site)}>Retirer</button>:"—"])} empty="Aucun site publié pour le moment."/></div>
+  <div className="adm-card"><h2>Forfaits</h2><Table head={["Forfait","Prix / 30 j","Prix / an","Crédits","Membres","Marques","Sites","Tâches //","Abonnements actifs"]} rows={plans.map(p=>[<strong key="n">{String(p.name)}</strong>,xaf(p.periodPrice),xaf(p.annualPrice),fmt(p.credits),fmt(p.members),fmt(p.spaces),fmt(p.sites),fmt(p.concurrency),fmt(p.activeSubscriptions)])}/></div>
+ </>;
+}
+
 function Media(){
  const {data,error}=useData<Json>("/api/admin/media");
  if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
@@ -220,7 +235,7 @@ export function AdminDashboard(){
    <div className="adm-mobile-tabs" role="tablist">{VIEWS.map(v=><button key={v.id} aria-current={v.id===view?"page":undefined} onClick={()=>go(v.id)}>{v.label}</button>)}</div>
    <main className="adm-main" key={view+refresh}>
     <div className="adm-head"><div><h1>{current.label}</h1><p>{current.help}</p></div><button className="adm-btn" onClick={()=>setRefresh(r=>r+1)}>Actualiser</button></div>
-    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality"/>:view==="media"?<Media/>:view==="system"?<System part="system"/>:<Audit/>}
+    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality"/>:view==="media"?<Media/>:view==="system"?<System part="system"/>:<Audit/>}
    </main>
   </div>
   {notice?<div className={"adm-notice"+(notice.error?" error":"")} role="status">{notice.text}</div>:null}

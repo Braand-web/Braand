@@ -142,12 +142,13 @@ jobs:
           npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified production ${GITHUB_SHA}"
           curl --fail --silent --show-error https://braand.fun/api/health
           node scripts/check-production-brain.mjs
-      - name: Publish the isolated sites Worker
-        # A sites failure must not undo the verified app deploy; it is reported in the run.
+      - name: Activate published sites on the Worker's workers.dev address
+        if: env.BRAAND_SITES_ORIGIN != ''
         continue-on-error: true
         run: |
-          node scripts/prepare-sites-deploy.mjs
-          npx --no-install wrangler deploy --config .wrangler/deploy/sites.json --message "Sites ${GITHUB_SHA}" 2>&1 | node scripts/record-sites-origin.mjs
+          curl --fail --silent --show-error "$BRAAND_SITES_ORIGIN/__braand-sites-ready"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$BRAAND_SITES_ORIGIN/api/health")" = "404"
+          echo "### Sites publiés" >> "$GITHUB_STEP_SUMMARY"; echo "- Adresse : $BRAAND_SITES_ORIGIN" >> "$GITHUB_STEP_SUMMARY"
       - name: Activate the verified provider integrations
         if: inputs.release_providers
         run: |

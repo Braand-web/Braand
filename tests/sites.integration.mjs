@@ -114,4 +114,11 @@ await check('the app never accepts braand.fun as the sites address',async()=>{
  delete globalThis.__sites.env.SITES_ORIGIN;await assert.rejects(()=>sites.sitePreviewUrl(who,site.id),/pas encore activée/);
  sql.prepare("INSERT INTO platform_settings VALUES ('sites_origin','https://braand-sites.example.workers.dev',1)").run();assert.match((await sites.sitePreviewUrl(who,site.id)).url,/workers\.dev/);
 });
+await check('the workers.dev host records its own address once and never exposes the app',async()=>{
+ assert.equal((await worker.fetch(new Request('https://evil.example.workers.dev/__braand-sites-ready'),workerEnv)).status,404);
+ assert.equal((await worker.fetch(new Request('https://aira-production.braand.workers.dev/__braand-sites-ready'),workerEnv)).status,200);
+ assert.equal(sql.prepare("SELECT value FROM platform_settings WHERE key='sites_origin'").get().value,'https://aira-production.braand.workers.dev');
+ for(const path of ['/api/health','/api/workspace','/auth/sign-in','/admin'])assert.equal((await worker.fetch(new Request('https://aira-production.braand.workers.dev'+path),workerEnv)).status,404,path);
+ const reserved=await import(pathToFileURL(path.join(root,'lib/site-files.mjs')));for(const name of ['brand','fonts','onboarding','api'])assert.throws(()=>reserved.siteSlug(name),/réservé/);
+});
 console.log(`${checks} website checks passed; no provider, payment or network call.`);

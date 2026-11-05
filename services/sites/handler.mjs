@@ -1,7 +1,7 @@
 // Public sites Worker. It runs on its own registrable domain, holds no secret,
 // sets no cookie and can only read published files, draft previews by
 // short-lived token, and append contact requests.
-import {siteCandidates,siteHeaders,siteMime,withBadge} from '../../lib/site-files.mjs';
+import {SITES_HOST_PATTERN,SITES_SCHEMA,siteCandidates,siteHeaders,siteMime,withBadge} from '../../lib/site-files.mjs';
 
 const notFound = () => new Response('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Site introuvable</title><p style="font-family:system-ui;padding:40px">Ce site n’existe pas ou n’est plus en ligne.</p></html>', {status: 404, headers: {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}});
 const text = (body, status) => new Response(body, {status, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}});
@@ -42,8 +42,20 @@ async function contact(request, env, publication) {
 
 const sitesWorker = {
   async fetch(request, env) {
+    try {return await route(request, env);} catch {return notFound();}
+  },
+};
+async function route(request, env) {
+  {
     const url = new URL(request.url);
     if (!['GET', 'HEAD', 'POST'].includes(request.method)) return text('Méthode non autorisée.', 405);
+    // Deploy check: create the tables and record this address so the app can show public links.
+    if (url.pathname === '/__braand-sites-ready') {
+      if (!SITES_HOST_PATTERN.test(url.hostname)) return notFound();
+      await env.DB.batch(SITES_SCHEMA.map(sql => env.DB.prepare(sql)));
+      await env.DB.prepare("INSERT INTO platform_settings(key,value,updated_at) VALUES ('sites_origin',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(url.origin, Date.now()).run();
+      return text('ok', 200);
+    }
     if (url.pathname === '/' ) return Response.redirect('https://braand.fun/', 302);
     const preview = url.pathname.match(/^\/__preview\/([a-f0-9]{48})\/(.*)$/);
     if (preview) {
@@ -54,13 +66,14 @@ const sitesWorker = {
     }
     const site = url.pathname.match(/^\/([a-z0-9][a-z0-9-]{1,39})(\/.*)?$/);
     if (!site) return notFound();
-    if (!site[2]) return Response.redirect(new URL(`/${site[1]}/`, request.url).href, 301);
+    // Unknown or offline names answer 404 before any redirect.
     const publication = await env.DB.prepare("SELECT id,workspace_id,slug,live_digest,badge FROM site_publications WHERE slug=? AND status='published' AND live_digest IS NOT NULL").bind(site[1]).first();
     if (!publication) return notFound();
+    if (!site[2]) return Response.redirect(new URL(`/${site[1]}/`, request.url).href, 301);
     const rest = site[2].slice(1);
     if (rest === '__contact') return request.method === 'POST' ? contact(request, env, publication) : notFound();
     if (request.method === 'POST') return text('Méthode non autorisée.', 405);
     return serveFile(env, `sites-public/${publication.slug}/${publication.live_digest}/`, rest, {badge: !!publication.badge});
-  },
-};
+  }
+}
 export default sitesWorker;

@@ -6,7 +6,7 @@ import {AppError} from './core.mjs';
 import {currentSubscription,type BillingIdentity} from './billing';
 import {PLANS} from './billing-core.mjs';
 import type {Resource} from './contracts';
-import {SITE_LIMITS,TEXT_EXTENSIONS,normalizeSitePath,siteExtension,siteMime,siteReferences,siteSlug} from './site-files.mjs';
+import {SITES_SCHEMA,SITE_LIMITS,TEXT_EXTENSIONS,normalizeSitePath,siteExtension,siteMime,siteReferences,siteSlug} from './site-files.mjs';
 
 type SiteFile={path:string;size:number;sha256:string;mime:string};
 type SiteData={slug:string;description?:string;files:SiteFile[]};
@@ -15,14 +15,7 @@ type Publication={id:string;workspace_id:string;organization_id:string;resource_
 let schemaReady:Promise<void>|null=null;
 // Created at runtime like other recent tables: production migrations are not replayed on deploy.
 export function ensureSitesSchema(){
- schemaReady??=db().batch([
-  db().prepare('CREATE TABLE IF NOT EXISTS site_slugs(slug TEXT PRIMARY KEY,resource_id TEXT NOT NULL UNIQUE,workspace_id TEXT NOT NULL,created_at INTEGER NOT NULL)'),
-  db().prepare("CREATE TABLE IF NOT EXISTS site_publications(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,organization_id TEXT NOT NULL,resource_id TEXT NOT NULL UNIQUE,slug TEXT NOT NULL UNIQUE,resource_version INTEGER NOT NULL,digest TEXT NOT NULL,live_digest TEXT,status TEXT NOT NULL,badge INTEGER NOT NULL DEFAULT 1,approved_by TEXT,approved_at INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)"),
-  db().prepare('CREATE TABLE IF NOT EXISTS site_leads(id TEXT PRIMARY KEY,publication_id TEXT NOT NULL,workspace_id TEXT NOT NULL,name TEXT NOT NULL,email TEXT NOT NULL,message TEXT NOT NULL,created_at INTEGER NOT NULL)'),
-  db().prepare('CREATE TABLE IF NOT EXISTS site_preview_tokens(token TEXT PRIMARY KEY,resource_id TEXT NOT NULL,workspace_id TEXT NOT NULL,expires_at INTEGER NOT NULL)'),
-  db().prepare('CREATE TABLE IF NOT EXISTS site_form_limits(key TEXT NOT NULL,bucket INTEGER NOT NULL,count INTEGER NOT NULL,PRIMARY KEY(key,bucket))'),
-  db().prepare('CREATE TABLE IF NOT EXISTS platform_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)'),
- ]).then(()=>undefined).catch(error=>{schemaReady=null;throw error;});
+ schemaReady??=db().batch(SITES_SCHEMA.map(sql=>db().prepare(sql)) ).then(()=>undefined).catch(error=>{schemaReady=null;throw error;});
  return schemaReady;
 }
 

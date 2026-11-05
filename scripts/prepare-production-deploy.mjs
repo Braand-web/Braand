@@ -31,9 +31,19 @@ const bindings=body.result.bindings;
 const binding=name=>{const result=bindings.find(item=>item.name===name);if(!result)throw new Error(`Production binding ${name} is missing.`);return result;};
 const database=binding('DB'),files=binding('BUCKET'),backups=binding('BACKUP_BUCKET'),browserSessions=binding('BROWSER_SESSIONS');
 if(database.type!=='d1'||files.type!=='r2_bucket'||backups.type!=='r2_bucket'||browserSessions.type!=='durable_object_namespace')throw new Error('Unexpected production binding types.');
+// Published sites are served on this Worker's own workers.dev address (separate
+// domain). Enable it only when the account has a workers.dev subdomain, so a
+// missing subdomain can never block the app deploy.
+let sitesOrigin='';
+try{
+ const sub=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/subdomain`,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(15000)}).then(r=>r.json());
+ if(sub?.success&&/^[a-z0-9-]{1,63}$/.test(sub.result?.subdomain||''))sitesOrigin=`https://${script}.${sub.result.subdomain}.workers.dev`;
+ else console.log('No readable workers.dev subdomain: published sites stay off.');
+}catch{console.log('workers.dev subdomain unavailable: published sites stay off.');}
+if(sitesOrigin&&process.env.GITHUB_ENV)(await import('node:fs')).appendFileSync(process.env.GITHUB_ENV,`BRAAND_SITES_ORIGIN=${sitesOrigin}\n`);
 const config={name:script,account_id:account,main:path.join(root,'dist/server/index.js'),no_bundle:true,
  compatibility_date:built.compatibility_date,compatibility_flags:built.compatibility_flags,rules:built.rules,
- assets:{directory:path.join(root,'dist/client')},workers_dev:false,preview_urls:false,keep_vars:true,
+ assets:{directory:path.join(root,'dist/client')},workers_dev:!!sitesOrigin,preview_urls:false,keep_vars:true,
  routes:[{pattern:'braand.fun/*',zone_id:'736e266fe4cc31e9ae5848c47e39ef2c'}],
  d1_databases:[{binding:'DB',database_id:database.id,database_name:'aira-production',migrations_dir:path.join(root,'drizzle')}],
  r2_buckets:[{binding:'BUCKET',bucket_name:files.bucket_name},{binding:'BACKUP_BUCKET',bucket_name:backups.bucket_name}],

@@ -49,6 +49,18 @@ pass('overview figures come from real SQL: 14 accounts, 63 700 FCFA paid, 30-day
 const users=await admin.adminUsers('');assert.equal(users.users.length,14);assert.ok(users.users.find(u=>u.id===owner).admin);
 assert.equal((await admin.adminUsers('awa')).users.length,1);pass('accounts list, search and admin badge');
 const ai=await admin.adminAi(30,now);assert.deepEqual(ai.byModel.map(m=>m.model).sort(),['anthropic/claude-haiku-5.5','anthropic/claude-opus-5.5','anthropic/claude-sonnet-5.5']);pass('AI view splits the adaptive brain across Haiku, Sonnet and Opus');
+ins('resources',{id:'site-1',workspace_id:'user-4',kind:'site',title:'Boutique Lumi',data:JSON.stringify({slug:'boutique-lumi',files:[]}),status:'draft',version:3,created_at:now-DAY,updated_at:now-DAY});
+const sitesView=await admin.adminSites(now);
+sql.prepare("INSERT INTO site_publications(id,workspace_id,organization_id,resource_id,slug,resource_version,digest,live_digest,status,badge,approved_by,approved_at,created_at,updated_at) VALUES ('pub-1','user-4','user-4','site-1','boutique-lumi',3,'d','d','published',1,'user-4',?,?,?)").run(now-3600000,now-DAY,now-3600000);
+sql.prepare("INSERT INTO site_leads VALUES ('lead-1','pub-1','user-4','Client','client@exemple.cm','CONTENU PRIVE DU FORMULAIRE',?)").run(now-600000);
+const sitesLive=await admin.adminSites(now);
+assert.equal(sitesView.drafts,1);assert.equal(sitesLive.sites.length,1);assert.equal(sitesLive.sites[0].owner,'boutique.lumi@exemple.cm');assert.equal(sitesLive.sites[0].leads,1);assert.equal(sitesLive.leads30d,1);
+assert.deepEqual(sitesLive.plans.map(p=>p.name),['Essentiel','Pro','Business','Entreprise']);assert.equal(sitesLive.plans.find(p=>p.id==='enterprise').periodPrice,79900);
+assert.doesNotMatch(JSON.stringify(sitesLive),/CONTENU PRIVE/);
+const suspended=await admin.adminSiteAction(owner,{action:'suspend_site',siteId:'site-1',reason:'Plainte reçue'});assert.match(suspended.message,/boutique-lumi/);
+assert.equal(sql.prepare("SELECT status FROM site_publications WHERE id='pub-1'").get().status,'suspended');assert.ok(sql.prepare("SELECT 1 x FROM audit WHERE action='admin.suspend_site'").get());
+await assert.rejects(()=>admin.adminSiteAction(owner,{action:'suspend_site',siteId:'site-1',reason:''}));
+pass('Sites & plans view lists published sites with owner and leads count (never form content), the four plans, and suspends a site with an audited reason');
 const everything=JSON.stringify([overview,users,ai,await admin.adminFinance(),await admin.adminMedia(30,now),await admin.adminAudit(''),await admin.adminUserDetail('user-2',now)]);
 assert.ok(!everything.includes('CONTENU PRIVE')&&!everything.includes('NE DOIT PAS APPARAITRE'),'No conversation content or free text leaks into admin data');pass('no conversation content or sensitive audit text in any admin answer');
 
@@ -75,7 +87,7 @@ const audit=await admin.adminAudit('admin.');assert.ok(audit.entries.length>=4&&
 
 if(process.env.ADMIN_PREVIEW==='1'){
  // Render the real interface with these exact answers.
- const routes={'/api/admin/overview':overview,'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:[{status:'succeeded',created_at:now-DAY}]},quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
+ const routes={'/api/admin/overview':overview,'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/sites':await admin.adminSites(now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:[{status:'succeeded',created_at:now-DAY}]},quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
  for(const u of routes['/api/admin/users'].users)routes['/api/admin/users/'+u.id]=await admin.adminUserDetail(u.id,now);
  writeFileSync(path.join(out,'routes.json'),JSON.stringify(routes));
  await build({stdin:{contents:`import React from "react";import {createRoot} from "react-dom/client";import {AdminDashboard} from "./components/admin/admin-dashboard";import "./app/tokens.css";import "./app/globals.css";

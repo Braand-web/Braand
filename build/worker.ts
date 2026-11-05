@@ -7,6 +7,7 @@ import { raiseOperationalAlert } from "../lib/operations";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import {authenticateRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
 import {secureResponse} from '../lib/response-security.mjs';
+import sitesGateway from "../services/sites/handler.mjs";
 export {BrowserSession} from "../lib/browser-session-do";
 
 const scheduledTasks = [
@@ -72,6 +73,10 @@ async function runScheduledTasks(
 
 export default {
   async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
+    // Published sites run their author's JavaScript, so they live on this Worker's
+    // workers.dev address (a separate registrable domain). That host serves the
+    // site gateway only: never the app, its API, sign-in or any cookie.
+    if (new URL(request.url).hostname.endsWith(".workers.dev")) return sitesGateway.fetch(request, env as never);
     // The local-only Vite middleware strips supplied headers before adding its fixture.
     // Production always reconstructs identity from a private, revocable D1 session.
     let sessionCookie: string | null = null;

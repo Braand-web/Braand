@@ -232,3 +232,33 @@ export function adminServices(){
   storage:has('BUCKET'),workQueue:has('WORK_QUEUE'),codeSandbox:has('CODE_SANDBOX'),
  };
 }
+
+/** Websites and plans: what is online, for whom, and the plan catalogue with live subscriptions. Never site content. */
+export async function adminSites(now=Date.now()){
+ const {SITES_SCHEMA}=await import('./site-files.mjs');const {PLANS,PLAN_ORDER}=await import('./billing-core.mjs');
+ await db().batch(SITES_SCHEMA.map(sql=>db().prepare(sql)));
+ const since=now-30*DAY;
+ const [origin,drafts,byStatus,sites,leads,subscriptions]=await Promise.all([
+  one<{value:string}>("SELECT value FROM platform_settings WHERE key='sites_origin'"),
+  one("SELECT COUNT(*) n FROM resources WHERE kind='site' AND status!='deleted'"),
+  all('SELECT status,COUNT(*) n FROM site_publications GROUP BY status'),
+  all("SELECT p.resource_id id,p.slug,p.status,p.badge,p.approved_at,p.updated_at,r.title,u.email,(SELECT COUNT(*) FROM site_leads l WHERE l.publication_id=p.id) leads FROM site_publications p LEFT JOIN resources r ON r.id=p.resource_id LEFT JOIN organizations o ON o.id=p.organization_id LEFT JOIN auth_users u ON u.id=o.owner_id ORDER BY p.updated_at DESC LIMIT 100"),
+  one('SELECT COUNT(*) n FROM site_leads WHERE created_at>?',since),
+  all("SELECT plan,COUNT(*) n FROM billing_subscriptions WHERE status='active' AND start_at<=?1 AND end_at>?1 GROUP BY plan",now),
+ ]);
+ const active=new Map((subscriptions as Row[]).map(r=>[String(r.plan),n(r.n)]));
+ return {
+  origin:origin?.value||null,drafts:n(drafts?.n),byStatus,leads30d:n(leads?.n),
+  sites:(sites as Row[]).map(r=>({id:String(r.id),slug:String(r.slug),title:String(r.title||r.slug),status:String(r.status),badge:!!r.badge,owner:r.email?String(r.email):null,leads:n(r.leads),publishedAt:r.approved_at?n(r.approved_at):null,updatedAt:n(r.updated_at),url:origin?.value?`${origin.value}/${r.slug}/`:null})),
+  plans:PLAN_ORDER.map(id=>{const p=PLANS[id as keyof typeof PLANS];return {id,name:p.name,periodPrice:p.periodPrice,annualPrice:p.annualPrice,credits:p.credits,members:p.members,spaces:p.spaces,projects:p.projects,storageGb:p.storage/1024**3,concurrency:p.concurrency,sites:p.sites,activeSubscriptions:active.get(id)||0};}),
+ };
+}
+const siteActionInput=z.object({action:z.literal('suspend_site'),siteId:z.string().min(1).max(80),reason:z.string().trim().min(3).max(300)}).strict();
+/** Takes a published site offline (abuse, complaint). The owner keeps the draft and can republish after review. */
+export async function adminSiteAction(actorId:string,raw:unknown){
+ const p=siteActionInput.parse(raw);
+ const row=await one<Row>("SELECT id,slug,workspace_id FROM site_publications WHERE resource_id=?",p.siteId);if(!row)throw new AppError('Site introuvable.',404);
+ await db().prepare("UPDATE site_publications SET status='suspended',updated_at=? WHERE resource_id=?").bind(Date.now(),p.siteId).run();
+ await audit(actorId,'suspend_site',p.siteId,{slug:row.slug,reason:p.reason});
+ return {ok:true,message:`Le site ${row.slug} n’est plus en ligne.`};
+}
