@@ -5,7 +5,7 @@ import {agentContextTools,personalAgentPolicy} from '../lib/agent-system.mjs';
 import {agentToolAllowedForMode} from '../lib/agent-mode.mjs';
 
 test('all installed procedures are reachable without silent truncation',()=>{
- const catalog=readAgentGuide();assert.equal(catalog.topics.length,14);assert.equal(catalog.provenance.length,4);
+ const catalog=readAgentGuide();assert.equal(catalog.topics.length,15);assert.ok(catalog.topics.some(topic=>topic.id==='interface'));assert.equal(catalog.provenance.length,4);
  for(const topic of catalog.topics){let offset=0,content='',pages=0;do{const page=readAgentGuide({topic:topic.id,offset});assert.ok(page.content.length<=6000);assert.equal(page.offset,offset);content+=page.content;pages++;if(page.nextOffset===null)break;assert.ok(page.nextOffset>offset);offset=page.nextOffset;}while(pages<20);assert.equal(content.length,topic.chars);assert.ok(pages<20);}
  assert.ok(readAgentGuide({topic:'execution'}).truncated);
 });
