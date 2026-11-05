@@ -15,8 +15,14 @@ export async function identity(request?:Request,action?:string){
  if(request&&request.method!=="GET"){const origin=request.headers.get("origin");if(origin&&origin!==new URL(request.url).origin)throw new AppError("Origine non autorisée.",403);}
  const user=await getBraandUser();if(!user)throw new AppError("Connectez-vous pour enregistrer votre travail.",401,"authentication_required");
  // A suspended account (administration) cannot use Braand. Missing table = nobody suspended.
- try{if(await db().prepare("SELECT 1 x FROM account_blocks WHERE user_id=?").bind(user.userId).first())throw new AppError("Ce compte est suspendu. Contactez le support Braand.",403,"account_suspended");}catch(error){if(error instanceof AppError)throw error;}
- const now=Date.now();await db().batch([
+ // Both reads run together: each database trip costs time for distant users.
+ const [blocked,personal]=await Promise.all([
+  db().prepare("SELECT 1 x FROM account_blocks WHERE user_id=?").bind(user.userId).first().catch(()=>null),
+  db().prepare("SELECT (SELECT COUNT(*) FROM organizations WHERE id=?)+(SELECT COUNT(*) FROM organization_members WHERE organization_id=? AND user_id=?)+(SELECT COUNT(*) FROM workspaces WHERE id=?)+(SELECT COUNT(*) FROM members WHERE workspace_id=? AND user_id=?) n").bind(user.userId,user.userId,user.userId,user.userId,user.userId,user.userId).first<{n:number}>(),
+ ]);
+ if(blocked)throw new AppError("Ce compte est suspendu. Contactez le support Braand.",403,"account_suspended");
+ // The personal space is created once, not rewritten on every request.
+ const now=Date.now();if(Number(personal?.n)<4)await db().batch([
  db().prepare("INSERT OR IGNORE INTO organizations(id,name,owner_id,created_at) VALUES (?,?,?,?)").bind(user.userId,"Mon entreprise",user.userId,now),
  db().prepare("INSERT OR IGNORE INTO organization_members(organization_id,user_id,role) VALUES (?,?,'owner')").bind(user.userId,user.userId),
  db().prepare("INSERT OR IGNORE INTO workspaces (id,name,created_at,organization_id) VALUES (?,?,?,?)").bind(user.userId,"Mon entreprise",now,user.userId),

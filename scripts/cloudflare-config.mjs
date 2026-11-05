@@ -37,7 +37,7 @@ export function deploymentConfig(environment, input, built, root=process.cwd(), 
     r2_buckets:databaseOnly?[]:[{binding:'BUCKET',bucket_name:files},{binding:'BACKUP_BUCKET',bucket_name:backups}],
     durable_objects:built.durable_objects,migrations:built.migrations,browser:built.browser,
     ...(services.length?{services}:{}),
-    triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false},
+    triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false},placement:{mode:'smart'},
     ...(queue?{queues:{producers:[{binding:'WORK_QUEUE',queue}],consumers:[{queue,max_batch_size:1,max_retries:3,dead_letter_queue:deadLetter}]}}:{}),
     // Never claim an unperformed acceptance test by enabling a readiness flag.
     vars:{APP_ENV:environment,AUTH_ENABLED:'false',BILLING_ENABLED:'false',SASPAY_ENV:'sandbox',

@@ -49,7 +49,9 @@ const config={name:script,account_id:account,main:path.join(root,'dist/server/in
  d1_databases:[{binding:'DB',database_id:database.id,database_name:'aira-production',migrations_dir:path.join(root,'drizzle')}],
  r2_buckets:[{binding:'BUCKET',bucket_name:files.bucket_name},{binding:'BACKUP_BUCKET',bucket_name:backups.bucket_name}],
  durable_objects:{bindings:[{name:'BROWSER_SESSIONS',class_name:browserSessions.class_name||'BrowserSession'}]},
- migrations:built.migrations,browser:built.browser,triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false}};
+ migrations:built.migrations,browser:built.browser,triggers:{crons:['*/5 * * * *','* * * * *']},observability:{enabled:false},
+ // Run the Worker next to its database: one trip for the user instead of one per query.
+ placement:{mode:'smart'}};
 // The isolated vault is optional. Preserve its private binding once configured;
 // never bind its database or master encryption key to the main application.
 const vault=bindings.find(item=>item.name==='CREDENTIAL_VAULT');

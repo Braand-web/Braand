@@ -223,5 +223,5 @@ export async function suspendSitePublication(who:BillingIdentity,siteId:string){
 }
 export async function siteLeads(who:BillingIdentity,siteId:string){
  await authorize(who.tenant,who.user.userId,'read');await ensureSitesSchema();
- return (await db().prepare('SELECT l.id,l.name,l.email,l.message,l.created_at FROM site_leads l JOIN site_publications p ON p.id=l.publication_id WHERE p.resource_id=? AND l.workspace_id=? ORDER BY l.created_at DESC LIMIT 100').bind(siteId,who.tenant).all()).results;
+ return (await db().prepare('SELECT l.id,l.name,l.email,l.message,l.created_at FROM site_leads l JOIN site_publications p ON p.id=l.publication_id WHERE p.resource_id=? AND l.workspace_id=? ORDER BY l.created_at DESC,l.rowid DESC LIMIT 100').bind(siteId,who.tenant).all()).results;
 }
