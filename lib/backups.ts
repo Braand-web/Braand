@@ -5,7 +5,8 @@ import {AppError} from './core.mjs';
 const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024; // Also the legacy v1 archive limit.
 const MAX_ROWS = 10000;
 const MAX_OBJECTS = 100000;
-const MAX_TABLES = 100;
+// Schema size is not the restore risk (rows and bytes are bounded above); leave room for new features.
+const MAX_TABLES = 160;
 const PART_BYTES = 1024 * 1024;
 const MAX_MANIFEST_BYTES = 512 * 1024;
 const MAX_MEDIA_BYTES = 64 * 1024 ** 3;
