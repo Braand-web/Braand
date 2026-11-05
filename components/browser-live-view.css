@@ -5,3 +5,15 @@
 .browser-live-keyboard{position:absolute;left:0;bottom:0;width:1px;height:1px!important;min-height:0!important;opacity:0;padding:0!important;border:0!important;resize:none;overflow:hidden}.browser-live-surface:focus-within{outline:2px solid var(--ds-action);outline-offset:-2px}
 .browser-live-footer{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:0 16px 12px;font-size:var(--text-xs);color:var(--browser-muted,var(--ds-muted))}.browser-live-footer button{display:inline-flex;align-items:center;gap:8px;min-height:40px}.browser-live-error{font-size:var(--text-xs);padding:0 16px 12px;margin:0}
 @media(max-width:540px),(pointer:coarse){.browser-live-footer button{min-height:44px}.browser-live-header{flex-wrap:wrap}.browser-live-header>span{flex-basis:100%;padding-left:24px}}
+/* Mission, current step and connection on one line; tabs named by page title. */
+.browser-live-header strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.browser-live-mode{flex:none;padding:2px 8px;border-radius:999px;background:var(--ds-fill);font-size:11.5px;line-height:16px;color:var(--browser-muted,var(--ds-muted))}
+.browser-live-connection{flex:none;font-size:12px;color:var(--browser-muted,var(--ds-muted))}.browser-live-connection-connected{color:var(--color-success)}
+.browser-live-tabs{display:flex;gap:4px;overflow-x:auto;padding:0 16px;scrollbar-width:none}.browser-live-tabs::-webkit-scrollbar{display:none}
+.browser-live-tab{display:inline-flex;align-items:center;gap:6px;flex:none;max-width:220px;padding:5px 10px;border:1px solid var(--browser-line,var(--ds-line));border-radius:8px;font-size:12px;line-height:16px;color:var(--browser-muted,var(--ds-muted));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.browser-live-tab.is-active{color:var(--ds-text);border-color:var(--ds-muted);background:var(--ds-fill)}
+.browser-live-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;font-size:var(--text-xs);line-height:20px;color:var(--browser-muted,var(--ds-muted));background:var(--browser-bg,var(--ds-bg))}
+.browser-live-spinner{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:browser-live-spin .8s linear infinite}@keyframes browser-live-spin{to{transform:rotate(360deg)}}
+.browser-live-badge{position:absolute;top:10px;right:10px;z-index:1;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:12px;line-height:16px}
+.browser-live-badge-ended{background:rgba(0,0,0,.6)}
+@media(prefers-reduced-motion:reduce){.browser-live-spinner{animation:none}}
