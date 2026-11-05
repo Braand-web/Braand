@@ -189,9 +189,15 @@ export async function adminAi(days=30,now=Date.now()){
   all('SELECT status,COUNT(*) n FROM provider_usage WHERE created_at>? GROUP BY status',since),
   one('SELECT COUNT(*) n FROM runs WHERE created_at>?',since),
  ]);
+ // Why the brain moved up (or fell back), and how many delivered files passed their check.
+ const [upgrades,fallbacks,fileChecks]=await Promise.all([
+  all("SELECT json_extract(detail,'$.reason') reason,json_extract(detail,'$.tier') tier,COUNT(*) n FROM audit WHERE action='model.capacity' AND created_at>? GROUP BY reason,tier ORDER BY n DESC",since),
+  all("SELECT json_extract(detail,'$.code') code,COUNT(*) n FROM audit WHERE action='model.capacity_fallback' AND created_at>? GROUP BY code ORDER BY n DESC",since),
+  one("SELECT SUM(CASE WHEN action LIKE 'tool_failed.%' AND json_extract(detail,'$.code')='file_check_failed' THEN 1 ELSE 0 END) refused,SUM(CASE WHEN json_extract(detail,'$.check') IS NOT NULL THEN 1 ELSE 0 END) passed FROM audit WHERE created_at>? AND (action LIKE 'tool_failed.%' OR json_extract(detail,'$.check') IS NOT NULL)",since),
+ ]);
  const total=(byModel as Row[]).reduce((s,r)=>s+n(r.xaf),0);
  const readiness=(()=>{try{return {model:modelReadiness(),routing:routingEnabled(config())?routingReadiness(config()):{enabled:false}};}catch{return {model:{ready:false},routing:{enabled:false}};}})();
- return {days,byModel:(byModel as Row[]).map(r=>({model:String(r.model||'inconnu'),calls:n(r.calls),costXaf:Math.round(n(r.xaf)*100)/100,avgXaf:Math.round(n(r.avg)*100)/100})),byDay,status,answers:n(runs?.n),costXaf:Math.round(total*100)/100,costPerAnswerXaf:n(runs?.n)?Math.round(total/n(runs?.n)*100)/100:0,readiness};
+ return {days,byModel:(byModel as Row[]).map(r=>({model:String(r.model||'inconnu'),calls:n(r.calls),costXaf:Math.round(n(r.xaf)*100)/100,avgXaf:Math.round(n(r.avg)*100)/100})),byDay,status,answers:n(runs?.n),costXaf:Math.round(total*100)/100,costPerAnswerXaf:n(runs?.n)?Math.round(total/n(runs?.n)*100)/100:0,readiness,upgrades:(upgrades as Row[]).map(r=>({reason:String(r.reason||'inconnu'),tier:String(r.tier||''),count:n(r.n)})),fallbacks:(fallbacks as Row[]).map(r=>({code:String(r.code||'inconnu'),count:n(r.n)})),fileChecks:{passed:n(fileChecks?.passed),refused:n(fileChecks?.refused)}};
 }
 
 /** Media and paid tools: generations by provider/operation and status. */

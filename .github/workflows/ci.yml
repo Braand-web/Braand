@@ -141,7 +141,7 @@ jobs:
           node scripts/prepare-production-deploy.mjs
           npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified production ${GITHUB_SHA}"
           curl --fail --silent --show-error https://braand.fun/api/health
-          curl --fail --silent --show-error "https://braand.fun/api/health?check=assistant"
+          node scripts/check-production-brain.mjs
       - name: Activate the verified provider integrations
         if: inputs.release_providers
         run: |

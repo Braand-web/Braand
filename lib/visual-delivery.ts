@@ -38,6 +38,6 @@ export async function renderVisual(who:BillingIdentity,raw:unknown){
  const bytes=await renderVisualPng(html,width,height);
  const spec=['# '+p.title,'','- Modèle : '+p.template,'- Format : '+p.format+' ('+width+'×'+height+')','- Titre : '+p.headline,...(p.kicker?['- Accroche : '+p.kicker]:[]),...(p.body?['- Texte : '+p.body]:[]),...(p.stat?['- Chiffre : '+p.stat]:[]),...(p.items?.length?['- Éléments : '+p.items.join(' · ')]:[]),...(p.author?['- Auteur : '+p.author]:[]),...(p.cta?['- Appel à l’action : '+p.cta]:[]),...(p.accentColor?['- Couleur : '+p.accentColor]:[]),...(p.backgroundFileId?['- Image de fond : '+p.backgroundFileId]:[])].join('\n');
  const source=await saveDeliverable(who.tenant,{title:p.title,content:spec,summary:'Visuel '+p.template+' '+width+'×'+height+' rendu en PNG.',category:'marketing',sources:[]});
- const file=await saveGeneratedFile(who,{source,name:safeFilename(p.title)+'-'+width+'x'+height+'.png',mime:'image/png',format:'png',bytes,audit:'visual.rendered',media:true});
+ const file=await saveGeneratedFile(who,{source,name:safeFilename(p.title)+'-'+width+'x'+height+'.png',mime:'image/png',format:'png',bytes,audit:'visual.rendered',media:true,expect:{width,height}});
  return {...file,width,height,specId:source.id,downloadUrl:'/api/files?id='+encodeURIComponent(file.id)};
 }

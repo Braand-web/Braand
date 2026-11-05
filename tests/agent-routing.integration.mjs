@@ -426,15 +426,15 @@ await check('an unavailable model tier preserves a usable current tier and never
 await check('a claimed tool failure cannot buy a higher tier without a real server-observed failure',async()=>{
  enableAdaptive();const execution=await setup();fixture.responses=[call('invented-failure','request_model_capacity',{tier:'standard',reason:'tool_failure'}),text('Réponse directe.')];await run(execution);assert.deepEqual(fixture.requests.map(request=>request.routing.tier),['light','light']);assert.equal(fixture.requests[1].body.messages.at(-1).content[0].is_error,true);
 });
-await check('a real failed read permits one gradual upgrade while preserving history, budget and prior saved work',async()=>{
+await check('a real failed read moves up one level automatically on the next round while preserving history, budget and prior saved work',async()=>{
  enableAdaptive();const execution=await setup();const saved=await server.createResource(who.tenant,'knowledge','Contexte à conserver',{content:'Donnée réelle',source:'Recette'},'saved');
  fixture.responses=[call('standard','request_model_capacity',{tier:'standard',reason:'task_complexity'}),call('kept-read','get_workspace_resource',{id:saved.id}),call('failed-read','read_skill',{id:'missing-skill'}),call('upgraded','request_model_capacity',{tier:'advanced',reason:'tool_failure'}),text('Résultat après vérification.')];await run(execution);
- assert.deepEqual(fixture.requests.map(request=>request.routing.tier),['light','standard','standard','standard','advanced']);assert.ok(fixture.requests.every(request=>request.budget===execution.budget));assert.equal(fixture.events.filter(event=>event.type==='tool_result'&&event.data.id==='kept-read').length,1);assert.equal((await server.getResource(who.tenant,saved.id)).version,1);assert.equal(fixture.external.length,0);
+ assert.deepEqual(fixture.requests.map(request=>request.routing.tier),['light','standard','standard','advanced','advanced']);assert.ok(fixture.requests.every(request=>request.budget===execution.budget));assert.equal(fixture.events.filter(event=>event.type==='tool_result'&&event.data.id==='kept-read').length,1);assert.equal((await server.getResource(who.tenant,saved.id)).version,1);assert.equal(fixture.external.length,0);
 });
-await check('a partial independent artifact verification permits a supported validation upgrade',async()=>{
+await check('a partial independent artifact verification moves up one level automatically',async()=>{
  enableAdaptive();const execution=await setup(),artifact=await server.createResource(who.tenant,'deliverable','À vérifier',{},'saved');
  fixture.responses=[call('check-partial','verify_deliverable',{id:artifact.id,version:1,criteria:['Valid saved content'],requiredSources:true,requiredResourceIds:[]}),call('validation-upgrade','request_model_capacity',{tier:'standard',reason:'validation_failed'}),text('Le contrôle a révélé un contenu incomplet.')];await run(execution);
- assert.deepEqual(fixture.requests.map(request=>request.routing.tier),['light','light','standard']);assert.equal(fixture.events.find(event=>event.type==='tool_result'&&event.data.id==='check-partial').data.result.status,'partial');assert.equal(fixture.external.length,0);
+ assert.deepEqual(fixture.requests.map(request=>request.routing.tier),['light','standard','standard']);assert.equal(fixture.events.find(event=>event.type==='tool_result'&&event.data.id==='check-partial').data.result.status,'partial');assert.equal(fixture.external.length,0);
 });
 await check('an unadvertised tool or access refusal cannot manufacture evidence for a paid upgrade',async()=>{
  enableAdaptive();const execution=await setup();fixture.responses=[call('forbidden','braand_unadvertised_write',{}),call('unsupported-upgrade','request_model_capacity',{tier:'standard',reason:'tool_failure'}),text('Je conserve les droits et la capacité actuels.')];await run(execution);
