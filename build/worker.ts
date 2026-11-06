@@ -8,6 +8,7 @@ import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import {authenticateRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
 import {secureResponse} from '../lib/response-security.mjs';
 import sitesGateway from "../services/sites/handler.mjs";
+import {recordTraffic} from "../lib/traffic";
 export {BrowserSession} from "../lib/browser-session-do";
 
 const scheduledTasks = [
@@ -84,7 +85,14 @@ export default {
     // Published sites run their author's JavaScript, so they live on this Worker's
     // workers.dev address (a separate registrable domain). That host serves the
     // site gateway only: never the app, its API, sign-in or any cookie.
-    if (new URL(request.url).hostname.endsWith(".workers.dev")) return sitesGateway.fetch(request, env as never);
+    const startedAt = Date.now();
+    if (new URL(request.url).hostname.endsWith(".workers.dev")) {
+      const siteResponse = await sitesGateway.fetch(request, env as never);
+      const slug = new URL(request.url).pathname.match(/^\/([a-z0-9][a-z0-9-]{1,39})\//)?.[1];
+      if (slug && slug !== "__preview") recordTraffic(env.DB, ctx, request, siteResponse, startedAt, {slug});
+      return siteResponse;
+    }
+    const measured = request;
     // The local-only Vite middleware strips supplied headers before adding its fixture.
     // Production always reconstructs identity from a private, revocable D1 session.
     let sessionCookie: string | null = null;
@@ -119,6 +127,7 @@ export default {
       };
     }
     const response = secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
+    recordTraffic(env.DB, ctx, measured, response, startedAt);
     // An active session is extended at most once a day; streaming bodies are left untouched.
     if (sessionCookie) {try {response.headers.append("Set-Cookie", sessionCookie);} catch {const copy = new Response(response.body, response);copy.headers.append("Set-Cookie", sessionCookie);return copy;}}
     return response;

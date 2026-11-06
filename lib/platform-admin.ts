@@ -328,3 +328,61 @@ export async function adminStopReasons(days = 7, now = Date.now()) {
  }
  return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 20);
 }
+
+// ——— Traffic measured by Braand (daily totals, no IP, no content) ———
+
+const TRAFFIC_TABLES = ["CREATE TABLE IF NOT EXISTS traffic_daily(day TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,dim TEXT NOT NULL,value TEXT NOT NULL,n INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(day,scope,key,dim,value))"];
+/** Visits of braand.fun, of the published sites and API health over 7, 30 or 90 days, compared with the period before. */
+export async function adminTraffic(rawDays: unknown, now = Date.now()) {
+ const days = [7, 30, 90].includes(Number(rawDays)) ? Number(rawDays) : 30;
+ await db().batch(TRAFFIC_TABLES.map(sql => db().prepare(sql))).catch(() => undefined);
+ const dayOf = (offset: number) => new Date(now - offset * DAY).toISOString().slice(0, 10);
+ const from = dayOf(days - 1), previous = dayOf(2 * days - 1), to = dayOf(0);
+ const calendar = Array.from({length: days}, (_, i) => dayOf(days - 1 - i));
+ type T = {day: string; scope: string; key: string; dim: string; value: string; n: number};
+ const rows = await all<T>('SELECT day,scope,key,dim,value,n FROM traffic_daily WHERE day>=? AND day<=?', previous, to).catch(() => [] as T[]);
+ const cur = rows.filter(r => r.day >= from), prev = rows.filter(r => r.day < from);
+ const sum = (list: T[], scope: string, dim: string, key?: string) => list.filter(r => r.scope === scope && r.dim === dim && (key === undefined || r.key === key)).reduce((a, r) => a + n(r.n), 0);
+ const top = (list: T[], scope: string, dim: string, limit = 10) => {const m = new Map<string, number>();for (const r of list) if (r.scope === scope && r.dim === dim) m.set(r.value, (m.get(r.value) || 0) + n(r.n));return [...m].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([label, count]) => ({label, count}));};
+ const perDay = (scope: string, dim: string, value?: string) => {const m = new Map<string, number>();for (const r of cur) if (r.scope === scope && r.dim === dim && (value === undefined || r.value === value)) m.set(r.day, (m.get(r.day) || 0) + n(r.n));return m;};
+ const change = (a: number, b: number) => b ? Math.round((a - b) / b * 1000) / 10 : null;
+ const signupRows = await all<{day: string; v: number}>("SELECT date(created_at/1000,'unixepoch') day,COUNT(*) v FROM auth_users WHERE created_at>=? GROUP BY day", Date.parse(previous + 'T00:00:00Z')).catch(() => []);
+ const signups = (fromDay: string, toDay: string) => signupRows.filter(r => r.day >= fromDay && r.day <= toDay).reduce((a, r) => a + n(r.v), 0);
+ const signupByDay = new Map(signupRows.map(r => [r.day, n(r.v)]));
+ // braand.fun
+ const views = sum(cur, 'app', 'views'), visitors = sum(cur, 'app', 'visitors'), bots = sum(cur, 'app', 'bot'), newUsers = signups(from, to);
+ const appViews = perDay('app', 'views'), appVisitors = perDay('app', 'visitors');
+ // Published sites, with their owner (never their content)
+ const siteKeys = [...new Set(cur.filter(r => r.scope === 'site').map(r => r.key))];
+ const owners = new Map<string, string | null>();
+ for (let i = 0; i < siteKeys.length; i += 90) {
+  const part = siteKeys.slice(i, i + 90);
+  for (const row of await all<{slug: string; email: string | null}>('SELECT p.slug,u.email FROM site_publications p LEFT JOIN organizations o ON o.id=p.organization_id LEFT JOIN auth_users u ON u.id=o.owner_id WHERE p.slug IN (' + part.map(() => '?').join(',') + ')', ...part).catch(() => [])) owners.set(row.slug, row.email);
+ }
+ const sites = siteKeys.map(slug => ({slug, owner: owners.get(slug) || null, views: sum(cur, 'site', 'views', slug), visitors: sum(cur, 'site', 'visitors', slug), lastDay: cur.filter(r => r.scope === 'site' && r.key === slug && r.dim === 'views').reduce((a, r) => r.day > a ? r.day : a, '')})).sort((a, b) => b.views - a.views);
+ const siteViews = perDay('site', 'views');
+ // API health
+ const requests = sum(cur, 'api', 'requests'), status = (cls: string, list = cur) => list.filter(r => r.scope === 'api' && r.dim === 'status' && r.value === cls).reduce((a, r) => a + n(r.n), 0);
+ const errors5 = status('5xx'), errors4 = status('4xx'), requestsBefore = sum(prev, 'api', 'requests');
+ const apiByDay = perDay('api', 'requests'), api5ByDay = perDay('api', 'status', '5xx');
+ const routes = [...new Set(cur.filter(r => r.scope === 'api').map(r => r.key))].map(key => {
+  const count = sum(cur, 'api', 'requests', key), slow = cur.filter(r => r.scope === 'api' && r.key === key && r.dim === 'latency' && ['< 10 s', '≥ 10 s'].includes(r.value)).reduce((a, r) => a + n(r.n), 0);
+  const failed = cur.filter(r => r.scope === 'api' && r.key === key && r.dim === 'status' && r.value === '5xx').reduce((a, r) => a + n(r.n), 0);
+  return {route: key, requests: count, errorRate: count ? Math.round(failed / count * 1000) / 10 : 0, averageMs: count ? Math.round(sum(cur, 'api', 'ms_total', key) / count) : 0, slowRate: count ? Math.round(slow / count * 1000) / 10 : 0};
+ }).sort((a, b) => b.requests - a.requests).slice(0, 30);
+ const since = rows.length ? rows.reduce((a, r) => r.day < a ? r.day : a, to) : null;
+ return {
+  days, from, to, since, generatedAt: now,
+  app: {
+   views, visitors, bots, signups: newUsers, conversion: visitors ? Math.round(newUsers / visitors * 1000) / 10 : null,
+   change: {views: change(views, sum(prev, 'app', 'views')), visitors: change(visitors, sum(prev, 'app', 'visitors')), signups: change(newUsers, signups(previous, dayOf(days)))},
+   series: calendar.map(day => ({day, views: appViews.get(day) || 0, visitors: appVisitors.get(day) || 0, signups: signupByDay.get(day) || 0})),
+   pages: top(cur, 'app', 'page'), sources: top(cur, 'app', 'source'), countries: top(cur, 'app', 'country'), devices: top(cur, 'app', 'device', 3),
+  },
+  sites: {views: sum(cur, 'site', 'views'), visitors: sum(cur, 'site', 'visitors'), count: sites.length, list: sites.slice(0, 50), series: calendar.map(day => ({day, views: siteViews.get(day) || 0}))},
+  api: {
+   requests, errors5, errors4, errorRate5: requests ? Math.round(errors5 / requests * 1000) / 10 : 0, errorRate4: requests ? Math.round(errors4 / requests * 1000) / 10 : 0, change: change(requests, requestsBefore),
+   series: calendar.map(day => ({day, requests: apiByDay.get(day) || 0, errors: api5ByDay.get(day) || 0})), routes,
+  },
+ };
+}

@@ -94,3 +94,13 @@
 .adm-decisions{margin:18px 0}
 .adm-decisions .adm-attention{margin-bottom:12px}
 .adm-stale{color:var(--color-danger);font-weight:600}
+/* Traffic view */
+.adm-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface-2)}
+.adm-seg button{padding:5px 10px;border:0;border-radius:calc(var(--radius-md) - 2px);background:transparent;color:var(--color-text-muted);font:inherit;font-size:var(--text-xs);font-weight:600;cursor:pointer}
+.adm-seg button[aria-pressed="true"]{background:var(--color-surface);color:var(--color-text);box-shadow:var(--shadow-sm)}
+.adm-seg button:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+.adm-shares{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.adm-shares li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:var(--text-sm)}
+.adm-shares li>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-share-bar{grid-column:1/-1;height:4px;border-radius:2px;background:var(--color-fill)}
+.adm-share-bar i{display:block;height:100%;border-radius:2px;background:var(--color-action)}

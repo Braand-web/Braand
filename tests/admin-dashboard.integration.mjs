@@ -38,7 +38,7 @@ ins('agent_tool_usage',{id:'tu1',workspace_id:'user-4',run_id:'r',hold_id:'h',pr
 
 const stubs={'./server':`const F=globalThis.__adminFixture;import {AppError} from ${JSON.stringify(path.join(root,'lib/core.mjs'))};export const db=()=>F.db;export const config=()=>F.env;export const uid=()=>crypto.randomUUID();export async function identity(){if(!F.user)throw new AppError('Connectez-vous.',401);return {user:F.user,tenant:F.user.userId,organization:F.user.userId,role:'owner'};}`,
  './billing':'export const releaseReadiness=()=>({enabled:false,checks:{payment:false,xafCheckout:false}});','./metering':'export const modelReadiness=()=>({ready:true});','./model-router':'export const routingEnabled=()=>true;export const routingReadiness=()=>({enabled:true,policy:"adaptive"});','./agent-lessons':'export const lessonPatterns=async()=>[{tool:"plan_media",code:"invalid_input",count:3,recovered:1,lastSeen:Date.now()}];'};
-await build({stdin:{contents:`export * from ${JSON.stringify(path.join(root,'lib/platform-admin.ts'))};export {agentQualityReport} from ${JSON.stringify(path.join(root,'lib/agent-quality.ts'))};`,resolveDir:root,loader:'ts'},outfile:path.join(out,'admin.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'error',external:['zod'],plugins:[{name:'stubs',setup(b){b.onResolve({filter:/^\.\/(server|billing|metering|model-router|agent-lessons)$/},a=>({path:a.path,namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js',resolveDir:root}));}}]});
+await build({stdin:{contents:`export * from ${JSON.stringify(path.join(root,'lib/platform-admin.ts'))};export {flushTraffic,recordTraffic,cleanupTraffic} from ${JSON.stringify(path.join(root,'lib/traffic.ts'))};export {agentQualityReport} from ${JSON.stringify(path.join(root,'lib/agent-quality.ts'))};`,resolveDir:root,loader:'ts'},outfile:path.join(out,'admin.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'error',external:['zod'],plugins:[{name:'stubs',setup(b){b.onResolve({filter:/^\.\/(server|billing|metering|model-router|agent-lessons)$/},a=>({path:a.path,namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js',resolveDir:root}));}}]});
 const admin=await import(pathToFileURL(path.join(out,'admin.mjs')).href);
 const request=(method='GET',origin='https://braand.test')=>new Request('https://braand.test/api/admin/x',{method,headers:method==='GET'?{}:{origin}});
 let checks=0;const pass=name=>{checks++;console.log('PASS '+name);};
@@ -137,9 +137,53 @@ const audit=await admin.adminAudit('admin.');assert.ok(audit.entries.length>=4&&
  pass('stop reasons are grouped with amounts hidden: balance ×2, provider busy ×1');
 }
 
+// Traffic: requests counted in memory, written in one batch, visitors once a day, read back for the admin.
+{
+ const db=globalThis.__adminFixture.db,today=new Date(now).toISOString().slice(0,10);
+ const html=new Response('<!doctype html>',{status:200,headers:{'content-type':'text/html; charset=utf-8'}}),json=new Response('{}',{status:500,headers:{'content-type':'application/json'}});
+ const visit=(path,ip,ua,referer,host='https://braand.fun')=>{const r=new Request(host+path,{headers:{'user-agent':ua,'cf-connecting-ip':ip,...(referer?{referer}:{})}});Object.defineProperty(r,'cf',{value:{country:'CM'}});return r;};
+ const CHROME='Mozilla/5.0 (Windows NT 10.0) Chrome/130.0',PHONE='Mozilla/5.0 (iPhone) Mobile/15E148';
+ let started=Date.now();
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.1',CHROME,'https://www.google.com/'),html,started);
+ admin.recordTraffic(db,undefined,visit('/aide','198.51.100.1',CHROME,'https://braand.fun/'),html,started);
+ admin.recordTraffic(db,undefined,visit('/tarifs','198.51.100.1',CHROME),html,started);
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.2',PHONE,'https://l.facebook.com/'),html,started);
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.3','Googlebot/2.1'),html,started);
+ admin.recordTraffic(db,undefined,visit('/api/billing/summary','198.51.100.1',CHROME),json,started-1200);
+ sql.prepare("INSERT OR IGNORE INTO site_publications(id,workspace_id,organization_id,resource_id,slug,resource_version,digest,status,badge,created_at,updated_at) VALUES ('pub-t','user-4','user-4','site-t','mon-salon',1,'d','published',1,?,?)").run(now,now);
+ admin.recordTraffic(db,undefined,visit('/mon-salon/','198.51.100.9',PHONE,null,'https://braand-sites.workers.dev'),html,started,{slug:'mon-salon'});
+ const written=await admin.flushTraffic(db);
+ assert.ok(written.counters>5);assert.equal(written.visitors,3,'three people on braand.fun and the site; the robot is not a visitor');
+ assert.equal(sql.prepare("SELECT n FROM traffic_daily WHERE day=? AND scope='app' AND dim='views'").get(today).n,3,'the internal click is not a new visit, the robot is not counted');
+ // The same person again the same day is not a new visitor.
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.1',CHROME),html,started);await admin.flushTraffic(db);
+ assert.equal(sql.prepare("SELECT n FROM traffic_daily WHERE day=? AND scope='app' AND dim='visitors'").get(today).n,2);
+ const stored=JSON.stringify(sql.prepare('SELECT * FROM traffic_daily').all())+JSON.stringify(sql.prepare('SELECT * FROM traffic_visitors').all());
+ assert.ok(!stored.includes('198.51.100'),'no IP address is stored');assert.equal(sql.prepare("SELECT COUNT(*) n FROM platform_settings WHERE key=?").get('traffic_salt:'+today).n,1);
+ // A database failure never throws: the response is already served.
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.4',CHROME),html,started);
+ assert.deepEqual(await admin.flushTraffic({prepare:()=>({bind:()=>({})}),batch:async()=>{throw new Error('D1 down');}}),{counters:0,visitors:0});
+ // Earlier days for the period comparison.
+ for(let d=1;d<=40;d++){const day=new Date(now-d*DAY).toISOString().slice(0,10);for(const [dim,value,n] of [['views','',40+d%9*6],['visitors','',18+d%7*3],['source','Google',12],['source','Facebook',9+d%4],['source','Lien direct',11],['page','/',30],['page','/tarifs',8],['country','CM',28],['country','SN',6],['country','FR',4],['device','Téléphone',30],['device','Ordinateur',12],['bot','',14]])ins('traffic_daily',{day,scope:'app',key:'',dim,value,n});
+  for(const [dim,value,n] of [['views','',6+d%5],['visitors','',3+d%3]])ins('traffic_daily',{day,scope:'site',key:'mon-salon',dim,value,n});
+  for(const [key,count,slow,fail,ms] of [['/api/chat',120,4,1,900],['/api/billing/summary',60,0,0,140],['/api/resources/:id',300,1,0,80]]){ins('traffic_daily',{day,scope:'api',key,dim:'requests',value:'GET',n:count});ins('traffic_daily',{day,scope:'api',key,dim:'status',value:'2xx',n:count-fail});if(fail)ins('traffic_daily',{day,scope:'api',key,dim:'status',value:'5xx',n:fail});ins('traffic_daily',{day,scope:'api',key,dim:'latency',value:'< 10 s',n:slow});ins('traffic_daily',{day,scope:'api',key,dim:'ms_total',value:'',n:count*ms});}}
+ const traffic=await admin.adminTraffic(30,now);
+ assert.equal(traffic.days,30);assert.equal(traffic.app.series.length,30);assert.equal(traffic.app.series.at(-1).visitors,2);
+ assert.ok(traffic.app.views>1000);assert.equal(typeof traffic.app.change.views,'number');assert.ok(traffic.app.conversion>0);
+ assert.equal(traffic.app.sources[0].label,'Google');assert.equal(traffic.app.countries[0].label,'CM');assert.equal(traffic.app.devices[0].label,'Téléphone');
+ assert.equal(traffic.sites.list[0].slug,'mon-salon');assert.equal(traffic.sites.list[0].owner,sql.prepare("SELECT email FROM auth_users WHERE id='user-4'").get().email);
+ const chat=traffic.api.routes.find(r=>r.route==='/api/chat');assert.equal(chat.averageMs,900);assert.ok(chat.errorRate>0);assert.ok(traffic.api.errorRate5>0);
+ assert.equal((await admin.adminTraffic('abc',now)).days,30,'an unknown period falls back to 30 days');
+ // Retention: daily totals 400 days, visitor hashes and salts 2 days.
+ ins('traffic_daily',{day:new Date(now-500*DAY).toISOString().slice(0,10),scope:'app',key:'',dim:'views',value:'',n:1});ins('traffic_visitors',{day:new Date(now-3*DAY).toISOString().slice(0,10),scope:'app',key:'',hash:'old'});
+ await admin.cleanupTraffic(db,now);
+ assert.equal(sql.prepare("SELECT COUNT(*) n FROM traffic_daily WHERE day<?").get(new Date(now-400*DAY).toISOString().slice(0,10)).n,0);assert.equal(sql.prepare("SELECT COUNT(*) n FROM traffic_visitors WHERE hash='old'").get().n,0);
+ pass('traffic: one batch per flush, a visitor once a day, robots and internal clicks apart, no IP stored, failures silent, admin figures and retention');
+}
+
 if(process.env.ADMIN_PREVIEW==='1'){
  // Render the real interface with these exact answers.
- const routes={'/api/admin/overview':{...overview,pendingDecisions:await admin.adminPendingDecisions(now)},'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/sites':await admin.adminSites(now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:sql.prepare('SELECT * FROM operations_backups ORDER BY created_at DESC').all()},backupHealth:await admin.adminBackupHealth(now),stopReasons:await admin.adminStopReasons(7,now),quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
+ const routes={'/api/admin/traffic':await admin.adminTraffic(30,now),'/api/admin/overview':{...overview,pendingDecisions:await admin.adminPendingDecisions(now)},'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/sites':await admin.adminSites(now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:sql.prepare('SELECT * FROM operations_backups ORDER BY created_at DESC').all()},backupHealth:await admin.adminBackupHealth(now),stopReasons:await admin.adminStopReasons(7,now),quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
  for(const u of routes['/api/admin/users'].users)routes['/api/admin/users/'+u.id]=await admin.adminUserDetail(u.id,now);
  writeFileSync(path.join(out,'routes.json'),JSON.stringify(routes));
  await build({stdin:{contents:`import React from "react";import {createRoot} from "react-dom/client";import {AdminDashboard} from "./components/admin/admin-dashboard";import "./app/tokens.css";import "./app/globals.css";

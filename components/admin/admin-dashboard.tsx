@@ -6,9 +6,10 @@ import Link from "next/link";
 import {api,post} from "@/lib/client-api";
 import "./admin.css";
 
-type View="overview"|"users"|"finance"|"sites"|"feedback"|"ai"|"quality"|"media"|"system"|"audit";
+type View="overview"|"traffic"|"users"|"finance"|"sites"|"feedback"|"ai"|"quality"|"media"|"system"|"audit";
 const VIEWS:{id:View;label:string;help:string}[]=[
  {id:"overview",label:"Vue d’ensemble",help:"L’essentiel de Braand en un coup d’œil : utilisateurs, activité, argent et ce qui demande votre attention."},
+ {id:"traffic",label:"Trafic",help:"Qui visite braand.fun et les sites publiés, d’où viennent les visiteurs, et la santé de l’API. Compté par Braand, par jour, sans cookie ni adresse IP conservée."},
  {id:"users",label:"Utilisateurs",help:"Tous les comptes, leurs crédits et leur activité. Cliquez sur un compte pour agir : offrir des crédits, déconnecter, suspendre."},
  {id:"finance",label:"Revenus & crédits",help:"Commandes, abonnements, remboursements et mouvements de crédits."},
  {id:"sites",label:"Sites & forfaits",help:"Les sites publiés par vos clients (adresse, propriétaire, demandes reçues) et le catalogue des forfaits avec les abonnements actifs. Le contenu des sites n’est jamais affiché ici."},
@@ -82,6 +83,62 @@ function Overview(){
    <div className="adm-card"><h2>Revenu par jour (FCFA)</h2><Chart points={s} bars={s.map(p=>p.revenueXaf)} barColor="var(--color-success)"/></div>
    <div className="adm-card"><h2>Coût IA par jour (FCFA)</h2><Chart points={s} bars={s.map(p=>p.costXaf)} barColor="var(--color-warning)"/></div>
   </div>
+ </>;
+}
+
+type Count={label:string;count:number};
+type TrafficData={days:number;since:string|null;app:{views:number;visitors:number;bots:number;signups:number;conversion:number|null;change:{views:number|null;visitors:number|null;signups:number|null};series:{day:string;views:number;visitors:number;signups:number}[];pages:Count[];sources:Count[];countries:Count[];devices:Count[]};sites:{views:number;visitors:number;count:number;list:{slug:string;owner:string|null;views:number;visitors:number;lastDay:string}[];series:{day:string;views:number}[]};api:{requests:number;errors5:number;errors4:number;errorRate5:number;errorRate4:number;change:number|null;series:{day:string;requests:number;errors:number}[];routes:{route:string;requests:number;errorRate:number;averageMs:number;slowRate:number}[]}};
+const COUNTRY=(code:string)=>{try{return new Intl.DisplayNames(["fr"],{type:"region"}).of(code)||code;}catch{return code;}};
+const trend=(v:number|null)=>v===null?"pas de période précédente":(v>0?"+":"")+fmt(v,1)+" % par rapport à la période précédente";
+function Shares({title,items,total,label=(s:string)=>s}:{title:string;items:Count[];total:number;label?:(s:string)=>string}){
+ return <div className="adm-card"><h2>{title}</h2>{items.length?<ul className="adm-shares">{items.map(item=><li key={item.label}><span>{label(item.label)}</span><span className="adm-num">{fmt(item.count)}</span><span className="adm-share-bar" aria-hidden="true"><i style={{width:Math.max(2,Math.round(item.count/Math.max(1,total)*100))+"%"}}/></span></li>)}</ul>:<div className="adm-empty">Pas encore de visite sur la période.</div>}</div>;
+}
+function Traffic(){
+ const [days,setDays]=useState(30),[part,setPart]=useState<"app"|"sites"|"api">("app");
+ const {data,error}=useData<TrafficData>("/api/admin/traffic?days="+days);
+ if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
+ const a=data.app,si=data.sites,ap=data.api;
+ return <>
+  <div className="adm-toolbar">
+   <div className="adm-seg" role="group" aria-label="Période">{[7,30,90].map(d=><button key={d} type="button" aria-pressed={days===d} onClick={()=>setDays(d)}>{d} jours</button>)}</div>
+   <div className="adm-seg" role="group" aria-label="Trafic">{([["app","braand.fun"],["sites","Sites publiés"],["api","API"]] as const).map(([id,l])=><button key={id} type="button" aria-pressed={part===id} onClick={()=>setPart(id)}>{l}</button>)}</div>
+  </div>
+  <p className="adm-note">{data.since?`Mesuré par Braand depuis le ${new Date(data.since+"T00:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",timeZone:"UTC"})}.`:"La mesure démarre avec ce déploiement : les premiers chiffres arrivent après les premières visites."} Sans cookie ni adresse IP conservée ; les robots sont exclus. Chiffres minimaux : les dernières secondes d’activité peuvent arriver avec un léger retard.</p>
+  {part==="app"?<>
+   <div className="adm-grid">
+    <Kpi label="Visiteurs" value={fmt(a.visitors)} hint={"Personnes différentes par jour, additionnées · "+trend(a.change.visitors)}/>
+    <Kpi label="Pages vues" value={fmt(a.views)} hint={trend(a.change.views)}/>
+    <Kpi label="Inscriptions" value={fmt(a.signups)} hint={trend(a.change.signups)}/>
+    <Kpi label="Conversion" value={a.conversion===null?"—":fmt(a.conversion,1)+" %"} hint="Inscriptions rapportées aux visiteurs de la période."/>
+    <Kpi label="Robots écartés" value={fmt(a.bots)} hint="Moteurs de recherche, aperçus de liens et outils automatiques : non comptés dans les visites."/>
+   </div>
+   <div className="adm-row">
+    <div className="adm-card"><h2>Visiteurs et inscriptions par jour</h2><Chart points={a.series} bars={a.series.map(p=>p.visitors)} line={a.series.map(p=>p.signups)}/><p className="adm-legend">Barres : visiteurs · ligne : inscriptions</p></div>
+    <div className="adm-card"><h2>Pages vues par jour</h2><Chart points={a.series} bars={a.series.map(p=>p.views)} barColor="var(--color-accent)"/></div>
+   </div>
+   <div className="adm-row">
+    <Shares title="Pages les plus vues" items={a.pages} total={a.views}/>
+    <Shares title="D’où viennent les visiteurs" items={a.sources} total={a.views}/>
+    <Shares title="Pays" items={a.countries} total={a.views} label={COUNTRY}/>
+    <Shares title="Appareils" items={a.devices} total={a.views}/>
+   </div>
+  </>:part==="sites"?<>
+   <div className="adm-grid">
+    <Kpi label="Visiteurs des sites" value={fmt(si.visitors)}/>
+    <Kpi label="Pages vues" value={fmt(si.views)}/>
+    <Kpi label="Sites visités" value={fmt(si.count)} hint="Sites publiés qui ont reçu au moins une visite sur la période."/>
+   </div>
+   <div className="adm-card"><h2>Pages vues des sites par jour</h2><Chart points={si.series} bars={si.series.map(p=>p.views)} barColor="var(--color-accent)"/></div>
+   <div className="adm-card"><h2>Sites les plus visités</h2><p className="adm-note">Le contenu des sites n’est jamais affiché ici.</p><Table head={["Site","Propriétaire","Visiteurs","Pages vues","Dernière visite"]} rows={si.list.map(site=>[site.slug,site.owner||"—",site.visitors,site.views,site.lastDay?date(Date.parse(site.lastDay+"T12:00:00Z")):"—"])} empty="Aucun site publié n’a encore été visité sur la période."/></div>
+  </>:<>
+   <div className="adm-grid">
+    <Kpi label="Requêtes" value={fmt(ap.requests)} hint={trend(ap.change)}/>
+    <Kpi label="Erreurs serveur (5xx)" value={fmt(ap.errorRate5,1)+" %"} hint={fmt(ap.errors5)+" requête(s) en erreur"} tone={ap.errorRate5>2?"bad":ap.requests?"good":undefined}/>
+    <Kpi label="Refus et erreurs client (4xx)" value={fmt(ap.errorRate4,1)+" %"} hint="Accès refusés, données invalides, éléments introuvables."/>
+   </div>
+   <div className="adm-card"><h2>Requêtes et erreurs serveur par jour</h2><Chart points={ap.series} bars={ap.series.map(p=>p.requests)} line={ap.series.map(p=>p.errors)} lineColor="var(--color-danger)"/><p className="adm-legend">Barres : requêtes · ligne : erreurs 5xx</p></div>
+   <div className="adm-card"><h2>Routes de l’API</h2><p className="adm-note">Pour les réponses en direct de l’agent, la durée est celle avant le premier mot.</p><Table head={["Route","Nombre","Erreurs 5xx","Moyenne","Plus de 3 s"]} rows={ap.routes.map(r=>[<span key="r" className="adm-code">{r.route}</span>,r.requests,fmt(r.errorRate,1)+" %",fmt(r.averageMs)+" ms",fmt(r.slowRate,1)+" %"])} empty="Pas encore de requête mesurée sur la période."/></div>
+  </>}
  </>;
 }
 
@@ -276,7 +333,7 @@ export function AdminDashboard(){
    <div className="adm-mobile-tabs" role="tablist">{VIEWS.map(v=><button key={v.id} aria-current={v.id===view?"page":undefined} onClick={()=>go(v.id)}>{v.label}</button>)}</div>
    <main className="adm-main" key={view+refresh}>
     <div className="adm-head"><div><h1>{current.label}</h1><p>{current.help}</p></div><button className="adm-btn" onClick={()=>setRefresh(r=>r+1)}>Actualiser</button></div>
-    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="feedback"?<FeedbackAdmin notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality" notify={notify}/>:view==="media"?<Media/>:view==="system"?<System part="system" notify={notify}/>:<Audit/>}
+    {view==="overview"?<Overview/>:view==="traffic"?<Traffic/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="feedback"?<FeedbackAdmin notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality" notify={notify}/>:view==="media"?<Media/>:view==="system"?<System part="system" notify={notify}/>:<Audit/>}
    </main>
   </div>
   {notice?<div className={"adm-notice"+(notice.error?" error":"")} role="status">{notice.text}</div>:null}
