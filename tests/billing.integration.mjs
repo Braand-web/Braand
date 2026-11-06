@@ -14,14 +14,18 @@ function statement(query,args=[]){return {bind(...v){return statement(query,v);}
 const DB={prepare:q=>statement(q),async batch(ss){sql.exec('BEGIN');try{const rows=ss.map(s=>s._run());sql.exec('COMMIT');return rows;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 globalThis.__billingTest={env:{DB},headers:new Headers({'x-braand-identity-id':'owner','x-braand-identity-email':'owner@test.invalid'})};
 const out=path.join(project,'.local-build','billing-test.mjs');mkdirSync(path.dirname(out),{recursive:true});
-const modules={billing:'lib/billing.ts',server:'lib/server.ts',organizations:'lib/organizations.ts',workspace:'app/api/workspace/route.ts',refunds:'lib/refunds.ts',route:'app/api/billing/[...path]/route.ts',webhook:'app/api/webhooks/saspay/route.ts',tick:'app/api/internal/billing-tick/route.ts',admin:'app/api/admin/billing/route.ts',meter:'lib/metering.ts'};
+const modules={outlook:'lib/credit-outlook.ts',billing:'lib/billing.ts',server:'lib/server.ts',organizations:'lib/organizations.ts',workspace:'app/api/workspace/route.ts',refunds:'lib/refunds.ts',route:'app/api/billing/[...path]/route.ts',webhook:'app/api/webhooks/saspay/route.ts',tick:'app/api/internal/billing-tick/route.ts',admin:'app/api/admin/billing/route.ts',meter:'lib/metering.ts'};
 await build({stdin:{contents:Object.entries(modules).map(([n,f])=>'export * as '+n+' from "'+path.join(project,f).replaceAll('\\','/')+'";').join('\n'),resolveDir:project,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'esm',nodePaths:[runtime],plugins:[{name:'test-bindings',setup(b){b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},a=>({path:a.path,namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},a=>({contents:a.path==='cloudflare:workers'?'export const env=globalThis.__billingTest.env;':a.path==='next/headers'?'export async function headers(){return globalThis.__billingTest.headers;}':'export function redirect(){throw new Error("unexpected redirect");}'}));}}]});
-const {billing:b,server:s,organizations:o,workspace,refunds,route,webhook,tick,admin,meter}=await import(pathToFileURL(out).href),env=globalThis.__billingTest.env;
+const {outlook,billing:b,server:s,organizations:o,workspace,refunds,route,webhook,tick,admin,meter}=await import(pathToFileURL(out).href),env=globalThis.__billingTest.env;
 let checks=0;const check=(name,fn)=>Promise.resolve().then(fn).then(()=>{checks++;console.log('PASS '+name);});
 const request=(method='GET',body,space='owner')=>new Request('https://braand.test/api/billing/summary',{method,headers:{'Content-Type':'application/json','x-braand-workspace':space},...(body?{body:JSON.stringify(body)}:{})});
 const who=await s.identity(request());
 await check('Launch gates default closed, free quota defaults zero',async()=>{assert.equal(b.releaseReadiness().enabled,false);await assert.rejects(()=>b.claimFree(who));});
 await check('Anonymous catalogue is public; private summary requires identity',async()=>{const old=globalThis.__billingTest.headers;globalThis.__billingTest.headers=new Headers();assert.equal((await route.GET(request(),{params:Promise.resolve({path:['catalog']})})).status,200);assert.equal((await route.GET(request(),{params:Promise.resolve({path:['summary']})})).status,401);globalThis.__billingTest.headers=old;});
+await check('The balance outlook is readable by the workspace and says whether this person can top up',async()=>{
+ const response=await route.GET(request(),{params:Promise.resolve({path:['outlook']})});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');
+ const body=await response.json();assert.ok(['ok','low','critical','empty'].includes(body.level));assert.equal(typeof body.summary,'string');assert.equal(body.canTopUp,true);
+});
 await check('Free allocation grants 15 once, keeps its seven-day expiry and enforces the manual daily cap',async()=>{
  env.FREE_DAILY_CREDITS='15';assert.deepEqual(b.catalog().free,{credits:15,days:7,enabled:true});
  const person={...who,organization:'newcomer',user:{...who.user,userId:'newcomer'}};
@@ -280,6 +284,28 @@ await check('Hosted checkout sells catalogue packs and plans without fabricated 
   const note=sql.prepare('SELECT id FROM billing_credit_notes WHERE organization_id=?').get(person.organization),response=await route.GET(request('GET',undefined,person.tenant),{params:Promise.resolve({path:['credit-notes',note.id]})});
   const html=await response.text();assert.match(html,/Confirmation de remboursement Braand/);assert.ok(!html.includes('Taxes configurées'));
  }finally{for(const name of Object.keys(env))delete env[name];Object.assign(env,saved);globalThis.__billingTest.headers=oldHeaders;}
+});
+await check('The agent and the conversation see the balance, its pace and when it runs out, from the real ledger',async()=>{
+ assert.deepEqual(outlook.creditLevel(100,1,0),{level:'ok',daysLeft:100});
+ assert.equal(outlook.creditLevel(50,10,0).level,'low');assert.equal(outlook.creditLevel(30,0,200).level,'low');assert.equal(outlook.creditLevel(4,0,0).level,'low');
+ assert.equal(outlook.creditLevel(14,0.14,0).level,'ok','a fresh free allowance used lightly is not flagged');assert.equal(outlook.creditLevel(9,0.8,0).level,'ok');
+ assert.equal(outlook.creditLevel(1.5,0,0).level,'critical');assert.equal(outlook.creditLevel(8,0,200).level,'critical');assert.equal(outlook.creditLevel(30,20,0).level,'critical');assert.equal(outlook.creditLevel(0.5,0,0).level,'empty');
+ const now=Date.now(),org='outlook-org',person={...who,organization:org,user:{...who.user,userId:'outlook-user'}};
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run('lot-outlook',org,'topup','order-outlook',10000,10000,now-1000,now+3*86400000,now-1000);
+ let view=await outlook.creditOutlook(org);
+ assert.equal(view.available,100);assert.equal(view.used7d,0);assert.equal(view.daysLeft,null);assert.equal(view.level,'ok');assert.equal(view.expiringSoon.credits,100);
+ const first=await b.reserve(person,'outlook-run-1',6000);await b.settleHold(first.id,6000);
+ view=await outlook.creditOutlook(org);
+ assert.equal(view.available,40);assert.equal(view.used7d,60);assert.equal(view.dailyAverage,8.57);assert.equal(view.level,'low');assert.ok(view.daysLeft>4&&view.daysLeft<5);
+ assert.match(outlook.describeOutlook(view),/^40 crédits disponibles ; environ 8,57 crédits utilisés par jour sur 7 jours, soit environ 4 jours à ce rythme ; 40 crédits expirent le /);
+ assert.match(outlook.outlookContext(view),/Niveau : bas\. Solde bas : préviens l’utilisateur en une phrase, une seule fois/);
+ const second=await b.reserve(person,'outlook-run-2',3600);await b.settleHold(second.id,3600);
+ view=await outlook.creditOutlook(org);assert.equal(view.available,4);assert.equal(view.level,'critical');
+ assert.match(outlook.outlookContext(view),/presque épuisé : préviens l’utilisateur dès le début/);
+ // An unsettled reservation is not counted as used, but holds its credits.
+ const running=await b.reserve(person,'outlook-run-3',300);view=await outlook.creditOutlook(org);assert.equal(view.used7d,96);assert.equal(view.reserved,3);assert.equal(view.available,1,'work still running holds its credits');
+ // The answer asking is not counted against itself.
+ view=await outlook.creditOutlook(org,Date.now(),running.id);assert.equal(view.available,4);assert.equal(view.reserved,0);
 });
 console.log(`${checks} billing integration checks passed. Provider responses were simulated; no real payment or provider validation.`);sql.close();
 

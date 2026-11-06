@@ -15,6 +15,7 @@ export async function GET(request:Request,context:Context){try{
  if(key==='price'){const quantity=Number(new URL(request.url).searchParams.get('quantity'));return Response.json({quantity,amount:topupPrice(quantity),currency:'XAF',version:CATALOG_VERSION});}
  const who=await identity(request);
  if(key==='summary'){const data=await summary(who.organization);if(who.role!=='owner'){data.orders=[];data.invoices=[];data.creditNotes=[];}return Response.json(data);}
+ if(key==='outlook'){const outlook=await import('@/lib/credit-outlook'),o=await outlook.creditOutlook(who.organization);return Response.json({...o,summary:outlook.describeOutlook(o),canTopUp:who.role==='owner'},{headers:{'Cache-Control':'private, no-store'}});}
  if(key==='organization')return Response.json(await organizationSummary(who));
  if(key==='orders'&&path[1]){
   requireBilling(who);let order=await db().prepare('SELECT * FROM billing_orders WHERE id=? AND organization_id=?').bind(path[1],who.organization).first<OrderRow>();
