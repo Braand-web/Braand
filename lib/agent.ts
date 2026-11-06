@@ -327,7 +327,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
      results.push({type:'tool_result',tool_use_id:call.id,content:richPresentationInstruction});return;
     }
     if(call.name==='suggest_followups'){results.push(await showFollowUps(call));return;}
-    if(call.name==='get_credit_balance'){const outlook=await import('./credit-outlook'),o=await outlook.creditOutlook(budget.who.organization,Date.now(),budget.holdId);results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify({...o,summary:outlook.describeOutlook(o),unit:'crédits',note:'Lu maintenant sur le portefeuille de l’organisation ; les tâches en cours sont déduites, pas cette réponse.'})});return;}
+    if(call.name==='get_credit_balance'){const outlook=await import('./credit-outlook'),o=await outlook.creditOutlook(budget.who.organization,Date.now(),budget.holdId);results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify({...o,summary:outlook.describeOutlook(o),unit:'crédits',note:'Lu maintenant sur le portefeuille de l’organisation. inProgress : crédits réservés un moment par une tâche en cours ou un coût en attente de reçu (plafond, pas une dépense).'})});return;}
     if(call.name==='present_response'){
      const response=await prepareRichResponse(tenant,conversationId,messageId,call.id,call.input);
      await persistRichResponse(response);await emit('rich_response',response);

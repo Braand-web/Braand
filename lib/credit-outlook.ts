@@ -8,7 +8,7 @@ import {periods, DAY} from './billing-core.mjs';
 
 export type CreditLevel = 'ok' | 'low' | 'critical' | 'empty';
 export type CreditOutlook = {
- available: number; reserved: number; allowance: number;
+ available: number; reserved: number; inProgress: number; allowance: number;
  used7d: number; dailyAverage: number; daysLeft: number | null;
  expiringSoon: {credits: number; at: number} | null;
  nextRefill: number | null; plan: string;
@@ -47,10 +47,13 @@ export async function creditOutlook(org: string, now = Date.now(), excludeHold =
  const terms = subscription ? await subscriptionTerms(subscription) : null;
  const allowance = terms?.credits || 0;
  const period = subscription ? periods(subscription.start_at, subscription.cycle, allowance).find((p: {start: number; end: number}) => p.start <= now && p.end > now) : undefined;
- const available = round(Math.max(0, (wallet?.free || 0) - (wallet?.holds || 0)) / 100), used7d = round((used?.units || 0) / 100), dailyAverage = round(used7d / 7);
+ // The wallet balance, as shown in the sidebar. Running work or an answer
+ // waiting for its cost receipt holds credits only for a while (often the
+ // whole balance, as an upper bound): it is reported apart, never as spent.
+ const available = round(Math.max(0, wallet?.free || 0) / 100), used7d = round((used?.units || 0) / 100), dailyAverage = round(used7d / 7);
  const {level, daysLeft} = creditLevel(available, dailyAverage, allowance);
  return {
-  available, reserved: round(((wallet?.lots || 0) + (wallet?.holds || 0)) / 100), allowance, used7d, dailyAverage, daysLeft,
+  available, reserved: round(((wallet?.lots || 0) + (wallet?.holds || 0)) / 100), inProgress: round((wallet?.holds || 0) / 100), allowance, used7d, dailyAverage, daysLeft,
   expiringSoon: expiring?.units && expiring.at ? {credits: round(expiring.units / 100), at: expiring.at} : null,
   nextRefill: period && subscription && period.end < subscription.end_at ? period.end : null,
   plan: subscription?.plan || 'free', level, asOf: now,
@@ -62,7 +65,7 @@ const credits = (value: number) => value.toLocaleString('fr-FR', {maximumFractio
 
 /** One line per fact, for the agent's context and the warning shown in the conversation. */
 export function describeOutlook(o: CreditOutlook): string {
- const parts = [`${credits(o.available)} disponibles`];
+ const parts = [`${credits(o.available)} disponible${o.available >= 2 ? 's' : ''}`];
  if (o.dailyAverage > 0) parts.push(`environ ${credits(o.dailyAverage)} utilisés par jour sur 7 jours${o.daysLeft === null ? '' : o.daysLeft < 1 ? ', soit moins d’un jour à ce rythme' : `, soit environ ${Math.floor(o.daysLeft)} jour${o.daysLeft >= 2 ? 's' : ''} à ce rythme`}`);
  if (o.expiringSoon) parts.push(`${credits(o.expiringSoon.credits)} expirent le ${day(o.expiringSoon.at)}`);
  if (o.nextRefill) parts.push(`prochaine recharge de l’abonnement le ${day(o.nextRefill)}`);

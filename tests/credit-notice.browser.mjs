@@ -38,15 +38,16 @@ try{
  await page.screenshot({path:path.join(output,'low-dark.png')});
  await notice.getByRole('button',{name:'Recharger'}).click();assert.equal(await page.evaluate(()=>window.topUps),1);
  pass('a low balance is announced in advance with the pace, the days left and the expiry, and Recharger opens the top-up');
- await notice.getByRole('button',{name:'Masquer pour aujourd’hui'}).click();assert.equal(await page.locator('.credit-notice').count(),0);
+ await notice.getByRole('button',{name:'Fermer'}).click();assert.equal(await page.locator('.credit-notice').count(),0);
  await page.reload();await page.waitForTimeout(1900);assert.equal(await page.locator('.credit-notice').count(),0,'stays hidden today');
  outlook={...outlook,level:'critical',summary:'4 crédits disponibles'};await page.reload();
  await page.getByRole('status').filter({hasText:'Vos crédits sont presque épuisés'}).waitFor({timeout:5000});
  pass('a hidden warning stays hidden for the day, and a worse level shows again');
  outlook={level:'empty',summary:'0 crédit disponible',canTopUp:false};await page.reload();
  const empty=page.getByRole('status').filter({hasText:'Vos crédits sont épuisés'});await empty.waitFor({timeout:5000});
- assert.equal(await empty.getByRole('button').count(),0,'no hide and no top-up for a member');assert.match(await empty.innerText(),/Demandez au propriétaire de l’espace de recharger/);
- pass('an empty balance cannot be hidden, and a member is told to ask the owner');
+ assert.equal(await empty.getByRole('button',{name:'Recharger'}).count(),0,'no top-up for a member');assert.match(await empty.innerText(),/Demandez au propriétaire de l’espace de recharger/);
+ await empty.getByRole('button',{name:'Fermer'}).click();assert.equal(await page.locator('.credit-notice').count(),0,'even an empty balance can be closed');
+ pass('every warning, even an empty balance, closes with the small cross, and a member is told to ask the owner');
  assert.deepEqual(errors,[]);await context.close();
  outlook={level:'critical',summary:'4 crédits disponibles ; environ 3 crédits utilisés par jour sur 7 jours, soit environ 1 jour à ce rythme',canTopUp:true};
  for(const [name,options] of [['light',{viewport:{width:1000,height:400},colorScheme:'light'}],['mobile',{viewport:{width:360,height:640},deviceScaleFactor:2}]]){

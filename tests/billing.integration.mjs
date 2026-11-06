@@ -302,10 +302,10 @@ await check('The agent and the conversation see the balance, its pace and when i
  const second=await b.reserve(person,'outlook-run-2',3600);await b.settleHold(second.id,3600);
  view=await outlook.creditOutlook(org);assert.equal(view.available,4);assert.equal(view.level,'critical');
  assert.match(outlook.outlookContext(view),/presque épuisé : préviens l’utilisateur dès le début/);
- // An unsettled reservation is not counted as used, but holds its credits.
- const running=await b.reserve(person,'outlook-run-3',300);view=await outlook.creditOutlook(org);assert.equal(view.used7d,96);assert.equal(view.reserved,3);assert.equal(view.available,1,'work still running holds its credits');
+ // An unsettled reservation is neither used nor deducted from the balance.
+ const running=await b.reserve(person,'outlook-run-3',300);view=await outlook.creditOutlook(org);assert.equal(view.used7d,96);assert.equal(view.reserved,3);assert.equal(view.inProgress,3);assert.equal(view.available,4,'a temporary reservation is shown apart, never as spent');assert.equal(view.level,'critical');
  // The answer asking is not counted against itself.
- view=await outlook.creditOutlook(org,Date.now(),running.id);assert.equal(view.available,4);assert.equal(view.reserved,0);
+ view=await outlook.creditOutlook(org,Date.now(),running.id);assert.equal(view.available,4);assert.equal(view.inProgress,0);
 });
 console.log(`${checks} billing integration checks passed. Provider responses were simulated; no real payment or provider validation.`);sql.close();
 
