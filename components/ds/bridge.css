@@ -96,8 +96,6 @@ html:root:root .toast { border: 1px solid var(--color-border); border-radius: va
 /* ---------- Composer & chat ---------- */
 html:root:root :is(.composer, .chat-composer) { border-radius: var(--radius-xl); transition: box-shadow var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out); }
 html:root:root :is(.composer, .chat-composer):focus-within { box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--color-focus), transparent 55%); }
-html:root:root .home-shortcuts .platform-quick-start > * { transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
-html:root:root .home-shortcuts .platform-quick-start > button:hover { transform: translateY(-1px); }
 
 /* Streaming: animated caret while the agent writes; soft fade for new text. */
 html:root:root .streaming-response[data-state="streaming"] .streaming-response-content > :last-child::after,
@@ -110,12 +108,12 @@ html:root:root .streaming-response-content > * { animation: ds-fade var(--durati
 
 /* ---------- Page transitions & cascades ---------- */
 html:root:root .content-area > :is(.library-content, .platform-work, section, main, div):not(.messages):not(.chat-view) { animation: ds-rise var(--duration-slow) var(--ease-out); }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > * { animation: ds-rise var(--duration-slow) var(--ease-out) both; }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
-html:root:root :is(.resource-grid, .skills-grid, .platform-quick-start, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(n+6) { animation-delay: calc(var(--stagger) * 5); }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > * { animation: ds-rise var(--duration-slow) var(--ease-out) both; }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+html:root:root :is(.resource-grid, .skills-grid, .home-context-suggestions, .settings-content, .message-followups) > *:nth-child(n+6) { animation-delay: calc(var(--stagger) * 5); }
 html:root:root .messages > * { animation: ds-rise var(--duration-base) var(--ease-out) both; }
 html:root:root .sidebar .nav-item.sidebar-nav-item { transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
 

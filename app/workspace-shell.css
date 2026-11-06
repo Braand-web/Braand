@@ -77,12 +77,6 @@ html[data-design-system="muse"] .app-shell.panel-full .main-area{display:none}
 html[data-design-system="muse"] .app-shell .welcome-inner{padding:24px 0 32px}
 html[data-design-system="muse"] .app-shell .home-footer{flex-shrink:0;min-height:44px;box-sizing:border-box;padding:12px 28px}
 html[data-design-system="muse"] .home-shortcuts{container-type:inline-size;width:100%;margin-top:20px}
-html[data-design-system="muse"] .home-shortcuts .platform-quick-start{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:0}
-html[data-design-system="muse"] .home-shortcuts .platform-quick-start>button,html[data-design-system="muse"] .home-ideas .workspace-menu-trigger{width:100%;min-height:44px;justify-content:center;gap:8px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--ds-muted);font-size:var(--text-xs);line-height:20px}
-html[data-design-system="muse"] .home-shortcuts .platform-quick-start>button:hover{background:var(--ds-fill);color:var(--ds-text)}
-html[data-design-system="muse"] .home-shortcuts .platform-quick-start>button>svg{flex-shrink:0}
-html[data-design-system="muse"] .home-ideas .workspace-menu-trigger>svg:last-child{display:none}
-@container(max-width:700px){html[data-design-system="muse"] .home-shortcuts .platform-quick-start{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1023px),(pointer:coarse){
  html[data-design-system="muse"] .app-shell aside.sidebar.sidebar-essential :is(.sidebar-icon-button,.new-chat-icon,.sidebar-section-heading .icon-button,.brand-expand,.collapsed-new-chat){width:44px;height:44px;min-width:44px;min-height:44px}
  html[data-design-system="muse"] .app-shell aside.sidebar.sidebar-essential .new-chat-icon{top:0;right:0}

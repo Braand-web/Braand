@@ -811,8 +811,7 @@ try{
   const callsBeforeLayout=chatCalls;
   const alignedHeader=()=>page.evaluate(()=>{const brand=document.querySelector('.sidebar-brand').getBoundingClientRect(),bar=document.querySelector('.topbar').getBoundingClientRect();return Math.abs(brand.y+brand.height/2-bar.y-bar.height/2)<1;});
   assert.ok(await alignedHeader());assert.equal(Math.round((await page.locator('.chat-nav-row').boundingBox()).y),80);
-  assert.equal(await page.locator('.home-shortcuts .platform-quick-start>button').count(),3);
-  await page.getByRole('button',{name:'Autres idées',exact:true}).click();const ideas=page.getByRole('group',{name:'Autres idées',exact:true});assert.equal(await ideas.getByRole('button').count(),4);await ideas.getByRole('button',{name:'Créer un visuel',exact:true}).click();assert.match(await composer.inputValue(),/visuel/);assert.equal(chatCalls,callsBeforeLayout);
+  assert.equal(await page.locator('.platform-quick-start,.ob-pill,.ob-check').count(),0,'the home has no shortcuts and no demo strip');assert.equal(await page.getByText('Voir la démo').count(),0);
   await page.setViewportSize({width:774,height:668});await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===72);
   assert.ok(await alignedHeader());assert.equal(await page.locator('.brand-expand').count(),1);
   await page.getByRole('button',{name:'Déployer la navigation',exact:true}).click();await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===248);
@@ -820,11 +819,9 @@ try{
   assert.ok(await page.locator('.welcome').evaluate(element=>element.scrollHeight<=element.clientHeight+1));
   assert.ok(await page.locator('.home-footer').evaluate(element=>element.getBoundingClientRect().bottom<=innerHeight+1));
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  const shortcutRows=await page.locator('.home-shortcuts').evaluate(element=>[...element.querySelector('.platform-quick-start').children].map(child=>Math.round(child.getBoundingClientRect().top)));
-  assert.equal(shortcutRows[0],shortcutRows[1]);assert.equal(shortcutRows[2],shortcutRows[3]);
   await capture({path:path.join(output,'essential-aligned-tablet.png'),fullPage:true});
   await page.setViewportSize({width:1280,height:800});assert.equal(await page.locator('.app-shell.sidebar-collapsed').count(),0);
-  checks.push('Shared header alignment, compact tablet rail, manual expansion and four balanced shortcuts preserve the draft without sending it');
+  checks.push('Shared header alignment, compact tablet rail and manual expansion preserve the draft without sending it; the home shows no shortcut row or demo strip');
   await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Ouvrir la navigation',exact:true}).click();
   for(const selector of ['.sidebar-icon-button','.new-chat-icon','.sidebar-section-heading .icon-button','.sidebar-nav-item'])for(const target of await page.locator(selector).all()){const box=await target.boundingBox();assert.ok(box.width>=44&&box.height>=44,selector+' is too small for touch');}
   assert.ok(await alignedHeader());await capture({path:path.join(output,'essential-touch-mobile.png'),fullPage:true});
