@@ -1,5 +1,6 @@
 import {z} from 'zod';
-import {FX_REFERENCE_URL,parseBEACReference} from './model-rate-sources.mjs';
+import {parseBEACReference} from './model-rate-sources.mjs';
+import {FX_SOURCES,fxReference} from './fx-fallback.mjs';
 type Bindings=Record<string,unknown>&{BUCKET?:R2Bucket};
 const item=z.object({id:z.string().regex(/^[a-zA-Z0-9/._-]{1,180}$/),unit:z.enum(['megapixels','seconds','1000 characters']),maxUnits:z.number().finite().positive().max(10000)}).strict();
 const policySchema=z.object({version:z.literal(1),items:z.array(item).min(1).max(12)}).strict();
@@ -49,12 +50,12 @@ export function assertFalInputBounds(p:z.infer<typeof item>,raw:unknown){
 }
 export function priceFalCatalog(policy:Policy,prices:unknown,fx:ReturnType<typeof parseBEACReference>,now=Date.now()):Quote[]{
     const rows=z.array(z.object({endpoint_id:z.string(),unit_price:z.number().finite().positive(),unit:z.string(),currency:z.literal('USD')})).max(50).parse(prices);
-    if(!Number.isFinite(fx.usdXaf)||fx.usdXaf<50||fx.usdXaf>5000||fx.fxSource!==FX_REFERENCE_URL)throw Error('fal_fx_invalid');
+    if(!Number.isFinite(fx.usdXaf)||fx.usdXaf<50||fx.usdXaf>5000||!FX_SOURCES.includes(fx.fxSource))throw Error('fal_fx_invalid');
     return policy.items.map(p=>{const matches=rows.filter(r=>r.endpoint_id===p.id);if(matches.length!==1||matches[0].unit!==p.unit)throw Error('fal_price_unit_changed');const cost=matches[0].unit_price*p.maxUnits*fx.usdXaf,credits=Math.max(1,Math.ceil(cost/4));if(!Number.isFinite(cost)||credits>1000)throw Error('fal_price_limit');return {id:p.id,unit:p.unit,unitPrice:matches[0].unit_price,maxUnits:p.maxUnits,currency:'USD',costCeilingXaf:cost,credits,verifiedAt:new Date(now).toISOString(),pricingSource:FAL_PRICE_URL,fxSource:fx.fxSource,fxValueDate:fx.fxValueDate};});
 }
 function overlay(catalog:CatalogItem[],policy:Policy,snapshot:Snapshot,hash:string,now:number){
     if(snapshot.version!==1||snapshot.hash!==hash||snapshot.checkedAt>now||now-snapshot.checkedAt>DAY||snapshot.quotes.length!==policy.items.length)throw Error('fal_snapshot_stale');
-    for(const p of policy.items){const matches=snapshot.quotes.filter(q=>q.id===p.id);const q=matches[0];if(matches.length!==1||q.unit!==p.unit||q.maxUnits!==p.maxUnits||q.currency!=='USD'||q.pricingSource!==FAL_PRICE_URL||q.fxSource!==FX_REFERENCE_URL||Date.parse(q.verifiedAt)!==snapshot.checkedAt||!Number.isFinite(q.costCeilingXaf)||q.costCeilingXaf<=0||!Number.isSafeInteger(q.credits)||q.credits<1||q.credits>1000||q.costCeilingXaf>q.credits*4)throw Error('fal_snapshot_invalid');}
+    for(const p of policy.items){const matches=snapshot.quotes.filter(q=>q.id===p.id);const q=matches[0];if(matches.length!==1||q.unit!==p.unit||q.maxUnits!==p.maxUnits||q.currency!=='USD'||q.pricingSource!==FAL_PRICE_URL||!FX_SOURCES.includes(q.fxSource)||Date.parse(q.verifiedAt)!==snapshot.checkedAt||!Number.isFinite(q.costCeilingXaf)||q.costCeilingXaf<=0||!Number.isSafeInteger(q.credits)||q.credits<1||q.credits>1000||q.costCeilingXaf>q.credits*4)throw Error('fal_snapshot_invalid');}
     return catalog.filter(c=>policy.items.some(p=>p.id===c.id)).map(c=>({...c,...snapshot.quotes.find(q=>q.id===c.id)}));
 }
 // A configured dynamic policy fails closed until a current source-backed quote
@@ -85,7 +86,7 @@ export async function ensureFalRates(env:Bindings,now=Date.now()){
     current.inFlight=(async()=>{
         const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(signature))),n=>n.toString(16).padStart(2,'0')).join(''),path='internal/fal-pricing/'+hash+'.json';
         if(!current.loaded){current.loaded=true;try{const saved=await env.BUCKET?.get(path);if(saved&&saved.size<131072){const snapshot=JSON.parse(await saved.text()) as Snapshot;overlay(catalog,policy,snapshot,hash,now);current.snapshot=snapshot;}}catch{/* A cache is never permission to use an expired or foreign quote. */}if(current.snapshot&&now-current.snapshot.checkedAt<REFRESH)return;}
-        try{const url=new URL(FAL_PRICE_URL);for(const p of policy.items)url.searchParams.append('endpoint_id',p.id);const [priceText,fxText]=await Promise.all([read(url.href,String(env.FAL_KEY),131072),read(FX_REFERENCE_URL)]),fx=parseBEACReference(fxText,now),quotes=priceFalCatalog(policy,JSON.parse(priceText).prices,fx,now),snapshot:Snapshot={version:1,hash,checkedAt:now,quotes};overlay(catalog,policy,snapshot,hash,now);current.snapshot=snapshot;current.retryAt=0;try{await env.BUCKET?.put(path,JSON.stringify(snapshot),{httpMetadata:{contentType:'application/json'},customMetadata:{purpose:'internal-fal-pricing'}});}catch{/* Verified memory quote remains usable if cache storage fails. */}}
+        try{const url=new URL(FAL_PRICE_URL);for(const p of policy.items)url.searchParams.append('endpoint_id',p.id);const [priceText,fx]=await Promise.all([read(url.href,String(env.FAL_KEY),131072),fxReference((source:string)=>read(source),parseBEACReference,now)]),quotes=priceFalCatalog(policy,JSON.parse(priceText).prices,fx,now),snapshot:Snapshot={version:1,hash,checkedAt:now,quotes};overlay(catalog,policy,snapshot,hash,now);current.snapshot=snapshot;current.retryAt=0;try{await env.BUCKET?.put(path,JSON.stringify(snapshot),{httpMetadata:{contentType:'application/json'},customMetadata:{purpose:'internal-fal-pricing'}});}catch{/* Verified memory quote remains usable if cache storage fails. */}}
         catch{current.retryAt=now+300000;}
     })().finally(()=>{current.inFlight=undefined;});
     await current.inFlight;return {status:current.snapshot&&now>=current.snapshot.checkedAt&&now-current.snapshot.checkedAt<=DAY?'available':'unavailable'};

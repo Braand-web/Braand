@@ -7,7 +7,7 @@ const root=path.resolve(import.meta.dirname,'..'),outfile=path.join(root,'.local
 mkdirSync(path.dirname(outfile),{recursive:true});
 await build({stdin:{contents:`export * from './lib/model-rate-refresh';export {routedModel} from './lib/model-router';`,resolveDir:root,loader:'ts'},outfile,bundle:true,platform:'node',format:'esm',plugins:[{name:'isolated-worker-environment',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'workers',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const env={};'}));}}]});
 const url=pathToFileURL(outfile).href,refresh=await import(url);
-const now=Date.parse('2026-10-26T02:00:00Z'),hour=3600000,stored=new Map();let puts=0,fetches=0,reads=0,fail=false,missing=false,price='0.0000001';
+const now=Date.parse('2026-10-26T02:00:00Z'),hour=3600000,stored=new Map();let puts=0,fetches=0,reads=0,fail=false,missing=false,beacDown=false,price='0.0000001';
 const bucket={async get(key){reads++;const text=stored.get(key);return text===undefined?null:{size:Buffer.byteLength(text),async text(){return text;}};},async put(key,value){puts++;stored.set(key,value);}};
 const rates=Object.fromEntries(['haiku','sonnet','opus'].map(key=>[key,{enabled:true,transport:'openrouter',maxInputTokens:90000,maxOutputTokens:8192,rate:{model:`anthropic/claude-${key}-5.5`,provider:'openrouter',input:1,output:5,cacheWrite:1.25,cacheRead:.1,cacheWriteHour:2,usdXaf:600,overheadXaf:0,fundingFeeBps:0,verifiedAt:'2026-10-24T00:00:00Z'}}]));
 const env={MODEL_ROUTING_ENABLED:'true',MODEL_ROUTING_POLICY:'adaptive',MODEL_ROUTING_CATALOG_JSON:JSON.stringify(rates),OPENROUTER_API_KEY:'fixture-not-a-real-key',BUCKET:bucket};
@@ -16,6 +16,9 @@ console.error=(message)=>{assert.equal(message,'Braand model pricing refresh una
 globalThis.fetch=async(address,options)=>{
  fetches++;assert.equal(options.redirect,'manual');assert.equal(options.headers.Authorization,undefined);assert.equal(options.headers.authorization,undefined);
  if(fail)throw Error('private-provider-error-must-not-be-logged');
+
+ if(address==='https://www.beac.int/'&&beacDown)return new Response('origin down',{status:530});
+ if(address==='https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml')return new Response("<Cube><Cube time='2026-10-23'><Cube currency='USD' rate='1.1212'/></Cube></Cube>");
  if(address==='https://www.beac.int/')return new Response('USD/XAF</span></div></div><div id="middle">582.5503</div><div id="right">587.5463</div><p>Date de valeur : 23/10/2026</p>');
  assert.equal(address,'https://openrouter.ai/api/v1/models');
  return Response.json({data:Object.values(rates).filter(entry=>!missing||!entry.rate.model.includes('opus')).map(entry=>({id:entry.rate.model,supported_parameters:['tools'],context_length:1000000,top_provider:{max_completion_tokens:128000},pricing:{prompt:price,completion:'0.0000005',input_cache_read:'0.00000001',input_cache_write:'0.000000125',input_cache_write_1h:'0.0000002',overrides:[{min_prompt_tokens:100000,prompt:'0.0000005'}]}}))});
@@ -61,4 +64,11 @@ try {
  assert.throws(()=>tampered.routedModel(env,{task:'conversation'},now+8*hour),error=>error.code==='rate_unverified');
  assert.ok(failures>=4);
  console.log('PASS corrupted persisted pricing cannot alter policy fees or unlock a billable request');
+
+ fail=false;beacDown=true;
+ const backup=await import(url+'?backup'),outage={...env,MODEL_ROUTING_POLICY:'adaptive',BUCKET:{async get(){return null;},async put(){}}};
+ const status=await backup.ensureModelRates(outage,now);assert.equal(status.status,'available');
+ const chosen=backup.routedModel(outage,{task:'conversation'},now);
+ assert.equal(chosen.rate.fxSource,'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml');assert.equal(chosen.rate.conversionBasis,'ecb_eur_peg_reference');assert.equal(chosen.rate.usdXaf,Math.round(655.957/1.1212*1.005*10000)/10000);
+ console.log('PASS a BEAC outage (HTTP 530) uses the ECB euro-peg reference instead of blocking the assistant');
 } finally {globalThis.fetch=originalFetch;console.error=originalError;}

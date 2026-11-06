@@ -1,6 +1,7 @@
 import {modelRateSchema, type ModelRate} from './model-protocol';
 import {withRoutingDefaults} from './model-routing-defaults';
-import {MODEL_PRICING_URL, FX_REFERENCE_URL, parseBEACReference, refreshOpenRouterRate} from './model-rate-sources.mjs';
+import {MODEL_PRICING_URL, parseBEACReference, refreshOpenRouterRate} from './model-rate-sources.mjs';
+import {FX_SOURCES, fxReference} from './fx-fallback.mjs';
 
 type Environment = Record<string, unknown> & {BUCKET?: R2Bucket};
 type Target = {key:string; rate:ModelRate; maxInputTokens:number; maxOutputTokens:number};
@@ -36,7 +37,7 @@ function overlays(env:Environment, selected:Target[], snapshot:Snapshot, fingerp
   const saved = snapshot.entries?.[target.key], rate = modelRateSchema.parse(saved?.rate);
   if (rate.model !== target.rate.model || rate.provider !== 'openrouter' || Date.parse(rate.verifiedAt) !== snapshot.checkedAt || !Number.isSafeInteger(saved.maxInputTokens) || saved.maxInputTokens < 1 || saved.maxInputTokens > target.maxInputTokens || !Number.isSafeInteger(saved.maxOutputTokens) || saved.maxOutputTokens < 128 || saved.maxOutputTokens > target.maxOutputTokens) throw new Error('model_rate_snapshot_invalid');
   // Policy fees are owned by Braand and cannot be replaced by cached supplier data.
-  if (rate.fundingFeeBps !== target.rate.fundingFeeBps || rate.overheadXaf !== target.rate.overheadXaf || rate.pricingSource !== MODEL_PRICING_URL || rate.fxSource !== FX_REFERENCE_URL) throw new Error('model_rate_snapshot_policy_changed');
+  if (rate.fundingFeeBps !== target.rate.fundingFeeBps || rate.overheadXaf !== target.rate.overheadXaf || rate.pricingSource !== MODEL_PRICING_URL || !FX_SOURCES.includes(String(rate.fxSource))) throw new Error('model_rate_snapshot_policy_changed');
   entries[target.key] = {...saved,rate};
  }
  if (env.MODEL_ROUTING_ENABLED !== 'true') return {OPENROUTER_RATE_JSON:JSON.stringify(entries.default.rate)};
@@ -82,9 +83,9 @@ export async function ensureModelRates(bindings:object & {BUCKET?:R2Bucket}, now
    if(current.snapshot&&now-current.snapshot.checkedAt<REFRESH_MS)return;
   }
   try {
-   const [pricing,reference]=await Promise.all([sourceText(MODEL_PRICING_URL,5000000),sourceText(FX_REFERENCE_URL,2000000)]);
+   const [pricing,fx]=await Promise.all([sourceText(MODEL_PRICING_URL,5000000),fxReference((url:string)=>sourceText(url,2000000),parseBEACReference,now)]);
    const data=object(JSON.parse(pricing)).data;if(!Array.isArray(data))throw new Error('model_rate_catalog_invalid');
-   const fx=parseBEACReference(reference,now),entries:Record<string,Entry>={};
+   const entries:Record<string,Entry>={};
    for(const target of selected){const matches=data.filter(value=>object(value).id===target.rate.model);if(matches.length!==1)throw new Error('model_rate_missing');entries[target.key]=refreshOpenRouterRate(matches[0],target.rate,target,fx,now);}
    const snapshot:Snapshot={version:1,fingerprint,checkedAt:now,entries};
    const values=overlays(env,selected,snapshot,fingerprint,now);
