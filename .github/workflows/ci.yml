@@ -64,6 +64,7 @@ jobs:
           node tests/answer-sources.browser.mjs
           node tests/credit-notice.browser.mjs
           node tests/insight-notice.browser.mjs
+          node tests/github-cards.browser.mjs
           node tests/browser-ui.browser.mjs
           node tests/composer-layout.browser.mjs
       - name: Keep fixture screenshots online

@@ -59,6 +59,12 @@ if(vault){
  if(vault.type!=='service'||vault.service!=='braand-vault-production')throw Error('Unexpected production vault service binding.');
  config.services=[{binding:'CREDENTIAL_VAULT',service:vault.service,...(vault.environment?{environment:vault.environment}:{}),...(vault.entrypoint?{entrypoint:vault.entrypoint}:{})}];
 }
+// The isolated code sandbox is optional too: keep its private service binding once activated.
+const sandbox=bindings.find(item=>item.name==='CODE_SANDBOX');
+if(sandbox){
+ if(sandbox.type!=='service'||sandbox.service!=='braand-code-sandbox-production')throw Error('Unexpected production code sandbox service binding.');
+ config.services=[...(config.services||[]),{binding:'CODE_SANDBOX',service:sandbox.service,...(sandbox.environment?{environment:sandbox.environment}:{}),...(sandbox.entrypoint?{entrypoint:sandbox.entrypoint}:{})}];
+}
 const workQueue=bindings.find(item=>item.name==='WORK_QUEUE'&&item.type==='queue')?.queue_name||process.env.BRAAND_PRODUCTION_WORK_QUEUE;
 if(workQueue){
  if(!/^[a-z0-9][a-z0-9-]{2,62}$/.test(workQueue))throw new Error('Invalid production work queue.');

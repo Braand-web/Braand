@@ -487,7 +487,7 @@ await check('the coding specialist writes, runs, fixes and re-runs code in its i
   ];
   const result=await specialist(execution,'coding'),first=fixture.requests[0];
   assert.equal(first.routing.task,'coding');assert.equal(first.body.max_tokens,8192);
-  assert.deepEqual(first.body.tools.map(tool=>tool.name),['search_skills','read_skill','search_workspace','github_repo','code_run','code_write_file','code_read_file','code_list_files','render_motion','code_import_file','code_export_file','code_reset']);
+  assert.deepEqual(first.body.tools.map(tool=>tool.name),['search_skills','read_skill','search_workspace','github_repo','code_run','code_write_file','code_read_file','code_list_files','render_motion','code_import_file','code_export_file','import_github_repo','start_preview','code_reset']);
   assert.match(first.body.system,/BAC À SABLE/);
   assert.deepEqual(sandboxCalls.map(call=>call.operation),['write','exec','write','exec']);
   assert.ok(sandboxCalls.every(call=>/^[a-f0-9]{40}$/.test(call.name)&&call.name===sandboxCalls[0].name&&call.auth==='Bearer '+'s'.repeat(40)));

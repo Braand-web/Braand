@@ -1,0 +1,12 @@
+.github-pr-card{display:grid;gap:10px;max-width:620px;margin-top:10px;padding:14px;border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface)}
+.github-pr-head{display:flex;gap:10px}.github-pr-head>svg{flex:none;margin-top:2px;color:var(--color-action)}
+.github-pr-head strong{font-size:var(--text-sm)}.github-pr-head p{margin:2px 0 0;color:var(--color-text-muted);font-size:var(--text-sm)}
+.github-pr-description{margin:0;color:var(--color-text-muted);font-size:var(--text-xs);line-height:1.45;white-space:pre-wrap}
+.github-pr-files{display:grid;gap:4px;margin:0;padding:8px;border-radius:var(--radius-md);background:var(--color-surface-2);list-style:none;font-size:var(--text-xs)}
+.github-pr-files li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center}
+.github-pr-files code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text)}
+.github-pr-files span{color:var(--color-text-muted)}.github-pr-lines b{color:var(--color-success);font-weight:600}.github-pr-lines i{color:var(--color-danger);font-style:normal}
+.github-pr-more{display:block!important;color:var(--color-text-subtle)}
+.github-pr-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.github-pr-actions small{color:var(--color-text-subtle);font-size:var(--text-xs)}
+.github-pr-error{margin:0;color:var(--color-danger);font-size:var(--text-xs)}
+.github-pr-result{margin:0;font-size:var(--text-sm);font-weight:600}.github-pr-result a{color:var(--color-link)}
