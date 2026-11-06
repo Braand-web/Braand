@@ -78,7 +78,7 @@ const server = createServer(async (request, response) => {
     const fileSign = request.method === 'POST' && DEMO_FILES.some(file => url.pathname === '/api/files/' + file.id + '/url');
     if (!['GET','HEAD'].includes(request.method) && !fileSign) return json(response, 403, {error:'Mode démonstration : la consultation est disponible. Les générations, publications, paiements et modifications sont désactivés.'});
     if (fileSign && request.headers.origin !== origin && request.headers.origin !== 'http://localhost:' + port) return json(response, 403, {error:'Ouvrez le fichier depuis la démonstration locale.'});
-    if (/^\/api\/(?:internal|admin|webhooks)(?:\/|$)/u.test(url.pathname) || url.pathname.endsWith('/connect')) return json(response, 403, {error:'Aucune connexion ou action externe dans cette démonstration.'});
+    if (url.pathname !== '/api/admin/me' && /^\/api\/(?:internal|admin|webhooks)(?:\/|$)/u.test(url.pathname) || url.pathname.endsWith('/connect')) return json(response, 403, {error:'Aucune connexion ou action externe dans cette démonstration.'});
     if (url.pathname === '/api/demo') return json(response, 200, seeded);
     if (url.pathname === '/api/meta') {
       const days=Number(url.searchParams.get('days')||30);

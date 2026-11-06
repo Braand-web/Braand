@@ -43,7 +43,7 @@ function Approval({action,session,busy,ready,now,onDecision}:{action:BrowserActi
   </dl>
   <details className="browser-disclosure"><summary>Détails exacts de la demande</summary><pre className="browser-exact">{JSON.stringify(command,null,2)}</pre></details>
   <p className="browser-muted">{expired?'Cette demande a expiré.':`Accord valable jusqu’à ${time(action.expiresAt)}. Toute modification de la page l’invalide.`}</p>
-  <div className="browser-actions"><button type="button" className="browser-primary" disabled={busy||!ready||expired} onClick={()=>onDecision('approve')}>Approuver cette action</button><button type="button" disabled={busy||expired} onClick={()=>onDecision('reject')}>Refuser</button></div>
+  <div className="browser-actions"><button type="button" className="browser-primary" disabled={busy||!ready||expired} onClick={()=>onDecision('approve')}>Autoriser cette action</button><button type="button" disabled={busy||expired} onClick={()=>onDecision('reject')}>Refuser</button></div>
  </section>;
 }
 

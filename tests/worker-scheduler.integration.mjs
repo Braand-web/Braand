@@ -40,7 +40,7 @@ try{
     await tick({AUTONOMY_ENABLED:'true'});assert.deepEqual(state.requests,['/api/internal/billing-tick','/api/internal/mission-tick','/api/internal/operations-tick']);
   });
   await check('a real task error still raises an operational alert',async()=>{
-    state.status=503;await tick({AUTONOMY_ENABLED:'true'});assert.deepEqual(state.alerts.map(x=>[x.category,x.target]),[['scheduled_task_failed','billing'],['scheduled_task_failed','missions'],['scheduled_task_failed','operations']]);state.status=200;
+    state.status=503;await tick({AUTONOMY_ENABLED:'true'});assert.deepEqual(state.alerts.map(x=>[x.category,x.target]),[['scheduled_task_failed','billing:503'],['scheduled_task_failed','missions:503'],['scheduled_task_failed','operations:503']],'the alert keeps the cause (status, then error code when the task gives one)');state.status=200;
   });
   await check('missing scheduler credentials cannot execute even housekeeping',async()=>{
     await tick({SCHEDULER_SECRET:''});assert.deepEqual(state.requests,[]);assert.equal(state.cleanup,0);

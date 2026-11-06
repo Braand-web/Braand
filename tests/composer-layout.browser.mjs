@@ -13,7 +13,7 @@ const {chromium}=await import(playwright?pathToFileURL(path.resolve(playwright))
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'.tmp','composer-layout-browser');
 await mkdir(output,{recursive:true});
-await build({stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";createRoot(document.getElementById("root")).render(<FilePreviewProvider><Studio/></FilePreviewProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
+await build({external:['/fonts/*'],stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "./app/studio";import {FilePreviewProvider} from "./components/file-preview/file-preview-provider";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/file-upload.css";import "./components/file-preview/file-preview.css";createRoot(document.getElementById("root")).render(<FilePreviewProvider><Studio/></FilePreviewProvider>);',resolveDir:root,loader:'tsx'},outdir:output,entryNames:'app',chunkNames:'chunks/[name]-[hash]',alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:'esm',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'fixture-worker-url',setup(builder){builder.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/unused-pdf-worker.mjs";',loader:'js'}));}}]});
 
 const now=Date.now();
 const conversation={id:'composer-fixture-conversation',workspace_id:'composer-fixture',kind:'conversation',title:'Discussion locale existante',status:'saved',version:1,created_at:now,updated_at:now,data:{}};
@@ -86,12 +86,14 @@ try{
       externalRequests.push(url.href);return route.abort();
     });
     const page=await context.newPage();lastPage=page;page.on('pageerror',error=>pageErrors.push(error.message));
-    await page.goto(origin);await page.locator('.recent-chat').filter({hasText:conversation.title}).waitFor({state:'attached'});
+    const loaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/workspace');await page.goto(origin);await loaded;await page.locator('.topbar').waitFor();
     const composer=page.getByRole('textbox',{name:'Votre demande à Braand',exact:true});
     for(const surface of ['home','conversation']){
       if(surface==='conversation'){
         await composer.fill('');
         if(width<768)await page.getByRole('button',{name:'Ouvrir la navigation',exact:true}).click();
+        // Between phone and wide screens the navigation is an icon rail: unfold it to reach recent conversations.
+        else{const unfold=page.getByRole('button',{name:'Déployer la navigation',exact:true});if(await unfold.isVisible())await unfold.click();}
         await page.getByRole('button',{name:conversation.title,exact:true}).click();
         await page.getByText('Réponse existante de test.',{exact:true}).waitFor();
         await page.locator('.conversation .composer').waitFor();
@@ -112,7 +114,8 @@ try{
       if(surface==='home'&&[1280,814,390].includes(width))await page.screenshot({path:path.join(output,`composer-home-${width}.png`),fullPage:true});
       if(surface==='conversation'&&width===814)await page.screenshot({path:path.join(output,'composer-conversation-814.png'),fullPage:true});
       // Keyboard traversal never activates the send button or opens a file picker.
-      await composer.focus();await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .attach').evaluate(element=>element===document.activeElement),true);
+      await composer.focus();await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .attach').first().evaluate(element=>element===document.activeElement),true);
+      await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .screen-share').evaluate(element=>element===document.activeElement),true,'+ then screen sharing');
       await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .mode-button').evaluate(element=>element===document.activeElement),true);
       await page.keyboard.press('Enter');await page.getByRole('group',{name:'Mode de travail',exact:true}).waitFor();
       await page.keyboard.press('Escape');await page.getByRole('group',{name:'Mode de travail',exact:true}).waitFor({state:'hidden'});

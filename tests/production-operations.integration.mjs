@@ -18,12 +18,13 @@ function database(migrate=false) {
   if(migrate)for(const file of readdirSync(path.join(project,'drizzle')).filter(name=>name.endsWith('.sql')).sort())sql.exec(readFileSync(path.join(project,'drizzle',file),'utf8'));
   function statement(query,args=[]) {return {
     bind(...values){return statement(query,values);},
-    async first(column){const row=sql.prepare(query).get(...args);return column?row?.[column]??null:row??null;},
-    async all(){return {results:sql.prepare(query).all(...args)};},
-    async run(){return this.execute();},
+    async first(column){binding.calls++;const row=sql.prepare(query).get(...args);return column?row?.[column]??null:row??null;},
+    async all(){binding.calls++;return {results:sql.prepare(query).all(...args)};},
+    async run(){binding.calls++;return this.execute();},
     execute(){const prepared=sql.prepare(query);if(prepared.columns().length)return {results:prepared.all(...args),meta:{changes:0}};const value=prepared.run(...args);return {results:[],meta:{changes:Number(value.changes)}};}
   };}
-  const binding={prepare:query=>statement(query),async batch(statements){sql.exec('BEGIN');try{const result=statements.map(value=>value.execute());sql.exec('COMMIT');return result;}catch(error){sql.exec('ROLLBACK');throw error;}}};
+  // calls counts what the platform limits per run: one per query, one per batch.
+  const binding={calls:0,prepare:query=>statement(query),async batch(statements){binding.calls++;sql.exec('BEGIN');try{const result=statements.map(value=>value.execute());sql.exec('COMMIT');return result;}catch(error){sql.exec('ROLLBACK');throw error;}}};
   return {sql,binding};
 }
 function bucket() {
@@ -175,10 +176,19 @@ try {
   source.sql.prepare("INSERT INTO runs(id,workspace_id,conversation_id,status,created_at,updated_at) VALUES ('restore-run','ops-owner','restore-conversation','completed',?,?)").run(now,now);
   source.sql.prepare("INSERT INTO events(seq,run_id,type,data,created_at) VALUES (100,'restore-run','test','{}',?)").run(now);
   source.sql.prepare("DELETE FROM events WHERE seq=100").run();
+  // A conversation long enough to need many pages: production already holds more rows than one query per row allows.
+  const insertMessage=source.sql.prepare("INSERT INTO messages(id,workspace_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?)");
+  for(let index=0;index<3200;index++)insertMessage.run('restore-message-'+String(index).padStart(5,'0'),'ops-owner','restore-conversation',index%2?'assistant':'user',JSON.stringify([{type:'text',text:'Message '+index+' é ✓'}]),now+index);
   await media.binding.put('ops-owner/files/fixture.txt','sensitive-fixture-content',{httpMetadata:{contentType:'text/plain'},customMetadata:{fixture:'yes'}});
   const expectedTables=source.sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY name").all().map(row=>row.name);
   const expected=Object.fromEntries(expectedTables.map(name=>[name,source.sql.prepare('SELECT * FROM "'+name+'"').all()]));
+  const callsBefore=source.binding.calls;
   const archive=await backups.createEncryptedBackup();
+  const backupQueries=source.binding.calls-callsBefore;
+  await check('A backup of thousands of rows reads them by pages, in a handful of batched calls, within even the Workers Free limit of 50 per run',async()=>{
+    assert.ok(backupQueries<=20,'backup issued '+backupQueries+' database calls (Workers Free allows 50 per run)');
+    assert.equal(source.sql.prepare("SELECT count(*) n FROM messages WHERE conversation_id='restore-conversation'").get().n,3200);
+  });
   await check('Real AES-GCM archive contains no plaintext and restores real SQLite data plus objects without duplicate financial writes',async()=>{
     const stored=archives.objects.get('braand-backups/'+archive.id+'.bin');assert(!Buffer.from(stored.raw).includes(Buffer.from('sensitive-fixture-content')));
     const target=database(),targetMedia=bucket();env.BACKUP_RESTORE_ALLOWED='true';
@@ -259,7 +269,7 @@ try {
     const plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:original.slice(0,12),additionalData:new TextEncoder().encode('braand-backup-v2:'+largeArchive.id+':'+label)},fixtureKey,original.slice(12)));plain[0]^=1;
     item.raw=await encryptFixture(largeArchive.id,label,plain);try{await assertRestoreEmpty(largeArchive.id);}finally{item.raw=original;}
     const originalManifest=await readManifest(largeArchive.id);
-    for(const patch of [{objects:100001},{mediaBytes:64*1024**3+1},{databaseBytes:9*1024*1024},{objectPages:0}]){
+    for(const patch of [{objects:100001},{mediaBytes:64*1024**3+1},{databaseBytes:25*1024*1024},{objectPages:0}]){
       await replaceManifest(largeArchive.id,{...originalManifest,...patch});await assertRestoreEmpty(largeArchive.id);
     }
     await replaceManifest(largeArchive.id,originalManifest);
@@ -286,13 +296,13 @@ try {
     }
   });
   await check('Readiness exposes bounds; oversized objects, SQL byte totals and SQL row totals are refused explicitly',async()=>{
-    const limits=backups.backupReadiness().limits;assert.equal(limits.partBytes,1024*1024);assert.equal(limits.sqlRows,10000);assert.equal(limits.objects,100000);
+    const limits=backups.backupReadiness().limits;assert.equal(limits.partBytes,1024*1024);assert.equal(limits.sqlRows,250000);assert.equal(limits.sqlBytes,24*1024*1024);assert.equal(limits.objects,100000);
     const oversized=bucket(),failed=bucket();oversized.objects.set('too-big.bin',{key:'too-big.bin',size:limits.objectBytes+1,etag:'oversize',raw:new Uint8Array()});
     await withBackupBindings(source.binding,oversized.binding,failed.binding,async()=>{await assert.rejects(()=>backups.createEncryptedBackup(),error=>error.code==='backup_too_large');});assert.equal(oversized.stats.reads.length,0);
     for(const mode of ['rows','bytes']){
       const sql=database(),empty=bucket(),storage=bucket();sql.sql.exec('CREATE TABLE input(id INTEGER PRIMARY KEY,value TEXT)');
-      if(mode==='rows')sql.sql.exec("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<10001) INSERT INTO input SELECT i,'x' FROM n");
-      else{const insert=sql.sql.prepare('INSERT INTO input(value) VALUES (?)');for(let index=0;index<9;index++)insert.run('x'.repeat(1024*1024));}
+      if(mode==='rows')sql.sql.exec("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<250001) INSERT INTO input SELECT i,'x' FROM n");
+      else{const insert=sql.sql.prepare('INSERT INTO input(value) VALUES (?)');for(let index=0;index<25;index++)insert.run('x'.repeat(1024*1024));}
       try{await withBackupBindings(sql.binding,empty.binding,storage.binding,async()=>{await assert.rejects(()=>backups.createEncryptedBackup(),error=>error.code==='backup_too_large');});assert.equal(storage.objects.size,0);}
       finally{sql.sql.close();}
     }

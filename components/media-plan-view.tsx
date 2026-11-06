@@ -39,7 +39,7 @@ export function MediaPlanView({proposal,onApprove,busy}:{proposal:Resource;onApp
    <div className="approval-budget"><span>Budget total</span><strong>{data.maxCredits} crédits</strong></div>
    <p className="muted small-text">Coût prévu {data.payload.expectedCredits} crédits. La marge sert aux corrections automatiques ; seuls les crédits utilisés sont débités.</p>
    <ol className="plan-steps">{data.payload.steps.map(step=><li key={step.id} className="plan-step"><span className="plan-step-icon" aria-hidden="true"><Sparkles size={15}/></span><div><strong>{step.label}</strong><small>{TASK_LABELS[step.task]||step.task} · {quotes.get(step.id)} crédits{step.review?.length?" · contrôle visuel":""}</small></div></li>)}</ol>
-   <button className="button primary full-width" onClick={onApprove} disabled={busy}><CheckCircle2 size={16}/>{busy?"Validation en cours…":`Approuver ${data.payload.steps.length} création${data.payload.steps.length>1?"s":""}`}</button>
+   <button className="button primary full-width" onClick={onApprove} disabled={busy}><CheckCircle2 size={16}/>{busy?"Validation en cours…":`Autoriser ${data.payload.steps.length} création${data.payload.steps.length>1?"s":""}`}</button>
    <p className="fine-print">Une seule approbation pour tout le plan. Braand s’arrête avant de dépasser {data.maxCredits} crédits.</p>
   </div>;
  }

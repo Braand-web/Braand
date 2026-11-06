@@ -2,8 +2,14 @@ import {config, db, uid} from './server';
 import {AppError} from './core.mjs';
 
 // SQL remains bounded for one atomic D1 restore. Media never enters this buffer.
-const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024; // Also the legacy v1 archive limit.
-const MAX_ROWS = 10000;
+// The SQL snapshot is read by pages: a Worker run may issue at most 1,000
+// database queries, so one query per row could never finish a real backup.
+const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
+const LEGACY_V1_BYTES = 8 * 1024 * 1024; // Single-object v1 archives stay bounded as before.
+const MAX_ROWS = 250000;
+const PAGE_ROWS = 500;
+const BATCH_PAGES = 8; // pages of one large table read in the same batch
+const BATCH_STATEMENTS = 40;
 const MAX_OBJECTS = 100000;
 // Schema size is not the restore risk (rows and bytes are bounded above); leave room for new features.
 const MAX_TABLES = 160;
@@ -67,27 +73,57 @@ function encodeRow(row: Record<string, unknown>): Record<string, Cell> {
     throw new AppError('Type de donnée non pris en charge par la sauvegarde.',409,'backup_data_unsupported');
   }));
 }
-async function snapshot(id: string, now: number): Promise<Snapshot> {
+// Each table is encoded as soon as it is read, so memory holds bytes, not a
+// second copy of every row as objects. The result is the same JSON document as
+// a v1 snapshot, so restore is unchanged.
+async function snapshot(id: string, now: number): Promise<{bytes: Uint8Array; tables: number; rows: number}> {
   const database = db(), entries = await schema(database), tableNames = entries.filter(entry => entry.type === 'table').map(entry => entry.name);
   const sequenceTable = await database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").first();
   const sequences = sequenceTable ? (await database.prepare('SELECT name,seq FROM sqlite_sequence').all<{name:string;seq:number}>()).results : [];
-  const tables: Snapshot['tables'] = [];
-  let count = 0, size = encoder.encode(JSON.stringify({entries,sequences})).byteLength;
-  for (const name of tableNames) {
-    const rows: Record<string,Cell>[] = [];
-    // Read one row at a time: a large SQL row cannot multiply an unbounded page buffer.
-    // The required maintenance window keeps offset pagination stable across reads.
-    for (let offset=0;;offset++) {
-      const row = await database.prepare('SELECT * FROM ' + identifier(name) + ' LIMIT 1 OFFSET ?').bind(offset).first<Record<string,unknown>>();
-      if (!row) break;
-      const encoded = encodeRow(row);
-      size += encoder.encode(JSON.stringify(encoded)).byteLength + 1;
-      if (++count > MAX_ROWS || size > MAX_ARCHIVE_BYTES) throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
-      rows.push(encoded);
+  const head = encoder.encode(JSON.stringify({format:'braand-backup-v1',id,createdAt:now,schema:entries,sequences,objects:[]}).slice(0,-1) + ',"tables":[');
+  const chunks: Uint8Array[] = [head];
+  let count = 0, size = head.byteLength + 2;
+  // Reads are grouped in db.batch() calls, which count as one query each
+  // against the per-run limit (50 on Workers Free, 1,000 on Paid). The required
+  // maintenance window keeps pagination stable across reads.
+  const withoutRowid = new Set(entries.filter(entry => entry.type === 'table' && /\bWITHOUT\s+ROWID\b/i.test(entry.sql)).map(entry => entry.name));
+  const select = (name: string, offset: number) => database.prepare('SELECT * FROM ' + identifier(name) + (withoutRowid.has(name) ? '' : ' ORDER BY rowid') + ' LIMIT ? OFFSET ?').bind(PAGE_ROWS, offset);
+  const parts = new Map<string, string[]>(tableNames.map(name => [name, []]));
+  let pending = tableNames.map(name => ({name, offset: 0, first: true}));
+  while (pending.length) {
+    // One page for tables not read yet; several pages at once for large ones.
+    const requests: {name: string; offset: number}[] = [];
+    for (const table of pending) {
+      const pages = table.first ? 1 : BATCH_PAGES;
+      for (let page = 0; page < pages && requests.length < BATCH_STATEMENTS; page++) requests.push({name: table.name, offset: table.offset + page * PAGE_ROWS});
+      if (requests.length >= BATCH_STATEMENTS) break;
     }
-    tables.push({name,rows});
+    const results = await database.batch<Record<string, unknown>>(requests.map(request => select(request.name, request.offset)));
+    const finished = new Set<string>(), reached = new Map<string, number>();
+    results.forEach((result, index) => {
+      const {name, offset} = requests[index], rows = result.results || [];
+      if (finished.has(name)) return;
+      for (const row of rows) {
+        const encoded = JSON.stringify(encodeRow(row));
+        size += encoder.encode(encoded).byteLength + 1;
+        if (++count > MAX_ROWS || size > MAX_ARCHIVE_BYTES) throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
+        parts.get(name)!.push(encoded);
+      }
+      if (rows.length < PAGE_ROWS) finished.add(name); else reached.set(name, offset + PAGE_ROWS);
+    });
+    pending = pending.flatMap(table => finished.has(table.name) ? [] : reached.has(table.name) ? [{name: table.name, offset: reached.get(table.name)!, first: false}] : [table]);
   }
-  return {format:'braand-backup-v1',id,createdAt:now,schema:entries,tables,sequences,objects:[]};
+  for (const [index, name] of tableNames.entries()) {
+    const rows = parts.get(name)!;
+    const table = encoder.encode((index ? ',' : '') + '{"name":' + JSON.stringify(name) + ',"rows":[' + rows.join(',') + ']}');
+    size += table.byteLength - rows.length;
+    chunks.push(table);
+    parts.delete(name);
+  }
+  chunks.push(encoder.encode(']}'));
+  const bytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+  let at = 0; for (const chunk of chunks) {bytes.set(chunk, at); at += chunk.byteLength;}
+  return {bytes, tables: tableNames.length, rows: count};
 }
 
 const segmentPath = (id:string, label:string) => 'braand-backups/' + id + '/' + label + '.bin';
@@ -145,10 +181,10 @@ async function* objectEntries(key:CryptoKey,manifest:Manifest) {
 export async function createEncryptedBackup(now = Date.now()) {
   const readiness = backupReadiness();
   if (!readiness.ready) throw new AppError('La sauvegarde nécessite une configuration et une fenêtre de maintenance validées.',503,readiness.reason || 'backup_not_ready');
-  const key=await backupKey(),id=uid(),archive=await snapshot(id,now),plain=encoder.encode(JSON.stringify(archive));
+  const key=await backupKey(),id=uid(),archive=await snapshot(id,now),plain=archive.bytes;
   if(plain.byteLength>MAX_ARCHIVE_BYTES)throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
   let bytes=0;
-  const manifest:Manifest={format:'braand-backup-v2',id,createdAt:now,databaseBytes:plain.byteLength,databaseDigests:[],objectPages:0,objects:0,mediaBytes:0,tables:archive.tables.length,rows:archive.tables.reduce((total,table)=>total+table.rows.length,0)};
+  const manifest:Manifest={format:'braand-backup-v2',id,createdAt:now,databaseBytes:plain.byteLength,databaseDigests:[],objectPages:0,objects:0,mediaBytes:0,tables:archive.tables,rows:archive.rows};
   for(let offset=0;offset<plain.byteLength;offset+=PART_BYTES){const part=plain.subarray(offset,offset+PART_BYTES);manifest.databaseDigests.push(await digest(part.slice().buffer));bytes+=await putSegment(key,id,'database-'+(offset/PART_BYTES),part);}
   let cursor:string|undefined,previous:string|undefined;
   let entries:ObjectEntry[]=[],pageSize=2;
@@ -196,7 +232,7 @@ export async function restoreEncryptedBackup(id: string, destination: D1Database
   if (!/^[a-f0-9-]{36}$/.test(id) || destination === db() || targetBucket === b.BUCKET || targetBucket === b.BACKUP_BUCKET || !b.BACKUP_BUCKET) throw new AppError('Destination de restauration distincte requise.',409,'restore_destination_invalid');
   if ((await schema(destination)).length || (await targetBucket.list({limit:1})).objects.length) throw new AppError('La destination doit être entièrement vide.',409,'restore_destination_not_empty');
   const stored = await b.BACKUP_BUCKET.get('braand-backups/' + id + '.bin')||await b.BACKUP_BUCKET.get(LEGACY_PREFIX + '-backups/' + id + '.bin');
-  if (!stored || stored.size > MAX_ARCHIVE_BYTES+28) throw new AppError('Archive introuvable ou trop volumineuse.',404,'backup_invalid');
+  if (!stored || stored.size > Math.max(LEGACY_V1_BYTES,MAX_MANIFEST_BYTES+64)+28) throw new AppError('Archive introuvable ou trop volumineuse.',404,'backup_invalid');
   const bytes = new Uint8Array(await stored.arrayBuffer());
   const key=await backupKey();
   let archive: Snapshot|undefined,manifest:Manifest|undefined;
@@ -233,6 +269,12 @@ export async function restoreEncryptedBackup(id: string, destination: D1Database
     if (!/^CREATE\s+TABLE\b/i.test(entry.sql) || /^CREATE\s+VIRTUAL/i.test(entry.sql)) throw new AppError('Schéma non pris en charge.',409,'backup_schema_invalid');
     statements.push(destination.prepare(entry.sql));
   }
+  // Indexes before rows: a foreign key that targets a unique index (for example
+  // response_feedback → messages) cannot accept rows until that index exists.
+  for (const entry of archive.schema.filter(entry => entry.type === 'index')) {
+    if (!/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(entry.sql)) throw new AppError('Archive invalide.',409,'backup_schema_invalid');
+    statements.push(destination.prepare(entry.sql));
+  }
   let rows = 0;
   for (const table of archive.tables) {
     identifier(table.name);
@@ -253,8 +295,8 @@ export async function restoreEncryptedBackup(id: string, destination: D1Database
     statements.push(destination.prepare('INSERT INTO sqlite_sequence(name,seq) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name=?)').bind(sequence.name,sequence.seq,sequence.name));
   }
   // Recreate financial triggers AFTER rows, so restoring a grant never issues it twice.
-  for (const entry of archive.schema.filter(entry => entry.type !== 'table')) {
-    if (!['index','trigger'].includes(entry.type) || !/^CREATE\s+(?:UNIQUE\s+)?(?:INDEX|TRIGGER)\b/i.test(entry.sql)) throw new AppError('Archive invalide.',409,'backup_schema_invalid');
+  for (const entry of archive.schema.filter(entry => entry.type !== 'table' && entry.type !== 'index')) {
+    if (entry.type !== 'trigger' || !/^CREATE\s+TRIGGER\b/i.test(entry.sql)) throw new AppError('Archive invalide.',409,'backup_schema_invalid');
     statements.push(destination.prepare(entry.sql));
   }
   if(manifest){

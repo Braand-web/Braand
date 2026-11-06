@@ -58,6 +58,20 @@ const routeFiles={
  resource:"app/api/resources/[id]/route.ts",page:"app/api/pages/[id]/route.ts",proposal:"app/api/proposals/[id]/route.ts",
  meta:"app/api/meta/route.ts",connect:"app/api/meta/connect/route.ts",callback:"app/api/meta/callback/route.ts"
 };
+// Every other app/api route is discovered from the file tree, with Next's
+// conventions ([id] one segment, [...path] the rest), so local runs serve the
+// whole API instead of a hand-kept list.
+const discovered=[];
+const walk=dir=>{for(const name of readdirSync(dir,{withFileTypes:true})){const full=path.join(dir,name.name);if(name.isDirectory())walk(full);else if(name.name==="route.ts")discovered.push(path.relative(project,full).replaceAll("\\","/"));}};
+walk(path.join(project,"app/api"));
+const known=new Set(Object.values(routeFiles)),genericRoutes=[];
+discovered.filter(file=>!known.has(file)).sort().forEach((file,index)=>{
+ const name="discovered"+index;routeFiles[name]=file;
+ const segments=file.replace(/^app\//,"").replace(/\/route\.ts$/,"").split("/"),keys=[];
+ const pattern=segments.map(segment=>{const rest=segment.match(/^\[\.\.\.(\w+)\]$/);if(rest){keys.push({name:rest[1],rest:true});return "(.+)";}const one=segment.match(/^\[(\w+)\]$/);if(one){keys.push({name:one[1]});return "([^/]+)";}return segment.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}).join("/");
+ genericRoutes.push({name,regex:new RegExp("^/"+pattern+"$"),keys,staticCount:segments.filter(segment=>!segment.startsWith("[")).length});
+});
+genericRoutes.sort((a,b)=>b.staticCount-a.staticCount||a.keys.length-b.keys.length);
 const entry=Object.entries(routeFiles).map(([name,file])=>'export * as '+name+' from "'+path.join(project,file).replaceAll("\\","/")+'";').join("\n");
 await build({stdin:{contents:entry,resolveDir:project,loader:"ts"},outfile:path.join(output,"routes.mjs"),bundle:true,platform:"node",format:"esm",banner:{js:'import {createRequire as __braandCreateRequire} from "node:module";const require=__braandCreateRequire(import.meta.url);'},nodePaths:[runtime],plugins:[{name:"local-environment",setup(b){
  b.onResolve({filter:/^cloudflare:workers$/},()=>({path:"env",namespace:"local"}));
@@ -66,7 +80,7 @@ await build({stdin:{contents:entry,resolveDir:project,loader:"ts"},outfile:path.
  b.onLoad({filter:/.*/,namespace:"local"},args=>({contents:args.path==="env"?"export const env=globalThis.__braandLocal.env;":args.path==="headers"?"export async function headers(){return globalThis.__braandLocal.context.getStore()?.headers||new Headers();}":"export function redirect(url){throw new Error('Unexpected server redirect: '+url);}"}));
 }}]});
 const routes=await import(pathToFileURL(path.join(output,"routes.mjs")).href);
-await build({stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "'+path.join(project,"app/studio.tsx").replaceAll("\\","/")+'";import {FilePreviewProvider} from "'+path.join(project,"components/file-preview/file-preview-provider.tsx").replaceAll("\\","/")+'";import "'+path.join(project,"components/file-preview/file-preview.css").replaceAll("\\","/")+'";createRoot(document.getElementById("root")).render(<FilePreviewProvider><Studio/></FilePreviewProvider>);',resolveDir:project,loader:"tsx"},outdir:output,entryNames:"app",chunkNames:"chunks/[name]-[hash]",alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:"esm",jsx:"automatic",nodePaths:[runtime],define:{"process.env.NODE_ENV":'"development"',"process.env":'{}'},minify:true,plugins:[{name:"local-pdf-worker-url",setup(b){b.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:"pdf-worker-url",namespace:"local-pdf-worker"}));b.onLoad({filter:/.*/,namespace:"local-pdf-worker"},()=>({contents:'export default "/pdf.worker.min.mjs";',loader:"js"}));}}]});
+await build({stdin:{contents:'import React from "react";import {createRoot} from "react-dom/client";import Studio from "'+path.join(project,"app/studio.tsx").replaceAll("\\","/")+'";import {FilePreviewProvider} from "'+path.join(project,"components/file-preview/file-preview-provider.tsx").replaceAll("\\","/")+'";import {AppearanceProvider} from "'+path.join(project,"components/appearance-provider.tsx").replaceAll("\\","/")+'";import "'+path.join(project,"components/file-preview/file-preview.css").replaceAll("\\","/")+'";createRoot(document.getElementById("root")).render(<AppearanceProvider><FilePreviewProvider><Studio/></FilePreviewProvider></AppearanceProvider>);',resolveDir:project,loader:"tsx"},outdir:output,entryNames:"app",chunkNames:"chunks/[name]-[hash]",alias:{'next/image':'vinext/shims/image'},bundle:true,splitting:true,format:"esm",jsx:"automatic",nodePaths:[runtime],define:{"process.env.NODE_ENV":'"development"',"process.env":'{}'},minify:true,plugins:[{name:"local-pdf-worker-url",setup(b){b.onResolve({filter:/^pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url$/},()=>({path:"pdf-worker-url",namespace:"local-pdf-worker"}));b.onLoad({filter:/.*/,namespace:"local-pdf-worker"},()=>({contents:'export default "/pdf.worker.min.mjs";',loader:"js"}));}}]});
 const session=randomBytes(32).toString("hex");
 const port=Number(process.env.PORT||4175);
 const html='<!doctype html><html lang="fr" data-design-system="muse"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><title>Braand · Développement local</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/file-upload.css"><link rel="stylesheet" href="/app.css"><link rel="icon" href="/favicon.svg"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>';
@@ -98,14 +112,19 @@ const server=createServer(async(req,res)=>{
    let platformPath;
    for(const [prefix,route] of [['/api/work/','workAction'],['/api/social/','social'],['/api/media/','media']])if(url.pathname.startsWith(prefix)){name=route;platformPath=url.pathname.slice(prefix.length).split('/');}
    const additional=url.pathname.match(/^\/api\/(brief|social-assets)\/([^/]+)$/);if(additional){name=additional[1]==='brief'?'brief':'socialAsset';id=decodeURIComponent(additional[2]);}
-   const handler=name&&routes[name]?.[req.method];if(!handler){sendJSON(res,404,{error:"Route introuvable."});return;}
-   let response=await context.run({headers},()=>handler(request,{params:Promise.resolve({id,action,path:platformPath||url.pathname.slice(name==="browser"?"/api/browser/".length:name==="connectors"?"/api/connectors/".length:"/api/billing/".length).split("/")})}));
+   let handler=name&&routes[name]?.[req.method],discoveredParams=null;
+   if(!handler)for(const route of genericRoutes){const found=url.pathname.match(route.regex);if(!found)continue;const candidate=routes[route.name]?.[req.method];if(!candidate)continue;discoveredParams=Object.fromEntries(route.keys.map((key,index)=>[key.name,key.rest?found[index+1].split("/").map(decodeURIComponent):decodeURIComponent(found[index+1])]));handler=candidate;break;}
+   if(!handler){sendJSON(res,404,{error:"Route introuvable."});return;}
+   let response=await context.run({headers},()=>handler(request,{params:Promise.resolve(discoveredParams||{id,action,path:platformPath||url.pathname.slice(name==="browser"?"/api/browser/".length:name==="connectors"?"/api/connectors/".length:"/api/billing/".length).split("/")})}));
    if(url.pathname==="/api/workspace"&&req.method==="GET"&&response.ok){const body=await response.json();response=Response.json({...body,development:true});}
    res.writeHead(response.status,Object.fromEntries(response.headers));
    if(response.body){const reader=response.body.getReader();res.on("close",()=>{if(!res.writableFinished)void reader.cancel();});while(true){const {done,value}=await reader.read();if(done)break;if(!res.destroyed)res.write(Buffer.from(value));}}res.end();return;
   }
   const staticFiles={"/app.js":[path.join(output,"app.js"),"application/javascript"],"/app.css":[path.join(output,"app.css"),"text/css"],"/style.css":[path.join(project,"app/globals.css"),"text/css"],"/file-upload.css":[path.join(project,"app/file-upload.css"),"text/css"],"/favicon.svg":[path.join(project,"public/favicon.svg"),"image/svg+xml"],"/pdf.worker.min.mjs":[require.resolve("pdfjs-dist/build/pdf.worker.min.mjs"),"text/javascript"]};
   if(staticFiles[url.pathname]){const [file,type]=staticFiles[url.pathname];res.writeHead(200,{"Content-Type":type,"Cache-Control":"no-store"});res.end(readFileSync(file));return;}
+  // Public assets (fonts, icons, brand images) as the hosted app serves them.
+  {const publicRoot=path.resolve(project,"public"),file=path.resolve(publicRoot,"."+decodeURIComponent(url.pathname));
+   if(url.pathname!=="/"&&file.startsWith(publicRoot+path.sep)&&existsSync(file)&&!file.endsWith(path.sep)){try{const types={".ttf":"font/ttf",".woff2":"font/woff2",".svg":"image/svg+xml",".png":"image/png",".ico":"image/x-icon",".webp":"image/webp",".jpg":"image/jpeg",".txt":"text/plain; charset=utf-8",".json":"application/json",".pdf":"application/pdf",".zip":"application/zip",".html":"text/html; charset=utf-8"};res.writeHead(200,{"Content-Type":types[path.extname(file)]||"application/octet-stream","Cache-Control":"no-store"});res.end(readFileSync(file));return;}catch{/* A directory: fall through to the app. */}}}
   if(url.pathname.startsWith("/chunks/")){
    const file=path.resolve(output,decodeURIComponent(url.pathname.slice(1)));
    if(!file.startsWith(path.resolve(output)+path.sep)||!existsSync(file)){sendJSON(res,404,{error:"Ressource locale introuvable."});return;}

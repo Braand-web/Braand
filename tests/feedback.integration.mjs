@@ -102,6 +102,8 @@ await check('moderation: hide a reply, resolve a report; rate limits answer clea
  const report=(await fb.adminFeedbackOverview()).reports[0];await fb.adminFeedbackAction('admin',{action:'resolve_report',reportId:report.id});assert.equal(post(idea.id).report_count,0);
  for(let i=0;i<3;i++)await fb.createFeedback(marie,{type:'feature',title:'Idée numéro '+i+' complète'});
  await assert.rejects(()=>fb.createFeedback(marie,{type:'feature',title:'Sixième idée du jour'}),error=>error.status===429&&/5 suggestions/.test(error.message));
- await fb.adminFeedbackAction('admin',{action:'toggle_flag',enabled:false});await assert.rejects(()=>fb.feedbackSummary(paul),error=>error.status===503);
+ await fb.adminFeedbackAction('admin',{action:'toggle_flag',enabled:false});
+ // Closed tab: the summary answers « closed » (no console error on every page), the board itself stays closed.
+ assert.deepEqual(await fb.feedbackSummary(paul),{enabled:false,team:false,newSinceVisit:0,unreadNotifications:0});await assert.rejects(()=>fb.listFeedback(paul,{}),error=>error.status===503);
 });
 console.log(`${checks} suggestions checks passed against SQLite with the real triggers.`);

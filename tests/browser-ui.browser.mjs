@@ -239,7 +239,7 @@ try {
     observation, pendingAction: makePending('approval-fixture', 9, approvalCommand)})];
   await reload();
   await page.getByText('Cette action attend votre accord dans la discussion, sous la carte du navigateur.', {exact: true}).waitFor();
-  assert.equal(await page.getByRole('button', {name: 'Approuver cette action', exact: true}).count(), 0);
+  assert.equal(await page.getByRole('button', {name: 'Autoriser cette action', exact: true}).count(), 0);
   checks.push('A session tied to a conversation sends its approval to the conversation');
   sessions = [makeSession({status: 'awaiting_approval', version: 20, conversationId: null, url: observation.url, title: observation.title, tabs: observation.tabs,
     observation, pendingAction: makePending('approval-fixture', 9, approvalCommand)})];
@@ -251,7 +251,7 @@ try {
     assert.ok(pendingText.includes(exactArgument), 'Approval must show the exact command argument: ' + exactArgument);
   }
   await capture('approval-desktop.png');
-  await submit(page.getByRole('button', {name: 'Approuver cette action', exact: true}), '/actions/approval-fixture');
+  await submit(page.getByRole('button', {name: 'Autoriser cette action', exact: true}), '/actions/approval-fixture');
   await page.getByRole('button', {name: 'Arrêter la session', exact: true}).waitFor();
   assert.deepEqual(mutations.find(request => request.path.endsWith('/actions/approval-fixture')).body,
     {decision: 'approve', version: 9, approved: true});

@@ -50,18 +50,20 @@ async function runScheduledTasks(
         handler.fetch(request, env, ctx),
       );
       if (response.ok) continue;
+      // Keep the cause with the alert (status and error code only, never a message or secret).
+      const code = await response.clone().json().then((body: {code?: unknown}) => typeof body?.code === "string" ? body.code : "").catch(() => "");
       await raiseOperationalAlert(
         `cron:${slot}:${task.name}`,
         "scheduled_task_failed",
-        task.name,
+        alertCause(task.name, String(response.status), code),
       );
       console.error("Braand scheduled task returned an error.", task.name, response.status);
-    } catch {
+    } catch (error) {
       try {
         await raiseOperationalAlert(
           `cron:${slot}:${task.name}`,
           "scheduled_task_failed",
-          task.name,
+          alertCause(task.name, "exception", error instanceof Error ? error.name : ""),
         );
       } catch {
         // If storage itself is unavailable, keep only a sanitized platform log.
@@ -69,6 +71,12 @@ async function runScheduledTasks(
       console.error("Braand scheduled task failed.", task.name);
     }
   }
+}
+
+/** "billing:503:database_unavailable": readable in the alert, safe to store. */
+function alertCause(task: string, status: string, code: string) {
+  const clean = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60);
+  return [clean(task), clean(status), clean(code)].filter(Boolean).join(":").slice(0, 180) || "task";
 }
 
 export default {

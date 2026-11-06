@@ -67,7 +67,11 @@ async function votedSet(userId:string,ids:string[]){
  return new Set(rows.map(row=>row.post_id));
 }
 export async function feedbackSummary(who:BillingIdentity){
- const viewer=await open(who),seen=visibility(viewer);
+ // Called on every page to decide whether to show the tab: a closed tab is an
+ // ordinary answer, not an error in the member's console.
+ let viewer:Awaited<ReturnType<typeof open>>;
+ try{viewer=await open(who);}catch(error){if(error instanceof AppError&&error.code==='feedback_unavailable')return {enabled:false,team:false,newSinceVisit:0,unreadNotifications:0};throw error;}
+ const seen=visibility(viewer);
  const visit=await db().prepare('SELECT seen_at FROM feedback_visits WHERE user_id=?').bind(viewer.userId).first<{seen_at:number}>();
  const fresh=await db().prepare(`SELECT COUNT(*) n FROM feedback_posts WHERE ${seen.sql} AND created_at>? AND (author_id IS NULL OR author_id!=?)`).bind(...seen.args,visit?.seen_at||0,viewer.userId).first<{n:number}>();
  const unread=await db().prepare('SELECT COUNT(*) n FROM feedback_notifications WHERE user_id=? AND read_at IS NULL').bind(viewer.userId).first<{n:number}>();
