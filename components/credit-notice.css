@@ -12,3 +12,5 @@
 @keyframes credit-notice-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.credit-notice{animation:none}}
 @media (max-width:520px){.credit-notice{flex-wrap:wrap}.credit-notice>div{flex:1 1 calc(100% - 64px)}.credit-notice-close{order:3}.credit-notice .ds-btn{order:4;margin-left:26px}}
+.credit-notice.insight{background:var(--color-info-soft,var(--color-surface-2))}
+.credit-notice.insight>svg{color:var(--color-action)}
