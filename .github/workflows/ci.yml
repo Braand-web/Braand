@@ -60,6 +60,7 @@ jobs:
           node tests/composer-attachments.browser.mjs
           node tests/pricing-ui.browser.mjs
           node tests/approval-card.browser.mjs
+          node tests/brief-card.browser.mjs
           node tests/browser-ui.browser.mjs
           node tests/composer-layout.browser.mjs
       - name: Keep fixture screenshots online
