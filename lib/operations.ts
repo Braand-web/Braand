@@ -107,7 +107,7 @@ export async function runOperationsTick(now = Date.now()) {
 export async function operationsSummary() {
   const [jobs,alerts,notifications,backups] = await Promise.all([
     db().prepare('SELECT id,name,status,attempts,error_code,created_at,updated_at FROM operations_jobs ORDER BY updated_at DESC LIMIT 100').all(),
-    db().prepare('SELECT id,category,status,observations,first_seen_at,last_seen_at FROM operations_alerts ORDER BY last_seen_at DESC LIMIT 100').all(),
+    db().prepare('SELECT id,category,target,status,observations,first_seen_at,last_seen_at FROM operations_alerts ORDER BY status=\'resolved\',last_seen_at DESC LIMIT 100').all(),
     db().prepare('SELECT id,status,attempts,error_code,created_at,updated_at FROM notification_outbox ORDER BY created_at DESC LIMIT 100').all(),
     db().prepare('SELECT id,status,bytes,tables_count,rows_count,objects_count,created_at FROM operations_backups ORDER BY created_at DESC LIMIT 20').all(),
   ]);

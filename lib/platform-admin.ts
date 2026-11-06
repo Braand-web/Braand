@@ -260,3 +260,71 @@ export async function adminSiteAction(actorId:string,raw:unknown){
  await audit(actorId,'suspend_site',p.siteId,{slug:row.slug,reason:p.reason});
  return {ok:true,message:`Le site ${row.slug} n’est plus en ligne.`};
 }
+
+// ——— Operations health, decisions waiting and why answers stop ———
+
+const BACKUP_STALE_MS = 26 * 3600 * 1000;
+/** Last successful backup, today's job and a single healthy / not healthy verdict. */
+export async function adminBackupHealth(now = Date.now()) {
+ const today = 'backup:' + new Date(now).toISOString().slice(0, 10).replaceAll('-', '');
+ const [last, job] = await Promise.all([
+  one<{created_at: number; bytes: number; tables_count: number; rows_count: number; objects_count: number}>("SELECT created_at,bytes,tables_count,rows_count,objects_count FROM operations_backups WHERE status='completed' ORDER BY created_at DESC LIMIT 1").catch(() => null),
+  one<{status: string; error_code: string | null; updated_at: number}>('SELECT status,error_code,updated_at FROM operations_jobs WHERE id=?', today).catch(() => null),
+ ]);
+ const age = last ? now - n(last.created_at) : null;
+ const jobBad = !!job && ['uncertain', 'failed'].includes(job.status);
+ return {
+  healthy: age !== null && age <= BACKUP_STALE_MS && !jobBad,
+  lastSuccessAt: last?.created_at ?? null, ageHours: age === null ? null : Math.round(age / 3600000),
+  bytes: n(last?.bytes), tables: n(last?.tables_count), rows: n(last?.rows_count), objects: n(last?.objects_count),
+  today: job ? {status: job.status, errorCode: job.error_code, updatedAt: job.updated_at} : null,
+ };
+}
+
+export const resolveAlertInput = z.object({action: z.literal('resolve_alert'), id: z.string().min(1).max(200)}).strict();
+/** An administrator marks an alert handled; written to the audit log. */
+export async function adminResolveAlert(actorId: string, raw: unknown) {
+ const p = resolveAlertInput.parse(raw);
+ const alert = await one<{id: string; category: string; status: string}>('SELECT id,category,status FROM operations_alerts WHERE id=?', p.id);
+ if (!alert) throw new AppError('Alerte introuvable.', 404);
+ if (alert.status === 'resolved') return {ok: true, message: 'Cette alerte était déjà résolue.'};
+ await db().prepare("UPDATE operations_alerts SET status='resolved' WHERE id=? AND status='open'").bind(p.id).run();
+ await audit(actorId, 'resolve_alert', p.id, {category: alert.category});
+ return {ok: true, message: 'Alerte marquée comme résolue.'};
+}
+
+const PENDING_KINDS: {kind: string; label: string; sql: string}[] = [
+ {kind: 'connector_action', label: 'Actions sur une application', sql: "SELECT workspace_id,created_at FROM resources WHERE kind='connector_action' AND status='pending'"},
+ {kind: 'proposal', label: 'Créations média', sql: "SELECT workspace_id,created_at FROM resources WHERE kind='proposal' AND status='awaiting_approval'"},
+ {kind: 'social_batch', label: 'Publications à programmer', sql: "SELECT b.workspace_id,MIN(p.created_at) created_at FROM social_batches b JOIN social_posts p ON p.batch_id=b.id AND p.status='draft' GROUP BY b.id"},
+ {kind: 'social_reply', label: 'Réponses aux commentaires', sql: "SELECT workspace_id,updated_at created_at FROM social_replies WHERE status='draft'"},
+ {kind: 'browser_session', label: 'Étapes du navigateur', sql: "SELECT workspace_id,updated_at created_at FROM browser_sessions WHERE status='awaiting_approval'"},
+];
+/** Every approval waiting on the platform: counts, age and account — never the content. */
+export async function adminPendingDecisions(now = Date.now()) {
+ const rows = (await Promise.all(PENDING_KINDS.map(async kind => (await all<{workspace_id: string; created_at: number}>(kind.sql).catch(() => [])).map(row => ({kind: kind.kind, label: kind.label, workspaceId: row.workspace_id, since: n(row.created_at)}))))).flat();
+ const ids = [...new Set(rows.map(row => row.workspaceId))], owners = new Map<string, string | null>();
+ for (let i = 0; i < ids.length; i += 90) { // D1 binds at most 100 parameters per query
+  const part = ids.slice(i, i + 90);
+  for (const row of await all<{id: string; email: string | null}>('SELECT w.id,u.email FROM workspaces w JOIN organizations o ON o.id=w.organization_id LEFT JOIN auth_users u ON u.id=o.owner_id WHERE w.id IN (' + part.map(() => '?').join(',') + ')', ...part).catch(() => [])) owners.set(row.id, row.email);
+ }
+ const byKind = PENDING_KINDS.map(kind => {const list = rows.filter(row => row.kind === kind.kind);return {kind: kind.kind, label: kind.label, count: list.length, oldest: list.length ? Math.min(...list.map(row => row.since)) : null};});
+ return {
+  total: rows.length, stale: rows.filter(row => now - row.since > DAY).length, byKind,
+  items: rows.sort((a, b) => a.since - b.since).slice(0, 50).map(row => ({kind: row.kind, label: row.label, account: owners.get(row.workspaceId) || 'Espace sans propriétaire connu', since: row.since, stale: now - row.since > DAY})),
+ };
+}
+
+const STOP_CATEGORIES: [RegExp, string][] = [[/solde|portefeuille|crédits? (?:disponible|insuffisant)/i, 'Solde insuffisant'], [/limite temporaire|surcharg|indisponible/i, 'Fournisseur saturé'], [/interrompu|coupure|réseau/i, 'Coupure'], [/budget prévu|plafond/i, 'Budget du message'], [/arrêt|annul/i, 'Arrêt demandé']];
+/** Why answers stopped in the last days: system messages grouped (numbers hidden), never user content. */
+export async function adminStopReasons(days = 7, now = Date.now()) {
+ const rows = await all<{status: string; error: string | null; created_at: number}>("SELECT status,error,created_at FROM runs WHERE created_at>? AND status IN ('failed','partial','cancelled','error')", now - days * DAY).catch(() => []);
+ const groups = new Map<string, {reason: string; category: string; count: number; last: number}>();
+ for (const row of rows) {
+  const reason = (row.error || (row.status === 'cancelled' ? 'Arrêtée à la demande de l’utilisateur' : 'Sans message')).replace(/\d+(?:[.,]\d+)?/g, '#').slice(0, 160);
+  const category = STOP_CATEGORIES.find(([pattern]) => pattern.test(reason))?.[1] || 'Autre';
+  const group = groups.get(reason) || {reason, category, count: 0, last: 0};
+  group.count++; group.last = Math.max(group.last, n(row.created_at)); groups.set(reason, group);
+ }
+ return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 20);
+}

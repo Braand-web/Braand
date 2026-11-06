@@ -82,3 +82,15 @@
  .adm-head h1{font-size:22px}
 }
 @media (prefers-reduced-motion:reduce){.adm-main,.adm-drawer,.adm-drawer-back,.adm-skel{animation:none}}
+/* Operations health, alert causes and pending decisions. */
+.adm-note{margin:-6px 0 12px;font-size:12.5px;line-height:18px;color:var(--color-text-muted)}
+.adm-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:2px 6px;border-radius:6px;background:var(--color-surface-2,rgba(127,127,127,.12));overflow-wrap:anywhere}
+.adm-toggle{display:inline-flex;align-items:center;gap:8px;margin:-4px 0 10px;font-size:13px;color:var(--color-text-muted);cursor:pointer}
+.adm-health{display:grid;gap:4px;margin:0 0 12px;padding:12px 14px;border-radius:12px;font-size:13px;line-height:19px}
+.adm-health strong{font-size:14px}
+.adm-health.ok{background:var(--color-success-soft);color:var(--color-success)}
+.adm-health.bad{background:var(--color-danger-soft);color:var(--color-danger)}
+.adm-health span{color:var(--color-text)}
+.adm-decisions{margin:18px 0}
+.adm-decisions .adm-attention{margin-bottom:12px}
+.adm-stale{color:var(--color-danger);font-weight:600}

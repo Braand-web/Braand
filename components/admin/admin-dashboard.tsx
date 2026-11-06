@@ -58,7 +58,8 @@ function Overview(){
  const bySource=c.bySource as Record<string,{granted:number;remaining:number}>;
  const offered=Object.entries(bySource).filter(([k])=>k!=="topup"&&k!=="subscription"&&k!=="upgrade").reduce((n,[,v])=>n+v.granted,0);
  const sold=["topup","subscription","upgrade"].reduce((n,k)=>n+(bySource[k]?.granted||0),0);
- const attention=[[Number(at.openAlerts),"alerte(s) ouverte(s)"],[Number(at.pendingRefunds),"remboursement(s) à traiter"],[Number(at.failedOrders7),"paiement(s) échoué(s) cette semaine"],[Number(at.failedAnswers24),"réponse(s) en erreur depuis 24 h"]] as [number,string][];
+ const pd=data.pendingDecisions as {total:number;stale:number;byKind:{kind:string;label:string;count:number;oldest:number|null}[];items:{kind:string;label:string;account:string;since:number;stale:boolean}[]}|null;
+ const attention=[[Number(pd?.stale||0),"décision(s) en attente depuis plus de 24 h"],[Number(at.openAlerts),"alerte(s) ouverte(s)"],[Number(at.pendingRefunds),"remboursement(s) à traiter"],[Number(at.failedOrders7),"paiement(s) échoué(s) cette semaine"],[Number(at.failedAnswers24),"réponse(s) en erreur depuis 24 h"]] as [number,string][];
  return <>
   <div className="adm-attention">{attention.some(([n])=>n>0)?attention.filter(([n])=>n>0).map(([n,l])=><span key={l} className={"adm-chip "+(l.includes("erreur")||l.includes("échoué")?"bad":"warn")}>{n} {l}</span>):<span className="adm-chip ok">Rien d’urgent : tout fonctionne.</span>}</div>
   <div className="adm-grid">
@@ -71,6 +72,10 @@ function Overview(){
    <Kpi label="Crédits consommés" value={fmt(c.consumed,2)} hint={`${fmt(c.consumed30,2)} sur 30 jours`}/>
    <Kpi label="Crédits vendus / offerts" value={`${fmt(sold)} / ${fmt(offered)}`} hint="Vendus = recharges et abonnements. Offerts = bienvenue, tests, cadeaux."/>
   </div>
+  {pd&&<div className="adm-card adm-decisions"><h2>Décisions en attente{pd.total?" · "+fmt(pd.total):""}</h2><p className="adm-note">Ce que les clients doivent encore autoriser dans leurs discussions. Le contenu des demandes n’est jamais affiché ici.</p>
+   <div className="adm-attention">{pd.byKind.map(k=><span key={k.kind} className={"adm-chip "+(k.count?"warn":"ok")}>{fmt(k.count)} · {k.label}{k.oldest?" · la plus ancienne "+ago(k.oldest):""}</span>)}</div>
+   <Table head={["Type","Compte","En attente depuis"]} rows={pd.items.map(item=>[item.label,item.account,<span key="s" className={item.stale?"adm-stale":undefined}>{ago(item.since)}</span>])} empty="Aucune décision en attente : les clients ont tout autorisé ou refusé."/>
+  </div>}
   <div className="adm-row">
    <div className="adm-card"><h2>Réponses par jour (30 jours)</h2><Chart points={s} bars={s.map(p=>p.answers)}/></div>
    <div className="adm-card"><h2>Inscriptions par jour</h2><Chart points={s} bars={s.map(p=>p.signups)} barColor="var(--color-accent)"/></div>
@@ -154,31 +159,35 @@ function Ai(){
  </>;
 }
 
-function System({part}:{part:"system"|"quality"}){
- const {data,error}=useData<Json>("/api/admin/system");
- const [busy,setBusy]=useState(false),[note,setNote]=useState("");
+const bytes=(value:unknown)=>{const v=Number(value)||0;return v>=1048576?fmt(v/1048576,1)+" Mo":v>=1024?fmt(v/1024)+" Ko":fmt(v)+" o";};
+function System({part,notify}:{part:"system"|"quality";notify:(message:string,error?:boolean)=>void}){
+ const {data,error,reload}=useData<Json>("/api/admin/system");
+ const [busy,setBusy]=useState(false),[note,setNote]=useState(""),[showResolved,setShowResolved]=useState(false);
  if(error)return <p role="alert">{error}</p>;if(!data)return <Skeleton/>;
  const quality=data.quality as Json|null,lessons=(data.lessons||[]) as Json[];
  if(part==="quality"){
-  const runs=(quality?.runs||[]) as Json[],tools=(quality?.tools||[]) as Json[],feedback=(quality?.feedback||[]) as Json[];
+  const runs=(quality?.runs||[]) as Json[],tools=(quality?.tools||[]) as Json[],feedback=(quality?.feedback||[]) as Json[],stops=(data.stopReasons||[]) as {reason:string;category:string;count:number;last:number}[];
   return <>
    <div className="adm-grid">{runs.map(r=><Kpi key={String(r.status)} label={"Réponses « "+String(r.status)+" » (7 j)"} value={fmt(r.n)} tone={["failed","error"].includes(String(r.status))&&Number(r.n)>0?"bad":undefined}/>)}{feedback.map(f=><Kpi key={String(f.feedback)} label={f.feedback==="up"?"👍 Avis positifs":f.feedback==="down"?"👎 Avis négatifs":"Sans avis"} value={fmt(f.n)}/>)}</div>
+   <div className="adm-card" style={{marginBottom:12}}><h2>Pourquoi des réponses se sont arrêtées (7 jours)</h2><p className="adm-note">Messages du système regroupés (les montants sont remplacés par #). Aucun contenu de conversation.</p><Table head={["Catégorie","Raison","Nombre","Dernière fois"]} rows={stops.map(stop=>[<span key="c" className={"adm-chip "+(stop.category==="Fournisseur saturé"||stop.category==="Coupure"?"bad":"warn")}>{stop.category}</span>,stop.reason,fmt(stop.count),ago(stop.last)])} empty="Aucune réponse interrompue cette semaine."/></div>
    <div className="adm-row">
     <div className="adm-card"><h2>Outils de l’agent (7 jours)</h2><Table head={["Outil","Appels","Erreurs","Taux"]} rows={tools.slice(0,25).map(t=>[String(t.tool),fmt(t.calls),fmt(t.errors),Number(t.calls)?fmt(Number(t.errors)/Number(t.calls)*100,1)+" %":"—"])}/></div>
     <div className="adm-card"><h2>Leçons apprises automatiquement</h2><p style={{fontSize:12.5,color:"var(--color-text-muted)",marginTop:-6}}>Erreurs répétées que l’agent apprend à éviter seul (données techniques uniquement).</p><Table head={["Outil","Code","Nombre","Corrigé"]} rows={lessons.map(l=>[String(l.tool),String(l.code),fmt(l.count),fmt(l.recovered)])} empty="Aucune erreur répétée : rien à apprendre."/></div>
    </div>
   </>;
  }
- const services=data.services as Record<string,boolean>,ops=data.operations as Json|null,jobs=(ops?.jobs||[]) as Json[],alerts=(ops?.alerts||[]) as Json[],backups=(ops?.backups||[]) as Json[];
+ const services=data.services as Record<string,boolean>,ops=data.operations as Json|null,jobs=(ops?.jobs||[]) as Json[],allAlerts=(ops?.alerts||[]) as Json[],backups=(ops?.backups||[]) as Json[],health=data.backupHealth as {healthy:boolean;lastSuccessAt:number|null;ageHours:number|null;bytes:number;tables:number;rows:number;objects:number;today:{status:string;errorCode:string|null;updatedAt:number}|null}|null;
+ const alerts=showResolved?allAlerts:allAlerts.filter(a=>a.status!=="resolved");
+ const resolve=async(id:string)=>{setBusy(true);try{const r=await api<{message:string}>("/api/admin/system",post({action:"resolve_alert",id}));notify(r.message);reload();}catch(e){notify(e instanceof Error?e.message:"Action impossible.",true);}finally{setBusy(false);}};
  const names:Record<string,string>={model:"Modèle d’IA",adaptiveBrain:"Cerveau adaptatif",media:"Génération médias (fal)",browser:"Navigateur",payments:"Paiements",backups:"Sauvegardes",connectors:"Connecteurs (Gmail, Drive…)",email:"E-mails",storage:"Stockage des fichiers",workQueue:"Tâches de fond",codeSandbox:"Bac à sable de code"};
  const test=async()=>{setBusy(true);try{await api("/api/admin/operations",post({action:"test-alert",idempotencyKey:crypto.randomUUID()}));setNote("Alerte de test envoyée.");}catch(e){setNote(e instanceof Error?e.message:"Envoi impossible.");}finally{setBusy(false);}};
  return <>
   <div className="adm-card" style={{marginBottom:12}}><h2>Services</h2><div className="adm-attention">{Object.entries(services).map(([k,v])=><span key={k} className={"adm-chip "+(v?"ok":"warn")}>{v?"✓":"○"} {names[k]||k}</span>)}</div></div>
   <div className="adm-row">
-   <div className="adm-card"><h2>Alertes</h2><Table head={["Catégorie","Statut","Observations","Dernière fois"]} rows={alerts.map(a=>[String(a.category),statusTag(a.status),fmt(a.observations),dateTime(a.last_seen_at)])} empty="Aucune alerte."/><div style={{marginTop:10}}><button className="adm-btn" disabled={busy} onClick={()=>void test()}>Envoyer une alerte de test</button> <span style={{fontSize:12.5,color:"var(--color-text-muted)"}}>{note}</span></div></div>
-   <div className="adm-card"><h2>Sauvegardes</h2><Table head={["Date","Statut"]} rows={backups.slice(0,15).map(b=>[dateTime(b.created_at??b.started_at),statusTag(b.status)])} empty="Aucune sauvegarde enregistrée."/></div>
+   <div className="adm-card"><h2>Alertes</h2><label className="adm-toggle"><input type="checkbox" checked={showResolved} onChange={e=>setShowResolved(e.target.checked)}/>Afficher aussi les alertes résolues</label><Table head={["Catégorie","Cause","Statut","Observations","Dernière fois",""]} rows={alerts.map(a=>[String(a.category),<code key="t" className="adm-code">{String(a.target||"—")}</code>,statusTag(a.status),fmt(a.observations),dateTime(a.last_seen_at),a.status==="open"?<button key="r" type="button" className="adm-btn" disabled={busy} onClick={()=>void resolve(String(a.id))}>Marquer résolue</button>:""])} empty={showResolved?"Aucune alerte.":"Aucune alerte ouverte."}/><div style={{marginTop:10}}><button className="adm-btn" disabled={busy} onClick={()=>void test()}>Envoyer une alerte de test</button> <span style={{fontSize:12.5,color:"var(--color-text-muted)"}}>{note}</span></div></div>
+   <div className="adm-card"><h2>Sauvegardes</h2>{health&&<div className={"adm-health "+(health.healthy?"ok":"bad")} role="status"><strong>{health.healthy?"Sauvegardes à jour":"Sauvegarde à surveiller"}</strong><span>{health.lastSuccessAt?"Dernière réussie "+ago(health.lastSuccessAt)+" · "+bytes(health.bytes)+" · "+fmt(health.tables)+" tables · "+fmt(health.rows)+" lignes · "+fmt(health.objects)+" fichiers":"Aucune sauvegarde réussie pour l’instant."}</span>{health.today&&<span>Tâche du jour : {statusTag(health.today.status)}{health.today.errorCode?<> <code className="adm-code">{health.today.errorCode}</code></>:null}</span>}</div>}<Table head={["Date","Statut","Taille","Tables","Lignes"]} rows={backups.slice(0,15).map(b=>[dateTime(b.created_at??b.started_at),statusTag(b.status),bytes(b.bytes),fmt(b.tables_count),fmt(b.rows_count)])} empty="Aucune sauvegarde enregistrée."/></div>
   </div>
-  <div className="adm-card"><h2>Tâches automatiques</h2><Table head={["Tâche","Statut","Essais","Mise à jour"]} rows={jobs.slice(0,40).map(j=>[String(j.name),statusTag(j.status),fmt(j.attempts),dateTime(j.updated_at)])}/></div>
+  <div className="adm-card"><h2>Tâches automatiques</h2><Table head={["Tâche","Statut","Code d’erreur","Essais","Mise à jour"]} rows={jobs.slice(0,40).map(j=>[String(j.name),statusTag(j.status),j.error_code?<code key="e" className="adm-code">{String(j.error_code)}</code>:"—",fmt(j.attempts),dateTime(j.updated_at)])}/></div>
  </>;
 }
 
@@ -267,7 +276,7 @@ export function AdminDashboard(){
    <div className="adm-mobile-tabs" role="tablist">{VIEWS.map(v=><button key={v.id} aria-current={v.id===view?"page":undefined} onClick={()=>go(v.id)}>{v.label}</button>)}</div>
    <main className="adm-main" key={view+refresh}>
     <div className="adm-head"><div><h1>{current.label}</h1><p>{current.help}</p></div><button className="adm-btn" onClick={()=>setRefresh(r=>r+1)}>Actualiser</button></div>
-    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="feedback"?<FeedbackAdmin notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality"/>:view==="media"?<Media/>:view==="system"?<System part="system"/>:<Audit/>}
+    {view==="overview"?<Overview/>:view==="users"?<Users notify={notify}/>:view==="finance"?<Finance/>:view==="sites"?<Sites notify={notify}/>:view==="feedback"?<FeedbackAdmin notify={notify}/>:view==="ai"?<Ai/>:view==="quality"?<System part="quality" notify={notify}/>:view==="media"?<Media/>:view==="system"?<System part="system" notify={notify}/>:<Audit/>}
    </main>
   </div>
   {notice?<div className={"adm-notice"+(notice.error?" error":"")} role="status">{notice.text}</div>:null}

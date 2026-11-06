@@ -85,9 +85,61 @@ await assert.rejects(()=>admin.adminAction(owner,{action:'block',userId:owner,re
 await admin.adminAction(owner,{action:'unblock',userId:'user-1'});assert.equal(await admin.isAccountBlocked('user-1'),false);pass('suspend and reactivate an account; an administrator cannot be suspended');
 const audit=await admin.adminAudit('admin.');assert.ok(audit.entries.length>=4&&audit.entries.every(e=>e.action.startsWith('admin.')));pass('every admin action is in the audit log');
 
+// Backup health: none, recent, stale, and an interrupted job of the day.
+{
+ const today='backup:'+new Date(now).toISOString().slice(0,10).replaceAll('-','');
+ assert.equal((await admin.adminBackupHealth(now)).healthy,false,'no successful backup yet');
+ ins('operations_backups',{id:'bk1',object_key:'braand-backups/bk1.bin',status:'completed',bytes:9437184,tables_count:112,rows_count:13456,objects_count:42,created_at:now-3*3600000});
+ ins('operations_jobs',{id:today,name:'backup',status:'completed',attempts:1,created_at:now-3*3600000,updated_at:now-3*3600000});
+ const fresh=await admin.adminBackupHealth(now);assert.equal(fresh.healthy,true);assert.equal(fresh.ageHours,3);assert.equal(fresh.tables,112);assert.equal(fresh.rows,13456);assert.equal(fresh.today.status,'completed');
+ assert.equal((await admin.adminBackupHealth(now+27*3600000)).healthy,false,'more than 26 h without a backup');
+ sql.prepare("UPDATE operations_jobs SET status='uncertain',error_code='job_interrupted' WHERE id=?").run(today);
+ const broken=await admin.adminBackupHealth(now);assert.equal(broken.healthy,false);assert.equal(broken.today.errorCode,'job_interrupted');
+ sql.prepare("UPDATE operations_jobs SET status='completed',error_code=NULL WHERE id=?").run(today);
+ pass('backup health: none, fresh (3 h, 112 tables, 13 456 rows), stale after 26 h, interrupted job of the day');
+}
+// Alerts: the cause is listed, resolving is audited and idempotent.
+{
+ ins('operations_alerts',{id:'cron:1:billing',category:'scheduled_task_failed',target:'billing:503:database_unavailable',status:'open',observations:1,first_seen_at:now-600000,last_seen_at:now-600000});
+ assert.equal((await admin.adminResolveAlert(owner,{action:'resolve_alert',id:'cron:1:billing'})).message,'Alerte marquée comme résolue.');
+ assert.equal(sql.prepare("SELECT status FROM operations_alerts WHERE id='cron:1:billing'").get().status,'resolved');
+ assert.match((await admin.adminResolveAlert(owner,{action:'resolve_alert',id:'cron:1:billing'})).message,/déjà résolue/);
+ await assert.rejects(()=>admin.adminResolveAlert(owner,{action:'resolve_alert',id:'absent'}),error=>error.status===404);
+ await assert.rejects(()=>admin.adminResolveAlert(owner,{action:'resolve_alert',id:'cron:1:billing',extra:true}));
+ const entries=(await admin.adminAudit('admin.resolve_alert')).entries;assert.equal(entries.length,1);assert.equal(entries[0].target,'cron:1:billing');
+ pass('an alert keeps its cause; resolving it is audited once and refuses unknown alerts or extra fields');
+}
+// Decisions waiting on the platform: exact counts, age, account, never the content.
+{
+ const secret='TEXTE PRIVE A NE PAS MONTRER';
+ ins('resources',{id:'pd-action',workspace_id:'user-2',kind:'connector_action',title:secret,data:JSON.stringify({arguments:{message:secret}}),status:'pending',created_at:now-3600000,updated_at:now-3600000});
+ ins('resources',{id:'pd-media',workspace_id:'user-3',kind:'proposal',title:secret,data:JSON.stringify({kind:'media',rationale:secret}),status:'awaiting_approval',created_at:now-2*DAY,updated_at:now-2*DAY});
+ ins('resources',{id:'pd-done',workspace_id:'user-3',kind:'connector_action',title:'déjà décidée',data:'{}',status:'completed',created_at:now-DAY,updated_at:now-DAY});
+ ins('social_batches',{id:'pd-batch',workspace_id:'user-4',actor_id:'user-4',title:secret,created_at:now-5*3600000,updated_at:now-5*3600000});
+ ins('social_posts',{id:'pd-post',batch_id:'pd-batch',workspace_id:'user-4',account_id:'acc',text:secret,assets:'[]',format:'text',alt_text:'',scheduled_at:now+DAY,timezone:'Africa/Douala',status:'draft',version:1,lease_until:0,created_at:now-5*3600000,updated_at:now-5*3600000});
+ ins('social_replies',{id:'pd-reply',workspace_id:'user-5',actor_id:'user-5',comment_id:'cm',text:secret,comment_digest:'d',status:'draft',digest:'d',updated_at:now-1800000});
+ ins('browser_sessions',{id:'pd-browser',workspace_id:'user-6',organization_id:'user-6',user_id:'user-6',objective:secret,allowed_domains:'[]',status:'awaiting_approval',max_credits:5,created_at:now-7200000,updated_at:now-7200000,expires_at:now+DAY});
+ const pending=await admin.adminPendingDecisions(now);
+ assert.equal(pending.total,5);assert.equal(pending.stale,1,'the media proposal waits for more than 24 h');
+ assert.deepEqual(Object.fromEntries(pending.byKind.map(k=>[k.kind,k.count])),{connector_action:1,proposal:1,social_batch:1,social_reply:1,browser_session:1});
+ assert.equal(pending.items[0].kind,'proposal');assert.equal(pending.items[0].stale,true);assert.equal(pending.items[0].account,sql.prepare("SELECT email FROM auth_users WHERE id='user-3'").get().email,'the account is the owner of the workspace');
+ assert.ok(!JSON.stringify(pending).includes(secret),'no content of any request');
+ pass('pending decisions: 5 kinds counted exactly, oldest first, the one waiting more than 24 h flagged, no content');
+}
+// Why answers stopped: system messages grouped with numbers hidden.
+{
+ for(const [i,amount] of ['0,68','1,17'].entries())ins('runs',{id:'stop-'+i,workspace_id:'user-7',conversation_id:'c-stop',status:'partial',error:'Votre solde disponible ('+amount+' crédits) ne suffit pas pour démarrer cette demande.',created_at:now-(i+1)*3600000,updated_at:now-(i+1)*3600000});
+ ins('runs',{id:'stop-2',workspace_id:'user-7',conversation_id:'c-stop',status:'failed',error:'Le modèle a atteint sa limite temporaire.',created_at:now-1800000,updated_at:now-1800000});
+ const reasons=await admin.adminStopReasons(7,now);
+ const balance=reasons.find(r=>r.category==='Solde insuffisant');assert.equal(balance.count,2);assert.equal(balance.reason,'Votre solde disponible (# crédits) ne suffit pas pour démarrer cette demande.');
+ assert.equal(reasons.find(r=>r.category==='Fournisseur saturé').count,1);
+ assert.ok(!reasons.some(r=>/\d/.test(r.reason)),'amounts are hidden');
+ pass('stop reasons are grouped with amounts hidden: balance ×2, provider busy ×1');
+}
+
 if(process.env.ADMIN_PREVIEW==='1'){
  // Render the real interface with these exact answers.
- const routes={'/api/admin/overview':overview,'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/sites':await admin.adminSites(now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:[{status:'succeeded',created_at:now-DAY}]},quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
+ const routes={'/api/admin/overview':{...overview,pendingDecisions:await admin.adminPendingDecisions(now)},'/api/admin/users':await admin.adminUsers(''),'/api/admin/finance':await admin.adminFinance(),'/api/admin/ai':await admin.adminAi(30,now),'/api/admin/media':await admin.adminMedia(30,now),'/api/admin/sites':await admin.adminSites(now),'/api/admin/audit':await admin.adminAudit(''),'/api/admin/system':{services:admin.adminServices(),operations:{jobs:sql.prepare('SELECT * FROM operations_jobs').all(),alerts:sql.prepare('SELECT * FROM operations_alerts').all(),backups:sql.prepare('SELECT * FROM operations_backups ORDER BY created_at DESC').all()},backupHealth:await admin.adminBackupHealth(now),stopReasons:await admin.adminStopReasons(7,now),quality:await admin.agentQualityReport(7,now),lessons:[{tool:'plan_media',code:'invalid_input',count:3,recovered:1}]}};
  for(const u of routes['/api/admin/users'].users)routes['/api/admin/users/'+u.id]=await admin.adminUserDetail(u.id,now);
  writeFileSync(path.join(out,'routes.json'),JSON.stringify(routes));
  await build({stdin:{contents:`import React from "react";import {createRoot} from "react-dom/client";import {AdminDashboard} from "./components/admin/admin-dashboard";import "./app/tokens.css";import "./app/globals.css";
