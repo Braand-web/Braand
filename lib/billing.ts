@@ -171,8 +171,8 @@ async function sas<T>(path:string,schema:z.ZodType<T,z.ZodTypeDef,unknown>,body?
  const c=config(),key=c.SASPAY_SECRET_KEY;if(!key)throw new AppError('Paiement non configuré.',503);
  const live=c.SASPAY_ENV==='live';if(!key.startsWith(live?'sk_live_':'sk_test_'))throw new AppError('Environnement de paiement incohérent.',503);
  const response=await fetch('https://api.saspay.me/api/v1/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
- if(!response.ok)throw new AppError('SasPay est indisponible. La commande reste enregistrée.',502,'payment_provider');
- const result=z.object({success:z.boolean().optional(),data:z.unknown().optional()}).passthrough().parse(await response.json());if(result.success===false)throw new AppError('La vérification SasPay a échoué.',502);return schema.parse(result.data??result);
+ if(!response.ok)throw new AppError('Le service de paiement est indisponible. La commande reste enregistrée.',502,'payment_provider');
+ const result=z.object({success:z.boolean().optional(),data:z.unknown().optional()}).passthrough().parse(await response.json());if(result.success===false)throw new AppError('La vérification du paiement a échoué.',502);return schema.parse(result.data??result);
 }
 export async function checkout(who:BillingIdentity,quoteId:string,key:string,origin:string){
  requireBilling(who);

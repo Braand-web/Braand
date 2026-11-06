@@ -21,7 +21,7 @@ export async function uploadLibraryFileToFal(tenant:string,fileId:string){
  if(Number(file.size_bytes||0)>MAX_BYTES)throw new AppError('Fichier de référence trop volumineux (25 Mo maximum).',400,'reference_too_large');
  const object=await env.BUCKET?.get(file.storage_key);if(!object)throw new AppError('Fichier de référence indisponible.',404,'reference_not_found');
  const initiate=await fetch(FAL_UPLOAD_URL,{method:'POST',headers:{Authorization:'Key '+key,'Content-Type':'application/json'},body:JSON.stringify({content_type:mime,file_name:(file.display_name||'reference').slice(0,120)}),signal:AbortSignal.timeout(15000)});
- if(!initiate.ok)throw new AppError('fal.ai n’a pas accepté la référence.',502,'reference_upload_failed');
+ if(!initiate.ok)throw new AppError('Le service de création n’a pas accepté la référence.',502,'reference_upload_failed');
  const target=z.object({upload_url:z.string().url(),file_url:z.string().url()}).parse(await initiate.json());
  const put=await fetch(safeWebURL(target.upload_url),{method:'PUT',headers:{'Content-Type':mime},body:await object.arrayBuffer(),signal:AbortSignal.timeout(60000)});
  if(!put.ok)throw new AppError('L’envoi de la référence a échoué.',502,'reference_upload_failed');

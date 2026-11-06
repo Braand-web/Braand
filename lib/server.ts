@@ -1,3 +1,4 @@
+import {withoutSupplierNames} from './supplier-names.mjs';
 import {modelRateEnvironment} from "./model-rate-refresh";
 import {withRoutingDefaults} from './model-routing-defaults';
 import {falRateEnvironment} from './fal-rate-refresh';
@@ -87,7 +88,7 @@ export function failure(error:unknown){
  const detail=String(error);
  for(const [code,message] of [['project_quota','Le nombre de projets actifs de votre forfait est atteint.'],['concurrency_limit','Une mission est déjà en cours. Réessayez après sa fin.'],['storage_quota','Votre espace de stockage est plein. Exportez ou supprimez des fichiers.'],['transfer_quota','La limite de transfert est atteinte. Contactez le support pour un export assisté.']])if(detail.includes(code))return Response.json({error:message,code},{status:409});
  if(error instanceof SyntaxError)return Response.json({error:"Le corps de la requête doit être un JSON valide.",code:"validation_error"},{status:400});
- if(error instanceof AppError)return Response.json({error:error.message,code:error.code},{status:error.status});
+ if(error instanceof AppError)return Response.json({error:withoutSupplierNames(error.message),code:error.code},{status:error.status});
  if(error&&typeof error==="object"&&"issues" in error)return Response.json({error:"Informations incomplètes ou invalides.",code:"validation_error"},{status:400});
  console.error("Request failed",error instanceof Error?error.name:"unknown");return Response.json({error:"L’opération n’a pas abouti. Réessayez ou contactez le support.",code:"internal_error"},{status:500});
 }

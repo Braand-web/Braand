@@ -32,17 +32,17 @@ export function requestCostUnits(row:ModelCostRow,rate:ModelRate,usageUnits:(usa
  if(rate.provider&&rate.provider!==row.provider)throw new AppError('Le tarif enregistré ne correspond pas au fournisseur.',409,'usage_unknown');
  if(row.provider==='openrouter'){
   if(row.status==='estimated')return Math.ceil(usageUnits(JSON.parse(row.usage||'null'),rate).units*(1+Number(rate.fundingFeeBps)/10000));
-  if(typeof row.cost_xaf!=='number'||!Number.isFinite(row.cost_xaf)||row.cost_xaf<0)throw new AppError('Coût OpenRouter à rapprocher.',409,'usage_unknown');
+  if(typeof row.cost_xaf!=='number'||!Number.isFinite(row.cost_xaf)||row.cost_xaf<0)throw new AppError('Coût de la réponse à rapprocher.',409,'usage_unknown');
   return Math.ceil(row.cost_xaf/4*100);
  }
  return usageUnits(JSON.parse(row.usage||'null'),rate).units;
 }
 export async function generationCost(id:string,rate:ModelRate,options?:{requireFinal?:boolean}){
- const key=config().OPENROUTER_API_KEY;if(!key||!/^gen-[a-zA-Z0-9_-]+$/.test(id))throw new AppError('Identifiant OpenRouter manquant.',409,'usage_unknown');
+ const key=config().OPENROUTER_API_KEY;if(!key||!/^gen-[a-zA-Z0-9_-]+$/.test(id))throw new AppError('Identifiant de la réponse manquant.',409,'usage_unknown');
  const response=await fetch('https://openrouter.ai/api/v1/generation?id='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(8000)});
- if(!response.ok){await response.body?.cancel().catch(()=>undefined);throw new AppError('Coût OpenRouter temporairement indisponible.',409,'usage_unknown');}
+ if(!response.ok){await response.body?.cancel().catch(()=>undefined);throw new AppError('Coût de la réponse temporairement indisponible.',409,'usage_unknown');}
  const receipt=z.object({data:z.object({id:z.string(),total_cost:z.number().finite().nonnegative(),provider_name:z.string().nullable().optional()}).passthrough()}).safeParse(await response.json());
- if(!receipt.success||receipt.data.data.id!==id)throw new AppError('Coût OpenRouter non confirmé.',409,'usage_unknown');
+ if(!receipt.success||receipt.data.data.id!==id)throw new AppError('Coût de la réponse non confirmé.',409,'usage_unknown');
  const {data}=receipt.data;
  if(options?.requireFinal&&data.cancelled!==true&&(typeof data.finish_reason!=='string'||!data.finish_reason.trim()))throw new AppError('Le reçu fournisseur n’est pas encore final.',409,'usage_unknown');
  return {usd:data.total_cost,xaf:data.total_cost*rate.usdXaf*(1+Number(rate.fundingFeeBps)/10000)+rate.overheadXaf,provider:data.provider_name||null};

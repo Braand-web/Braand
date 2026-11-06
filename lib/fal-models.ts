@@ -41,8 +41,8 @@ async function readText(url:string,headers:Record<string,string>,maxBytes=200000
  let response=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)}).catch(()=>null);
  // One retry: fal and BEAC can be briefly unavailable.
  if(!response||response.status>=500||response.status===429){await new Promise(resolve=>setTimeout(resolve,800));response=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});}
- if(!response.ok){await response.body?.cancel();throw new AppError('Source fal indisponible.',502,'fal_source_unavailable');}
- const text=await response.text();if(text.length>maxBytes)throw new AppError('Réponse fal trop volumineuse.',502);return text;
+ if(!response.ok){await response.body?.cancel();throw new AppError('Catalogue de modèles indisponible.',502,'fal_source_unavailable');}
+ const text=await response.text();if(text.length>maxBytes)throw new AppError('Réponse du catalogue trop volumineuse.',502);return text;
 }
 
 /** Price a list of models from fal's pricing API and the BEAC reference rate. */
@@ -108,7 +108,7 @@ export async function ensureApprovedFalModels(env:Bindings,now=Date.now()){
 
 /** Search fal's public model catalog, with current prices when available. */
 export async function searchFalModels(key:string|undefined,query:string,category?:string){
- if(!key)throw new AppError('fal.ai n’est pas configuré.',503,'fal_not_ready');
+ if(!key)throw new AppError('La création d’images et de vidéos n’est pas encore activée.',503,'fal_not_ready');
  const url=new URL(FAL_MODELS_URL);url.searchParams.set('q',query.slice(0,120));url.searchParams.set('limit','12');if(category)url.searchParams.set('category',category);
  const raw=JSON.parse(await readText(url.href,{Authorization:'Key '+key},1000000)) as Record<string,unknown>;
  const list=z.array(z.object({endpoint_id:z.string(),metadata:z.object({display_name:z.string().optional(),category:z.string().optional(),description:z.string().optional(),status:z.string().optional()}).passthrough().optional()}).passthrough()).parse(raw.models??raw.items??[]);
@@ -127,9 +127,9 @@ export async function searchFalModels(key:string|undefined,query:string,category
 /** Administrator approval: price immediately and store. */
 export async function approveFalModel(env:Bindings,adminId:string,raw:unknown){
  const item=approvedModelSchema.omit({approvedAt:true,approvedBy:true,quote:true}).parse(raw);
- if(!env.FAL_KEY)throw new AppError('fal.ai n’est pas configuré.',503);
+ if(!env.FAL_KEY)throw new AppError('La création d’images et de vidéos n’est pas encore activée.',503);
  const quote=(await priceModels(String(env.FAL_KEY),[item])).get(item.id);
- if(!quote)throw new AppError('Prix introuvable ou unité différente chez fal pour ce modèle. Vérifiez l’unité et le maximum.',409,'fal_price_unavailable');
+ if(!quote)throw new AppError('Prix introuvable ou unité différente pour ce modèle. Vérifiez l’unité et le maximum.',409,'fal_price_unavailable');
  const items=(await load(env)).filter(existing=>existing.id!==item.id);removedIds.delete(item.id);
  if(items.length>=60)throw new AppError('Catalogue complet (60 modèles). Retirez un modèle d’abord.',409);
  const approved={...item,approvedAt:new Date().toISOString(),approvedBy:adminId,quote};
@@ -142,18 +142,18 @@ export async function removeFalModel(env:Bindings,id:string){const items=await l
  * current fal price for one of its bounded units before it is usable. */
 export async function enableFalModel(env:Bindings,raw:unknown){
  const p=z.object({endpointId:z.string().regex(/^[a-zA-Z0-9/._-]{1,180}$/),task:z.string().refine(task=>Object.hasOwn(MEDIA_TASKS,task),'Tâche inconnue'),name:z.string().max(120).optional()}).strict().parse(raw);
- if(!env.FAL_KEY)throw new AppError('fal.ai n’est pas configuré.',503,'fal_not_ready');
+ if(!env.FAL_KEY)throw new AppError('La création d’images et de vidéos n’est pas encore activée.',503,'fal_not_ready');
  const known=(await load(env)).find(item=>item.id===p.endpointId&&item.quote&&Date.now()-Date.parse(item.quote.verifiedAt)<=DAY);
  if(known)return {id:known.id,credits:known.quote!.credits,status:'ready',replayed:true};
  const response=await fetch('https://fal.ai/api/openapi/queue/openapi.json?endpoint_id='+encodeURIComponent(p.endpointId),{signal:AbortSignal.timeout(20000)});
- if(!response.ok)throw new AppError('Ce modèle est introuvable sur fal.ai.',404,'fal_model_not_found');
+ if(!response.ok)throw new AppError('Ce modèle est introuvable dans le catalogue.',404,'fal_model_not_found');
  const kind=p.task.startsWith('video_')?'video':p.task.startsWith('audio_')?'audio':'image';
  const {boundedModel}=await import('./fal-bounds.mjs');
  const built=boundedModel({id:p.endpointId,name:p.name||p.endpointId,kind,tasks:[p.task]},await response.json()) as {skip?:string;model?:Record<string,unknown>};
  if(built.skip||!built.model)throw new AppError('Ce modèle ne peut pas être utilisé en toute sécurité : '+(built.skip||'schéma inexploitable')+'. Choisis-en un autre.',409,'fal_model_unbounded');
  const model=approvedModelSchema.omit({quote:true}).parse({...built.model,approvedAt:new Date().toISOString(),approvedBy:'agent'});
  const quote=(await priceModels(String(env.FAL_KEY),[model])).get(model.id);
- if(!quote)throw new AppError('Le prix de ce modèle ne peut pas être vérifié chez fal. Choisis-en un autre.',409,'fal_price_unavailable');
+ if(!quote)throw new AppError('Le prix de ce modèle ne peut pas être vérifié. Choisis-en un autre.',409,'fal_price_unavailable');
  const items=(await load(env)).filter(item=>item.id!==model.id);removedIds.delete(model.id);
  await store(env,[...items,{...model,quote}].slice(-60));
  return {id:model.id,credits:quote.credits,status:'ready',inputSchema:model.inputSchema};

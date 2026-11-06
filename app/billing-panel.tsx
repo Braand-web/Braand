@@ -22,8 +22,8 @@ export type BillingTab='offers'|'topup'|'wallet'|'history'|'team';
 type BillingPanelProps={onSignIn?:()=>void;onChange?:()=>void;embedded?:boolean;initialTab?:BillingTab;onTeam?:()=>void;onBilling?:(tab?:BillingTab)=>void};
 const message=(error:unknown)=>{
  const detail=error instanceof Error?error.message:'Impossible de terminer cette opération. Réessayez.';
- if(detail==='SasPay est indisponible. La commande reste enregistrée.')return 'Le service de paiement est indisponible. Votre commande reste enregistrée.';
- if(detail==='La vérification SasPay a échoué.')return 'La vérification du paiement a échoué.';
+ if(detail==='SasPay est indisponible. La commande reste enregistrée.'||detail==='Le service de paiement est indisponible. La commande reste enregistrée.')return 'Le service de paiement est indisponible. Votre commande reste enregistrée.';
+ if(detail==='La vérification SasPay a échoué.'||detail==='La vérification du paiement a échoué.')return 'La vérification du paiement a échoué.';
  if(/saspay|fal\.ai|openrouter|composio|anthropic|claude/i.test(detail))return 'Ce service est indisponible pour le moment. Contactez le support Braand.';
  return detail;
 };

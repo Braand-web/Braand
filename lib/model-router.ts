@@ -47,7 +47,7 @@ export function routedModel(env:Record<string,string|undefined>,request:RoutingR
  const entries=z.record(z.unknown()).safeParse(catalog),parsed=entrySchema.safeParse(entries.success?entries.data[key]:undefined);
  if(!parsed.success)throw new AppError('Le modèle requis et son tarif doivent être configurés.',503,'rate_unverified');
  const definition=REASONING_MODELS[key],entry=parsed.data,provider=entry.transport||definition.provider,model=provider==='openrouter'?openRouterModels[key]:definition.model;
- if(['solpro','terra','fable'].includes(key)&&provider!=='openrouter')throw new AppError('Ce modèle exige le fournisseur OpenRouter configuré.',503,'model_not_configured');
+ if(['solpro','terra','fable'].includes(key)&&provider!=='openrouter')throw new AppError('Ce modèle n’est pas disponible pour le moment.',503,'model_not_configured');
  if(model)entry.rate=currentPricingRate(model,provider,now)||entry.rate;
  const age=now-Date.parse(entry.rate.verifiedAt);
  if(!model||provider!=='openrouter'&&provider!==definition.provider||entry.rate.model!==model||entry.rate.provider&&entry.rate.provider!==provider||!Number.isFinite(age)||age<0||age>86400000||provider==='openrouter'&&(typeof entry.rate.fundingFeeBps!=='number'||!Number.isFinite(entry.rate.fundingFeeBps)||entry.rate.fundingFeeBps<0||entry.rate.fundingFeeBps>10000))throw new AppError('Le tarif exact du modèle et le taux de change doivent être vérifiés.',503,'rate_unverified');

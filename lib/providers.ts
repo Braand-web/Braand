@@ -29,7 +29,7 @@ export async function submitFal(model:string,input:Record<string,unknown>){
  const key=config().FAL_KEY;if(!key)throw new AppError("Génération média non configurée.",503);
  // URLs can only be passed to fal. No arbitrary server-side URL fetch.
  const response=await fetch("https://queue.fal.run/"+model,{method:"POST",headers:{Authorization:"Key "+key,"Content-Type":"application/json"},body:JSON.stringify(input),signal:AbortSignal.timeout(25000)});
- const data:unknown=await response.json();if(!response.ok)throw new AppError("fal.ai n’a pas accepté la génération.",502,response.status>=500?'uncertain_result':'fal_rejected');const submitted=z.object({request_id:z.string().min(1)}).safeParse(data);if(!submitted.success)throw new AppError("Réponse média incertaine.",502,"uncertain_result");return submitted.data.request_id;
+ const data:unknown=await response.json();if(!response.ok)throw new AppError("Le service de création n’a pas accepté la génération.",502,response.status>=500?'uncertain_result':'fal_rejected');const submitted=z.object({request_id:z.string().min(1)}).safeParse(data);if(!submitted.success)throw new AppError("Réponse média incertaine.",502,"uncertain_result");return submitted.data.request_id;
 }
 export async function falResult(model:string,id:string){
  const key=config().FAL_KEY;if(!key)throw new AppError("Génération média non configurée.",503);

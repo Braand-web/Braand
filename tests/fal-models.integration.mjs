@@ -23,7 +23,7 @@ const store=new Map(),env={FAL_KEY:'fal-test',BUCKET:{async get(key){const v=sto
 
 const found=await models.searchFalModels('fal-test','upscale');
 assert.deepEqual(found.map(m=>[m.id,m.priceUsd,m.approved]),[['fal-ai/clarity-upscaler',0.05,false]]);
-await assert.rejects(models.searchFalModels(undefined,'upscale'),/pas configuré/);
+await assert.rejects(models.searchFalModels(undefined,'upscale'),/pas encore activée/);
 
 const schema={type:'object',additionalProperties:false,required:['image_url'],properties:{image_url:{type:'string',format:'uri'}}};
 await assert.rejects(models.approveFalModel(env,'admin',{id:'fal-ai/clarity-upscaler',name:'Clarity',kind:'image',tasks:['not_a_task'],unit:'images',maxUnits:1,inputSchema:schema}),/Tâche inconnue/);

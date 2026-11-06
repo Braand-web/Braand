@@ -27,7 +27,7 @@ async function client(){
  const [{Composio},{AnthropicProvider}]=await Promise.all([import('@composio/core'),import('@composio/anthropic')]);
  return new Composio({apiKey:config().COMPOSIO_API_KEY,provider:new AnthropicProvider(),allowTracking:false,logLevel:'silent'});
 }
-function providerError(){return new AppError('Composio est indisponible ou la connexion doit être renouvelée. Aucun succès n’a été confirmé.',502,'composio_unavailable');}
+function providerError(){return new AppError('Le service de connexion est indisponible ou la connexion doit être renouvelée. Aucun succès n’a été confirmé.',502,'composio_unavailable');}
 async function log(who:BillingIdentity,tool:string,status:string,logId?:string){
  await query('INSERT INTO audit(id,workspace_id,actor,action,target,detail,created_at) VALUES (?,?,?,?,?,?,?)',uid(),who.tenant,who.user.userId,'connector.'+status,tool,JSON.stringify({status,...(logId?{logId}:{})}),Date.now()).run();
 }
@@ -45,7 +45,7 @@ async function instantPolicy(who:BillingIdentity){
 }
 function checkSession(session:Session,scopeUser:string,mode:'connected'|'instant'){
  const c=session.config;
- if(c.user_id!==scopeUser||c.workbench?.enable!==false||c.proxy_execute?.enable!==false||(mode==='connected'&&c.instant!==false))throw new AppError('La politique de cette session Composio a changé. L’exécution est bloquée.',409,'connector_policy_changed');
+ if(c.user_id!==scopeUser||c.workbench?.enable!==false||c.proxy_execute?.enable!==false||(mode==='connected'&&c.instant!==false))throw new AppError('Les règles de cette connexion ont changé. L’exécution est bloquée.',409,'connector_policy_changed');
  return session;
 }
 export async function connectorStatus(who:BillingIdentity){
@@ -97,7 +97,7 @@ export async function authorizeConnector(who:BillingIdentity,toolkit:string){
   if(url.protocol!=='https:'||url.username||url.password||!/(^|\.)composio\.(dev|ai)$/.test(url.hostname))throw providerError();
   await log(who,'authorize:'+toolkit,'authorization_requested');
   return {redirectUrl:url.href};
- }catch{throw new AppError('Connexion indisponible. Vérifiez dans Composio la configuration OAuth et les permissions de ce connecteur ; Meta Ads nécessite votre propre configuration.',409,'connector_auth_unavailable');}
+ }catch{throw new AppError('Connexion indisponible. Reconnectez l’application et vérifiez ses autorisations ; Meta Ads nécessite votre propre configuration.',409,'connector_auth_unavailable');}
 }
 export async function revokeConnector(who:BillingIdentity,accountId:string){
  await authorize(who.tenant,who.user.userId,'write');
@@ -191,7 +191,7 @@ async function executeConnected(who:BillingIdentity,session:Session,call:Connect
   catch(error){
    const {ComposioToolInputRequiredError}=await import('@composio/core');
    if(!(error instanceof ComposioToolInputRequiredError))throw error;
-   if(!approvalGranted)throw new AppError('Composio demande une confirmation pour cet appel exact.',409,'connector_approval_required');
+   if(!approvalGranted)throw new AppError('Cette action demande une confirmation pour cet appel exact.',409,'connector_approval_required');
    const inputResponses=nativeApprovalResponses(error);
    if(!inputResponses)throw new AppError('Le fournisseur demande une intervention supplémentaire. Aucun appel n’a été exécuté.',409,'connector_input_required');
    await authorize(who.tenant,who.user.userId,'write');
