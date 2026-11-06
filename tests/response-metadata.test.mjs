@@ -174,3 +174,36 @@ test("real chat handlers persist run metadata and user feedback in isolated SQLi
   delete globalThis.__responseMetadataTest;
   sql.close();
 });
+
+test("each cited passage is tied to the numbers of its real sources, in list order", async () => {
+  const { responseCitationMarks } = await import("../lib/response-metadata.mjs");
+  const second = { type: "web_search_result_location", url: "https://www.stats.example.com/glaces", title: "Statistiques" };
+  const blocks = [
+    { type: "text", text: "Voici le point. " },
+    { type: "text", text: "Les ventes de pistache montent de 23 %", citations: [citation] },
+    { type: "text", text: " et les fruits à noyau suivent", citations: [second, citation, { type: "web_search_result_location", url: "javascript:alert(1)" }] },
+    { type: "text", text: "Sans source fiable.", citations: [{ type: "web_search_result_location", url: "ftp://x.example" }] },
+    { type: "tool_use", id: "t", name: "x", input: {} },
+  ];
+  const sources = responseSources(blocks);
+  assert.deepEqual(sources.map(source => source.domain), ["example.org", "stats.example.com"]);
+  assert.deepEqual(responseCitationMarks(blocks), [
+    { after: "Les ventes de pistache montent de 23 %", sources: [1] },
+    { after: " et les fruits à noyau suivent", sources: [1, 2] },
+  ]);
+  assert.deepEqual(responseCitationMarks([{ type: "text", text: "x".repeat(200), citations: [citation] }])[0].after.length, 80);
+  assert.deepEqual(responseCitationMarks(null), []);
+});
+
+test("source chips go right after the cited passage and never invent a source", async () => {
+  mkdirSync(".local-build/citations", { recursive: true });
+  await build({ entryPoints: ["components/agents/citations.tsx"], outfile: ".local-build/citations/citations.mjs", bundle: true, platform: "node", format: "esm", jsx: "automatic", external: ["react", "react/jsx-runtime", "lucide-react"], alias: { "@": path.resolve(".") } });
+  const { withCitationMarks, CITATION_MARKER } = await import(pathToFileURL(path.resolve(".local-build/citations/citations.mjs")).href);
+  const text = "Voici le point. Les ventes de pistache montent de 23 % et les fruits à noyau suivent.";
+  const marked = withCitationMarks(text, [{ after: "montent de 23 %", sources: [1] }, { after: "à noyau suivent", sources: [1, 2, 9] }, { after: "absent du texte", sources: [2] }], 2);
+  assert.equal(marked, "Voici le point. Les ventes de pistache montent de 23 %\uE0001\uE001 et les fruits à noyau suivent\uE0001,2\uE001.");
+  assert.equal(marked.split(CITATION_MARKER).filter(part => CITATION_MARKER.test(part)).length, 2);
+  // Markers the model might write are removed; without sources nothing is added.
+  assert.equal(withCitationMarks("Texte \uE0001\uE001 simulé", [{ after: "Texte", sources: [1] }], 1), "Texte\uE0001\uE001 1 simulé");
+  assert.equal(withCitationMarks(text, [{ after: "montent de 23 %", sources: [1] }], 0), text);
+});

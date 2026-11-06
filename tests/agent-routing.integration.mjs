@@ -38,6 +38,13 @@ await check('rich response is persisted with its message and emits only validate
  const event=fixture.events.find(e=>e.type==='rich_response');assert.ok(event);assert.equal(event.data.blocks[0].rows[1][1],null);
  const row=sql.prepare('SELECT content FROM messages WHERE id=?').get(event.data.messageId);assert.deepEqual(JSON.parse(row.content).find(b=>b.type==='ui_response').response,event.data);
 });
+await check('follow-ups close the answer without another model round, saved for reload',async()=>{
+ const execution=await setup();fixture.responses=[stream([{type:'text',text:'Voici le point sur vos ventes.'},{type:'tool_use',id:'follow-1',name:'suggest_followups',input:{items:['Quelles saveurs se vendent le mieux ?','Compare les marges du mois dernier']}}])];await run(execution);
+ assert.equal(fixture.requests.length,1,'no second model call, no extra cost');
+ const event=fixture.events.find(e=>e.type==='rich_response');assert.ok(event);assert.deepEqual(event.data.blocks,[{id:'followups',type:'followups',items:['Quelles saveurs se vendent le mieux ?','Compare les marges du mois dernier']}]);
+ const rows=sql.prepare('SELECT role,content FROM messages WHERE conversation_id=? ORDER BY created_at,rowid').all(execution.conversationId);
+ const last=JSON.parse(rows.at(-1).content);assert.equal(rows.at(-1).role,'user');assert.equal(last[0].type,'tool_result');assert.equal(last[0].tool_use_id,'follow-1');
+});
 await check('a rejected rich component leaves the conversation recoverable',async()=>{
  const execution=await setup();fixture.responses=[stream([{type:'tool_use',id:'formats',name:'response_formats',input:{}}]),stream([{type:'tool_use',id:'invalid-ui',name:'present_response',input:{version:1,blocks:[{id:'evil',type:'html',html:'<script>alert(1)</script>'}]}}]),text('Voici le résultat en texte.')];await run(execution);assert.equal(fixture.events.filter(e=>e.type==='rich_response').length,0);assert.ok(fixture.requests[2].body.messages.some(m=>Array.isArray(m.content)&&m.content.some(b=>b.type==='tool_result'&&b.is_error)));
 });

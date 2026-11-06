@@ -15,6 +15,8 @@ export const richBlockSchema=z.discriminatedUnion('type',[
  z.object({...base,type:z.literal('files'),refs:z.array(richReferenceSchema).min(1).max(8)}).strict(),
  z.object({...base,type:z.literal('choices'),question:label,options:z.array(z.object({id,label}).strict()).min(2).max(8)}).strict(),
  z.object({...base,type:z.literal('form'),fields:z.array(field).min(1).max(8)}).strict(),
+ // Short next requests the user can send in one click; shown under the finished answer.
+ z.object({...base,type:z.literal('followups'),items:z.array(z.string().trim().min(3).max(120)).min(1).max(3)}).strict(),
  z.object({...base,type:z.literal('progress'),items:z.array(z.object({label,state:z.enum(['pending','running','complete','failed','unknown'])}).strict()).max(20)}).strict(),
 ]);
 export const richInputSchema=z.object({version:z.literal(1),blocks:z.array(richBlockSchema).min(1).max(12)}).strict().superRefine((value,ctx)=>{

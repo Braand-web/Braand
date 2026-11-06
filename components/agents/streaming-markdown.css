@@ -3,3 +3,12 @@
 .markdown-table-block { display: grid; gap: 6px; }
 .markdown-table-copy { justify-self: end; padding: 3px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-pill, 999px); background: var(--color-surface); color: var(--color-text-muted); font: inherit; font-size: var(--text-xs, 12px); cursor: pointer; }
 .markdown-table-copy:hover { color: var(--color-text); border-color: var(--color-border-strong, var(--color-border)); }
+/* Inline source chip, right after the cited passage. */
+.response-citation-chip{display:inline-flex;align-items:center;gap:4px;height:18px;margin:0 2px 0 4px;padding:0 5px 0 4px;border-radius:5px;background:var(--color-fill);box-shadow:inset 0 0 0 1px var(--color-border);color:var(--color-text-muted);font:500 10.5px/1 var(--font-mono,ui-monospace,monospace);vertical-align:1px;text-decoration:none;white-space:nowrap;max-width:190px;overflow:hidden;transition:background var(--duration-fast) ease,color var(--duration-fast) ease;animation:citation-in 250ms cubic-bezier(.23,1,.32,1) both}
+.response-citation-chip svg{flex:none;width:11px;height:11px}
+.response-citation-chip span{overflow:hidden;text-overflow:ellipsis}
+.response-citation-chip .response-citation-more{flex:none;color:var(--color-text-subtle)}
+a.response-citation-chip:hover{background:var(--color-fill-hover);color:var(--color-text)}
+a.response-citation-chip:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+@keyframes citation-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.response-citation-chip{animation:none}}
