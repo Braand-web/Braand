@@ -205,6 +205,25 @@ await check('Partial deliveries are charged, technical failure without a deliver
   await meter.finishRunBudget({who,runId:id,holdId:hold.id,limit:1000,rate});assert.equal(sql.prepare('SELECT actual FROM credit_holds WHERE id=?').get(hold.id).actual,expected);
  }
 });
+await check('A finished answer waiting for its receipt blocks only its estimated cost, not the whole balance',async()=>{
+ const now=Date.now(),org='receipt-org',person={...who,organization:org,user:{...who.user,userId:'receipt-user'}};
+ sql.prepare('INSERT INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run('lot-receipt',org,'topup','order-receipt',1000,1000,now-1000,null,now-1000);
+ const rate={model:'fixture-model',verifiedAt:'2026-10-22',input:5,output:25,cacheWrite:6.25,cacheRead:.5,usdXaf:600,overheadXaf:1,provider:'openrouter',fundingFeeBps:0},usage={input_tokens:1000,output_tokens:100};
+ const answer=async(id,status)=>{const hold=await b.reserve(person,'chat:'+id,1000,{upToAvailable:true});assert.equal(hold.units,1000,'an answer reserves up to the whole balance');
+  sql.prepare('INSERT INTO runs(id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run(id,who.tenant,'c-'+id,'completed',now,now);
+  sql.prepare("INSERT INTO provider_usage(id,organization_id,workspace_id,run_id,hold_id,provider,role,request_id,rate,usage,cost_xaf,status,created_at) VALUES (?,?,?,?,?,'openrouter','master','gen-x',?,?,NULL,?,?)").run('pu-'+id,org,who.tenant,id,hold.id,JSON.stringify(rate),JSON.stringify(usage),status,now);
+  sql.prepare("UPDATE credit_holds SET status='needs_reconciliation' WHERE id=?").run(hold.id);return hold;};
+ // Cost not estimable yet (call still pending): the whole ceiling stays held.
+ const first=await answer('receipt-1','pending');
+ assert.equal(await meter.pendingReceiptRelief(org),0);
+ await assert.rejects(()=>b.reserve(person,'chat:receipt-blocked',500,{upToAvailable:true,receiptRelief:0}),/ne couvre pas/);
+ // Cost estimable from its tokens: 138 units + 25 % + 5 stay held, the rest is free.
+ sql.prepare("UPDATE provider_usage SET status='estimated' WHERE hold_id=?").run(first.id);
+ const relief=await meter.pendingReceiptRelief(org);assert.equal(relief,1000-(Math.ceil(138*1.25)+5));
+ const next=await b.reserve(person,'chat:receipt-2',500,{upToAvailable:true,receiptRelief:relief});assert.equal(next.units,500,'the next message starts at once');
+ // Older than the 30-minute window: neither counted nor relieved.
+ sql.prepare('UPDATE credit_holds SET created_at=? WHERE id=?').run(now-3600000,first.id);assert.equal(await meter.pendingReceiptRelief(org),0);
+});
 await check('Project and storage quotas reject writes atomically',async()=>{
  const now=Date.now();sql.prepare('INSERT INTO organizations VALUES (?,?,?,?)').run('quota','Quota','q',now);sql.prepare('INSERT INTO workspaces(id,name,created_at,organization_id) VALUES (?,?,?,?)').run('quota-space','Space',now,'quota');
  const add=sql.prepare("INSERT INTO resources(id,workspace_id,kind,title,created_at,updated_at) VALUES (?,'quota-space','project','Project',?,?)");add.run('p1',now,now);add.run('p2',now,now);assert.throws(()=>add.run('p3',now,now),/project_quota/);

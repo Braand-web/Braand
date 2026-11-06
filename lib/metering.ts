@@ -49,10 +49,31 @@ export function modelReadiness(){
  const result=inspectConfiguredRate(connection);
  return result.issue?{ready:false,reason:result.issue==='invalid_rate'?'rate_invalid':'rate_unverified',detail:result.issue}:{ready:true,reason:null,detail:null};
 }
+/**
+ * A finished answer waiting for its provider receipt keeps its whole ceiling
+ * reserved (often the full balance). When its cost is known from its tokens
+ * (estimated) and nothing else is unresolved, only that estimate plus 25 % and
+ * 5 units stays blocked: the rest is freed for the next request. Anything
+ * not estimable (pending call, tool or browser cost unknown) stays fully held.
+ */
+export async function pendingReceiptRelief(organization:string,now=Date.now()){
+ const holds=await db().prepare("SELECT h.id,h.units,COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0) allocated FROM credit_holds h WHERE h.organization_id=? AND h.status='needs_reconciliation' AND h.created_at>? LIMIT 20").bind(organization,now-1800000).all<{id:string;units:number;allocated:number}>();
+ let relief=0;
+ for(const hold of holds.results){try{
+  const [auxiliary,browser,rows]=await Promise.all([toolUsage(hold.id),(await import('./browser')).browserUsageUnits(hold.id),db().prepare('SELECT usage,status,provider,cost_xaf,rate FROM provider_usage WHERE hold_id=?').bind(hold.id).all<ModelCostRow>()]);
+  if(auxiliary.unresolved||browser.unresolved||browser.active||!rows.results.length||rows.results.some(row=>!['complete','estimated'].includes(row.status)))continue;
+  let estimate=browser.units+auxiliary.units;
+  for(const row of rows.results){if(!row.rate)throw new Error('rate');estimate+=requestCostUnits(row,modelRateSchema.parse(JSON.parse(row.rate)),usageUnits);}
+  const held=Math.max(0,hold.units-hold.allocated);
+  relief+=Math.max(0,held-(Math.ceil(estimate*1.25)+5));
+ }catch{/* Not estimable: the whole ceiling stays reserved. */}}
+ return relief;
+}
 export async function startRunBudget(who:BillingIdentity,runId:string,credits:number):Promise<RunBudget>{
  await ensureModelPricing();
  await reconcileOpenRouterUsage(who.organization,5);
- const rate=modelRate();const hold=await reserve(who,'chat:'+runId,Math.round(credits*100),{upToAvailable:true});return {who,holdId:hold.id,limit:hold.units,runId,rate};
+ const receiptRelief=await pendingReceiptRelief(who.organization).catch(()=>0);
+ const rate=modelRate();const hold=await reserve(who,'chat:'+runId,Math.round(credits*100),{upToAvailable:true,receiptRelief});return {who,holdId:hold.id,limit:hold.units,runId,rate};
 }
 export async function finishRunBudget(b:RunSettlementBudget){
  const auxiliary=await toolUsage(b.holdId);

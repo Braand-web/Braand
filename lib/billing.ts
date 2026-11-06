@@ -108,7 +108,7 @@ export async function summary(org:string){
  const meters=await s("SELECT COALESCE(SUM(CASE WHEN kind='storage' THEN quantity ELSE 0 END),0) storage,COALESCE(SUM(CASE WHEN kind='transfer' AND created_at>=? THEN quantity ELSE 0 END),0) transfer FROM billing_meter WHERE organization_id=?",now-30*DAY,org).first<{storage:number;transfer:number}>();
  return {wallet:{available:wallet!.available/100,reserved:wallet!.reserved/100,granted:wallet!.granted/100},creditAllowance:terms?.credits||0,lots:lots.results,subscription,nextAllocation:allocation&&allocation.end<subscription!.end_at?allocation.end:null,meters,orders:orders.results,notifications:notifications.results,invoices:invoices.results,creditNotes:creditNotes.results,readiness:releaseReadiness(),asOf:now};
 }
-export async function reserve(who:BillingIdentity,reference:string,units:number,options:{upToAvailable?:boolean}={}){
+export async function reserve(who:BillingIdentity,reference:string,units:number,options:{upToAvailable?:boolean;receiptRelief?:number}={}){
  if(!Number.isSafeInteger(units)||units<=0)throw new AppError('Plafond de crédits invalide.');
  await allocateDue(who.organization);
  const prior=await s('SELECT * FROM credit_holds WHERE reference=?',reference).first<CreditHoldRow>();if(prior){if(prior.organization_id!==who.organization)throw new AppError('Réservation invalide.',403);return prior;}
@@ -120,13 +120,16 @@ export async function reserve(who:BillingIdentity,reference:string,units:number,
  // Work still running counts. A finished run waiting for its cost receipt
  // counts only for 30 minutes (normal reconciliation time), so it can never
  // block the customer's credits for long while unpaid usage stays bounded.
+ // receiptRelief: for those runs whose cost is estimable from their tokens,
+ // the caller frees what exceeds that estimate plus a margin (see metering).
  const capacity=`MAX(0,
   COALESCE((SELECT SUM(balance-reserved) FROM credit_lots WHERE organization_id=? AND frozen=0 AND starts_at<=? AND (expires_at IS NULL OR expires_at>?)),0)
-  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND (h.status='reserved' OR (h.status='needs_reconciliation' AND h.created_at>?))),0))`;
+  - COALESCE((SELECT SUM(MAX(0,h.units-COALESCE((SELECT SUM(CASE WHEN a.state='reserved' THEN a.units ELSE a.charged END) FROM credit_allocations a WHERE a.hold_id=h.id),0))) FROM credit_holds h WHERE h.organization_id=? AND (h.status='reserved' OR (h.status='needs_reconciliation' AND h.created_at>?))),0)
+  + ?)`;
  try{
   await s(`INSERT INTO credit_holds(id,organization_id,workspace_id,actor,reference,units,created_at)
    SELECT ?,?,?,?,?,CASE WHEN ? THEN MIN(?,available) ELSE ? END,? FROM (SELECT ${capacity} available)
-   WHERE available>0 AND (? OR available>=?)`,id,who.organization,who.tenant,who.user.userId,reference,options.upToAvailable?1:0,units,units,now,who.organization,now,now,who.organization,now-1800000,options.upToAvailable?1:0,units).run();
+   WHERE available>0 AND (? OR available>=?)`,id,who.organization,who.tenant,who.user.userId,reference,options.upToAvailable?1:0,units,units,now,who.organization,now,now,who.organization,now-1800000,Math.max(0,Math.floor(Number.isFinite(options.receiptRelief)?options.receiptRelief!:0)),options.upToAvailable?1:0,units).run();
  }catch(error){const same=await s('SELECT * FROM credit_holds WHERE reference=? AND organization_id=?',reference,who.organization).first<CreditHoldRow>();if(same)return same;if(String(error).includes('spend_limit'))throw new AppError('Le plafond de dépenses est atteint.',402);throw error;}
  const hold=await s('SELECT * FROM credit_holds WHERE id=?',id).first<CreditHoldRow>();
  if(!hold)throw new AppError('Le solde disponible ne couvre pas cette demande et les tâches déjà en cours. Attendez leur fin ou rechargez votre portefeuille.',402,'insufficient_credits');
