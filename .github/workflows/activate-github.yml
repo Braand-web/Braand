@@ -1,0 +1,26 @@
+name: Activate the GitHub connection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
+      CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      GITHUB_CLIENT_ID: ${{ secrets.BRAAND_GITHUB_CLIENT_ID }}
+      GITHUB_CLIENT_SECRET: ${{ secrets.BRAAND_GITHUB_CLIENT_SECRET }}
+      GITHUB_READ_TOKEN: ${{ secrets.BRAAND_GITHUB_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Copy the GitHub OAuth App credentials to the Worker
+        run: node scripts/activate-github.mjs
+      - name: Check production health
+        run: |
+          sleep 10
+          curl --fail --silent --show-error https://braand.fun/api/health

@@ -1,5 +1,6 @@
 "use client";
 
+import {GithubConnection} from "./github-connection";
 import {useEffect, useRef, useState, type ReactNode} from "react";
 import {ArrowUpRight, BookOpen, ChevronRight, CircleHelp, CreditCard, FolderClosed, HardDrive, LoaderCircle, LogOut, Plug, RefreshCw, Settings2, ShieldCheck, UsersRound, Wallet, X} from "lucide-react";
 import ConnectorsPanel from "@/app/connectors-panel";
@@ -164,7 +165,7 @@ export function SettingsPanel({tab, onTabChange, user, workspace, capabilities, 
      </section>
      <AppearanceSettings/>
     </>}
-    {tab === "connections" && (signedIn ? <ConnectorsPanel embedded onChange={onRefresh}/> : <div className="settings-card settings-guest"><h4>Connectez vos applications</h4><p>Connectez-vous à Braand pour accéder aux intégrations de votre espace.</p>{signIn}</div>)}
+    {tab === "connections" && (signedIn ? <><GithubConnection/><ConnectorsPanel embedded onChange={onRefresh}/></> : <div className="settings-card settings-guest"><h4>Connectez vos applications</h4><p>Connectez-vous à Braand pour accéder aux intégrations de votre espace.</p>{signIn}</div>)}
     {privateTab && !signedIn && <div className="settings-card settings-guest"><p>Connectez-vous pour accéder à la rubrique {heading.toLocaleLowerCase("fr")} de votre espace.</p>{signIn}</div>}
     {signedIn && (tab === "skills" || tab === "billing" || tab === "team") && <div className={"settings-slot settings-slot-" + tab}>{slots[tab] ?? <p className="settings-intro">Cette rubrique est indisponible pour le moment.</p>}</div>}
     {tab === "credits" && signedIn && <>

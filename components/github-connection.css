@@ -1,0 +1,10 @@
+.github-connection{display:flex;align-items:flex-start;gap:12px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface)}
+.github-connection>svg{flex:none;margin-top:2px;color:var(--color-text)}
+.github-connection>div{flex:1;min-width:0}
+.github-connection strong{font-size:var(--text-sm)}
+.github-connection p{margin:2px 0 0;color:var(--color-text-muted);font-size:var(--text-xs);line-height:1.45}
+.github-connection p b{color:var(--color-text)}
+.github-connection .ds-btn{flex:none;align-self:center;text-decoration:none}
+.github-connection-notice{color:var(--color-text)!important;font-weight:600}
+.github-connection-soon{flex:none;align-self:center;color:var(--color-text-subtle);font-size:var(--text-xs)}
+@media (max-width:520px){.github-connection{flex-wrap:wrap}.github-connection .ds-btn,.github-connection-soon{margin-left:32px}}
