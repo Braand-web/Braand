@@ -373,6 +373,12 @@ export async function syncComments(who: BillingIdentity, accountId: string, post
 export async function prepareReply(who: BillingIdentity, input: unknown) { await authorize(who.tenant, who.user.userId, 'write'); const p = z.object({ commentId: z.string().min(1).max(160), text: z.string().trim().min(1).max(4000) }).strict().parse(input), c = await q('SELECT * FROM social_comments WHERE id=? AND workspace_id=?', p.commentId, who.tenant).first<CommentRow>(); if (!c)
     throw new AppError('Commentaire introuvable.', 404); const a = await account(who.tenant, c.account_id); if (a.actor_id !== who.user.userId)
     throw new AppError('Ce compte appartient à une autre connexion de l’équipe.', 403); const id = uid(), hash = await digest({ id, commentId: c.id, commentDigest: c.digest, text: p.text }); await q('INSERT INTO social_replies(id,workspace_id,actor_id,comment_id,text,comment_digest,digest,updated_at) VALUES (?,?,?,?,?,?,?,?)', id, who.tenant, who.user.userId, c.id, p.text, c.digest, hash, Date.now()).run(); return { id, version: 1, status: 'draft', digest: hash, commentId: c.id, text: p.text }; }
+/** One prepared reply with the comment it answers, for its approval card. */
+export async function getSocialReply(tenant: string, id: string) {
+    const r = await q('SELECT s.id,s.text,s.version,s.status,s.digest,c.text comment_text,c.author_label,a.label account_label,a.network FROM social_replies s JOIN social_comments c ON c.id=s.comment_id JOIN social_accounts a ON a.id=c.account_id WHERE s.id=? AND s.workspace_id=?', id, tenant).first<{ id: string; text: string; version: number; status: string; digest: string; comment_text: string | null; author_label: string; account_label: string; network: string }>();
+    if (!r) throw new AppError('Réponse introuvable.', 404);
+    return { id: r.id, text: r.text, version: r.version, status: r.status, digest: r.digest, comment: { text: r.comment_text || '', author: r.author_label || '' }, account: { label: r.account_label, network: r.network } };
+}
 export async function decideReply(who: BillingIdentity, id: string, input: unknown) {
     await authorize(who.tenant, who.user.userId, 'approve');
     const p = z.object({ version: z.number().int().positive(), digest: z.string().regex(/^[a-f0-9]{64}$/), decision: z.enum(['approve', 'reject']) }).strict().parse(input), r = await q('SELECT * FROM social_replies WHERE id=? AND workspace_id=?', id, who.tenant).first<ReplyRow>();

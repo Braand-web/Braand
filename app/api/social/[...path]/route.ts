@@ -1,7 +1,7 @@
 import {privateJSON} from '@/lib/private-json';
 import { identity, failure } from '@/lib/server';
 import { AppError } from '@/lib/core.mjs';
-import { socialAccounts, syncSocialAccounts, listSocialBatches, getSocialBatch, createSocialBatch, reviseSocialPost, decideSocialBatch, listComments, syncComments, prepareReply, decideReply, socialInsights, syncInsights, socialAssetChoices, socialPostList } from '@/lib/social';
+import { socialAccounts, syncSocialAccounts, listSocialBatches, getSocialBatch, createSocialBatch, reviseSocialPost, decideSocialBatch, listComments, getSocialReply, syncComments, prepareReply, decideReply, socialInsights, syncInsights, socialAssetChoices, socialPostList } from '@/lib/social';
 import { z } from 'zod';
 type Context = {
     params: Promise<{
@@ -25,6 +25,8 @@ export async function GET(request: Request, context: Context) {
             result = await getSocialBatch(who.tenant, path[1]);
         else if (path.length === 3 && path[0] === 'batches' && path[2] === 'export')
             return Response.json(await getSocialBatch(who.tenant, path[1]), { headers: { ...headers, 'Content-Disposition': 'attachment; filename="publications.json"' } });
+        else if (path.length === 2 && path[0] === 'replies')
+            result = await getSocialReply(who.tenant, path[1]);
         else if (path.length === 1 && path[0] === 'comments')
             result = await listComments(who.tenant, url.searchParams.get('accountId') || undefined);
         else if (path.length === 1 && path[0] === 'insights')

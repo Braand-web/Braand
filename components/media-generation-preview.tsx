@@ -83,8 +83,10 @@ export function MediaGenerationPreview({proposal,kind,onReady}:{proposal:Resourc
 
 export function GeneratedImage({src,alt,width,height,animate,onRevealed}:{src:string;alt:string;width?:number;height?:number;animate:boolean;onRevealed:()=>void}) {
   const ratio = width && height && width > 0 && height > 0 ? width / height : 1;
-  const [revealed,setRevealed] = useState(false);
-  if(!animate || revealed) return <Image unoptimized src={src} alt={alt} width={width || 1024} height={height || 1024} loading="lazy" decoding="async" style={{width:'100%',height:'auto'}}/>;
+  const [revealed,setRevealed] = useState(false),[attempt,setAttempt] = useState(0);
+  // A failed load (network hiccup, storage still propagating) is retried twice; the paid generation never is.
+  const shown = attempt ? src + (src.includes('?') ? '&' : '?') + 'retry=' + attempt : src;
+  if(!animate || revealed) return <Image key={shown} unoptimized src={shown} alt={alt} width={width || 1024} height={height || 1024} loading="lazy" decoding="async" style={{width:'100%',height:'auto'}} onError={() => {if(attempt < 2) setTimeout(() => setAttempt(value => value + 1), 400 * (attempt + 1));}}/>;
   return <Suspense fallback={<div className="media-generation-placeholder" style={{aspectRatio:ratio}} role="status" aria-label="Chargement du visuel"/>}>
     <GridReveal src={src} alt={alt} aspect={ratio} caption="Votre visuel arrive" onRevealComplete={()=>{setRevealed(true);onRevealed();}}/>
   </Suspense>;

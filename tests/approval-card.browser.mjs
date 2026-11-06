@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {build} from 'esbuild';
 const root=path.resolve(import.meta.dirname,'..'),output=path.join(root,'.tmp/approval-card');await mkdir(output,{recursive:true});
-await build({stdin:{contents:`import React from "react";import {createRoot} from "react-dom/client";import {ConnectorActionCard,BrowserActionApproval} from "./components/approval-card";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/design-tokens.css";import "./app/design-system.css";
+await build({stdin:{contents:`import React from "react";import {createRoot} from "react-dom/client";import {ConnectorActionCard,BrowserActionApproval,SocialBatchCard,SocialReplyCard} from "./components/approval-card";import "./app/globals.css";import "./app/tokens.css";import "./components/ds/ds.css";import "./components/ds/bridge.css";import "./app/design-tokens.css";import "./app/design-system.css";
 const later=Date.now()+600000;
 const comment={id:"act-1",kind:"connector_action",title:"facebook · FACEBOOK_CREATE_COMMENT",status:"pending",version:1,data:{toolkit:"facebook",toolSlug:"FACEBOOK_CREATE_COMMENT",mode:"connected",status:"pending",expiresAt:later,description:"Publier l’offre de formation sous votre dernière publication Facebook.",arguments:{object_id:"122117877435491185",message:"Formation Excel + IA + Power BI — 4 900 FCFA au lieu de 15 000 FCFA : https://exemple.shop/formation"}}};
 const reply={...comment,id:"act-2",data:{...comment.data,toolSlug:"FACEBOOK_REPLY_TO_COMMENT",description:"Répondre au commentaire de Awa."}};
@@ -17,7 +17,7 @@ const expired={...comment,id:"act-3",data:{...comment.data,expiresAt:Date.now()-
 const blocked={...comment,id:"act-4",data:{...comment.data,arguments:undefined}};
 const session={id:"s1",version:3,status:"awaiting_approval",control:"agent",objective:"Envoyer le formulaire de contact",title:"Contact · Exemple",url:"https://example.com/contact",observation:{elements:[{ref:"e7",role:"button",name:"Envoyer"}]}};
 const action={id:"a1",version:2,status:"pending",description:"Envoyer le formulaire de contact rempli avec votre message.",expiresAt:later,command:{kind:"click",targetRef:"e7"}};
-createRoot(document.getElementById("root")).render(<main style={{maxWidth:720,margin:"24px auto",padding:"0 16px",display:"grid",gap:8}}><ConnectorActionCard resource={comment}/><ConnectorActionCard resource={reply}/><ConnectorActionCard resource={expired}/><ConnectorActionCard resource={blocked}/><BrowserActionApproval session={session} action={action} onDecided={()=>{window.decided=(window.decided||0)+1;}}/></main>);`,resolveDir:root,loader:'tsx'},outfile:path.join(output,'app.js'),bundle:true,format:'esm',jsx:'automatic',external:['/fonts/*'],loader:{'.ttf':'empty','.woff2':'empty','.svg':'empty','.png':'empty'},define:{'process.env.NODE_ENV':'"production"'},banner:{js:'globalThis.process??={env:{}};'}});
+createRoot(document.getElementById("root")).render(<main style={{maxWidth:720,margin:"24px auto",padding:"0 16px",display:"grid",gap:8}}><ConnectorActionCard resource={comment}/><ConnectorActionCard resource={reply}/><ConnectorActionCard resource={expired}/><ConnectorActionCard resource={blocked}/><BrowserActionApproval session={session} action={action} onDecided={()=>{window.decided=(window.decided||0)+1;}}/><SocialBatchCard batchId="b1"/><SocialReplyCard replyId="rep1"/></main>);`,resolveDir:root,loader:'tsx'},outfile:path.join(output,'app.js'),bundle:true,format:'esm',jsx:'automatic',external:['/fonts/*'],loader:{'.ttf':'empty','.woff2':'empty','.svg':'empty','.png':'empty'},define:{'process.env.NODE_ENV':'"production"'},banner:{js:'globalThis.process??={env:{}};'}});
 const require=createRequire(import.meta.url),playwright=process.env.BRAAND_PLAYWRIGHT_MODULE;
 const {chromium}=await import(playwright?pathToFileURL(path.resolve(playwright)).href:require.resolve('playwright'));
 const calls=[];
@@ -30,6 +30,10 @@ const server=createServer(async(req,res)=>{
  const approval=p.match(/^\/api\/connectors\/approvals\/([\w-]+)$/);
  if(approval){await new Promise(resolve=>setTimeout(resolve,300));const decision=JSON.parse(body).decision;return json(res,{id:approval[1],kind:'connector_action',status:decision==='approve'?'completed':'rejected',version:2,data:{toolkit:'facebook',toolSlug:approval[1]==='act-2'?'FACEBOOK_REPLY_TO_COMMENT':'FACEBOOK_CREATE_COMMENT',status:decision==='approve'?'completed':'rejected',arguments:{message:'x'}}});}
  if(/^\/api\/browser\/sessions\/s1\/actions\/a1$/.test(p))return json(res,{ok:true});
+ if(p==='/api/social/batches/b1'&&req.method==='GET')return json(res,{id:'b1',title:'Lancement de la formation',version:3,digest:'d'.repeat(64),expiresAt:null,posts:[{id:'post-1',status:'draft',text:'La formation commence lundi !',scheduledAt:Date.UTC(2026,10,9,8),format:'image'},{id:'post-2',status:'draft',text:'Dernières places disponibles.',scheduledAt:Date.UTC(2026,10,10,8),format:'text'}]});
+ if(p==='/api/social/batches/b1/decision')return json(res,{id:'b1',title:'Lancement de la formation',version:4,digest:'e'.repeat(64),expiresAt:null,posts:[{id:'post-1',status:'approved',text:'La formation commence lundi !',scheduledAt:Date.UTC(2026,10,9,8),format:'image'},{id:'post-2',status:'approved',text:'Dernières places disponibles.',scheduledAt:Date.UTC(2026,10,10,8),format:'text'}]});
+ if(p==='/api/social/replies/rep1'&&req.method==='GET')return json(res,{id:'rep1',text:'Merci Awa ! Le lien est en description.',version:2,status:'draft',digest:'f'.repeat(64),comment:{text:'Où trouver le lien ?',author:'Awa'},account:{label:'Page Formation',network:'facebook'}});
+ if(p==='/api/social/replies/rep1/decision')return json(res,{id:'rep1',status:'rejected'});
  json(res,{error:'absent'},404);
 }).listen(0);
 const origin='http://127.0.0.1:'+server.address().port;
@@ -41,7 +45,7 @@ try{
  const card=page.getByRole('region',{name:'Autoriser Braand à publier ce commentaire sur Facebook ?'}).first();await card.waitFor();
  await card.locator('.approval-content p',{hasText:'Formation Excel + IA + Power BI — 4 900 FCFA au lieu de 15 000 FCFA : https://exemple.shop/formation'}).waitFor();
  assert.match(await card.innerText(),/Publication\s*122117877435491185/);assert.match(await card.innerText(),/Publier l’offre de formation/);
- assert.equal(await page.getByRole('region',{name:'Autoriser Braand à publier cette réponse sur Facebook ?'}).count(),1);
+ assert.equal(await page.getByRole('region',{name:'Autoriser Braand à publier cette réponse sur Facebook ?'}).count(),2,'the connector reply and the comment reply');
  await page.screenshot({path:path.join(output,'desktop-dark.png'),fullPage:true});
  pass('the card asks a plain question and shows the target and the exact text that will be published');
  const toggle=card.getByRole('button',{name:/Publier l’offre de formation/});assert.equal(await toggle.getAttribute('aria-expanded'),'true');
@@ -53,7 +57,7 @@ try{
  assert.deepEqual(calls.find(c=>c.path==='/api/connectors/approvals/act-1').body,{decision:'approve'});
  assert.equal(await card.getByRole('button',{name:'Autoriser',exact:true}).count(),0);
  pass('Autoriser sends one decision, then the card folds into a result line without buttons');
- const second=page.getByRole('region',{name:'Autoriser Braand à publier cette réponse sur Facebook ?'});
+ const second=page.getByRole('region',{name:'Autoriser Braand à publier cette réponse sur Facebook ?'}).first();
  await second.getByRole('button',{name:'Refuser',exact:true}).click();await second.getByText('Refusé',{exact:true}).waitFor();
  assert.deepEqual(calls.find(c=>c.path==='/api/connectors/approvals/act-2').body,{decision:'reject'});
  pass('Refuser records a refusal');
@@ -66,6 +70,16 @@ try{
  await step.getByRole('button',{name:'Autoriser',exact:true}).click();await step.getByText('Autorisé',{exact:true}).waitFor();
  assert.deepEqual(calls.find(c=>c.path==='/api/browser/sessions/s1/actions/a1').body,{decision:'approve',version:2,approved:true});assert.equal(await page.evaluate(()=>window.decided),1);
  pass('a browser step is decided in the conversation with the action version');
+ const batch=page.getByRole('region',{name:'Autoriser Braand à programmer 2 publications ?'});await batch.waitFor();
+ assert.match(await batch.innerText(),/1\. La formation commence lundi ![\s\S]*2\. Dernières places disponibles\./);
+ await batch.getByRole('button',{name:'Autoriser',exact:true}).click();await batch.getByText('Autorisé · Programmé',{exact:true}).waitFor();
+ assert.deepEqual(calls.find(c=>c.path==='/api/social/batches/b1/decision').body,{version:3,digest:'d'.repeat(64),decision:'approve',postIds:['post-1','post-2']});
+ pass('publications prepared by Braand are scheduled from the conversation, with the reviewed version and fingerprint');
+ const reply=page.getByRole('region',{name:'Autoriser Braand à publier cette réponse sur Facebook ?'}).last();
+ assert.match(await reply.innerText(),/En réponse à Awa : « Où trouver le lien \? »[\s\S]*Merci Awa ! Le lien est en description\./);
+ await reply.getByRole('button',{name:'Refuser',exact:true}).click();await reply.getByText('Refusé',{exact:true}).waitFor();
+ assert.deepEqual(calls.find(c=>c.path==='/api/social/replies/rep1/decision').body,{version:2,digest:'f'.repeat(64),decision:'reject'});
+ pass('a reply to a comment shows the comment and the exact answer, and is decided in the conversation');
  assert.deepEqual(errors,[]);await page.close();
  for(const [name,options] of [['light',{viewport:{width:1100,height:1400},colorScheme:'light'}],['mobile',{viewport:{width:390,height:844},deviceScaleFactor:2}]]){
   const view=await browser.newPage(options);await view.goto(origin);await view.locator('.approval-card').first().waitFor();

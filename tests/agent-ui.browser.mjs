@@ -27,7 +27,7 @@ const media={id:'media-fixture',workspace_id:'fixture',kind:'media',title:propos
 const conversation={id:'conversation-fixture',workspace_id:'fixture',kind:'conversation',title:'Discussion de test locale',status:'saved',version:1,created_at:now,updated_at:now,data:{}};
 const sources=[{id:'source-real',title:'Rapport de test',domain:'example.org',url:'https://example.org/report'},{id:'source-unsafe',title:'<script>source non exécutable</script>',domain:'Document joint',url:'javascript:alert(1)'}];
 const history=[];const votes=new Map();
-const workspaceResources=[proposal,conversation],workspaceMutations=[];
+const workspaceResources=[proposal,conversation],workspaceMutations=[];let decisionsAsked=false;
 let failSkills=false,browserWrites=0,anonymousSession=false,authSends=0;
 let lastUi=null;let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,failFeedback=false;
 const firstChatHeaders=Promise.withResolvers();
@@ -172,6 +172,7 @@ if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JS
     if(req.method==='POST'){approvals++;proposal.status='generating';json(res,{status:'waiting_external'});return;}
     polls++;json(res,polls===1?{status:'IN_PROGRESS'}:{status:'COMPLETED',resourceId:media.id});return;
   }
+  if(url.pathname==='/api/decisions'){if(url.searchParams.get('origin')){decisionsAsked=true;json(res,{conversationId:url.searchParams.get('origin')===proposal.id?conversation.id:null});}else json(res,{decisions:decisionsAsked&&url.searchParams.get('conversationId')===conversation.id&&proposal.status==='awaiting_approval'?[{kind:'proposal',id:proposal.id}]:[]});return;}
   if(url.pathname==='/api/resources/'+proposal.id){json(res,proposal);return;}
   if(url.pathname==='/api/resources/'+media.id){json(res,media);return;}
   if(url.pathname.startsWith('/api/resources/native-')){const item=workspaceResources.find(item=>item.id===url.pathname.split('/').at(-1));json(res,item||{},item?200:404);return;}
@@ -604,22 +605,26 @@ try{
   await page.getByRole('button',{name:'Rechercher',exact:true}).click();
   await page.getByRole('textbox',{name:'Rechercher dans votre espace'}).fill(proposal.title);
   await page.locator('.search-results button').filter({hasText:proposal.title}).click();
-  await page.getByRole('button',{name:'Approuver et générer'}).evaluate(button=>{button.click();button.click();});
+  // The panel never approves: it leads to the conversation, where the card decides.
+  assert.equal(await sidePanel.getByRole('button',{name:'Approuver et générer'}).count(),0);
+  await sidePanel.getByRole('button',{name:'Décider dans la discussion',exact:true}).click();
+  const inChat=page.locator('.messages .proposal-card').filter({hasText:proposal.title}).first();
+  await inChat.getByRole('button',{name:/^Générer/}).evaluate(button=>{button.click();button.click();});
+  checks.push('A creation opened from the library is decided in its conversation, not in the panel');
   await page.locator('[data-slot=grid-reveal][data-state=pending]').waitFor();
   await capture({path:path.join(output,'desktop-grid-pending.png'),fullPage:true});
-  await page.locator('[data-slot=grid-reveal][data-state=error]').waitFor({timeout:12000});assert.equal(approvals,1);
-  await page.getByRole('button',{name:'Réessayer',exact:true}).click();
-  await page.locator('[data-slot=grid-reveal][data-state=ready]').waitFor({timeout:12000}).catch(async()=>{
-    // The settled grid is intentionally replaced by the native result image.
-    await page.locator('.media-output img').waitFor({state:'visible'});
-  });
-  await page.locator('.media-output img').waitFor({state:'visible'});assert.equal(approvals,1);assert.ok(polls>=2);
+  // The result appears in the same card; a failed image load is retried, never the paid generation.
+  const finished=page.locator('.messages .proposal-card-result').first();await finished.waitFor({timeout:20000});
+  assert.equal(approvals,1,'a double click starts one paid generation');assert.ok(polls>=2);
+  await finished.getByRole('button',{name:/Ouvrir dans la bibliothèque/}).click();
+  const panelImage=page.locator('[data-slot=grid-reveal][data-state=error], .media-output img').first();await panelImage.waitFor({timeout:15000});
+  if(await page.locator('[data-slot=grid-reveal][data-state=error]').count())await page.getByRole('button',{name:'Réessayer',exact:true}).click();
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('.media-output img, [data-slot=grid-reveal] img')).some(image=>image.complete&&image.naturalWidth>0),null,{timeout:15000});
   checks.push('One approved generation: pending grid, read-only follow-up, actual image reveal');
   assert.ok(imageRequests>=2);assert.equal(approvals,1);checks.push('Failed image load retries only the image, never the paid generation');
   await capture({path:path.join(output,'desktop.png'),fullPage:true});
   await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
-  await page.getByRole('complementary',{name:'Espace de travail'}).getByRole('button',{name:'Fermer l’espace de travail',exact:true}).click();
   await page.getByRole('textbox',{name:'Votre demande à Braand'}).fill('Mobile');await page.getByRole('textbox',{name:'Votre demande à Braand'}).press('Enter');
   await page.locator('[data-slot=ai-status][data-active]').waitFor();
   await page.waitForFunction(()=>{const path=document.querySelector('[data-slot=ai-status][data-active] .ai-status-icon svg path');return path&&getComputedStyle(path).animationName==='none';});

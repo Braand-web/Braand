@@ -98,3 +98,43 @@ export function BrowserActionApproval({session,action,onDecided}:{session:Browse
   content={command.value!==undefined?{label:"Texte exact",text:command.value||"(vide)"}:undefined} exact={JSON.stringify(command,null,2)}
   outcome={outcome} busy={busy} error={error} expiresAt={action.expiresAt} onApprove={()=>void decide("approve")} onReject={()=>void decide("reject")}/>;
 }
+
+type BatchPost={id:string;status:string;text:string;scheduledAt:number;format:string;assets?:unknown[]};
+type Batch={id:string;title:string;version:number;digest:string|null;expiresAt:number|null;posts:BatchPost[]};
+const when=(value:number)=>new Date(value).toLocaleString("fr-FR",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+/** Social posts Braand prepared: scheduled only after « Autoriser ». */
+export function SocialBatchCard({batchId,onUpdated}:{batchId:string;onUpdated?:()=>void}){
+ const [batch,setBatch]=useState<Batch|null>(null),[busy,setBusy]=useState<"approve"|"reject"|null>(null),[error,setError]=useState(""),[outcome,setOutcome]=useState<Outcome|null>(null);const pending=useRef(false);
+ useEffect(()=>{let stop=false;api<Batch>("/api/social/batches/"+encodeURIComponent(batchId)).then(next=>{if(!stop)setBatch(next);}).catch(e=>{if(!stop)setError(errorText(e));});return()=>{stop=true;};},[batchId]);
+ if(!batch)return error?<p className="approval-error" role="alert">{error}</p>:null;
+ const drafts=batch.posts.filter(post=>post.status==="draft");
+ const decided=outcome||(drafts.length?null:{tone:"done" as const,label:"Déjà décidé"});
+ const decide=async(decision:"approve"|"reject")=>{
+  if(pending.current||!batch.digest)return;pending.current=true;setBusy(decision);setError("");
+  try{const next=await api<Batch>("/api/social/batches/"+encodeURIComponent(batch.id)+"/decision",post({version:batch.version,digest:batch.digest,decision,postIds:drafts.map(item=>item.id)}));setBatch(next);setOutcome(decision==="approve"?{tone:"done",label:"Autorisé · Programmé"}:{tone:"refused",label:"Refusé"});onUpdated?.();}
+  catch(e){setError(errorText(e));}finally{pending.current=false;setBusy(null);}
+ };
+ const list=(decided?batch.posts:drafts);
+ return <ApprovalCard icon={<PlugZap size={18}/>} title={`Autoriser Braand à programmer ${list.length>1?list.length+" publications":"cette publication"} ?`} summary={batch.title}
+  fields={list.length===1?[{label:"Date",value:when(list[0].scheduledAt)},{label:"Format",value:list[0].format}]:list.map((item,index)=>({label:"Publication "+(index+1),value:when(item.scheduledAt)}))}
+  content={list.length===1?{label:"Texte exact",text:list[0].text||"(sans texte)"}:{label:"Textes exacts",text:list.map((item,index)=>(index+1)+". "+(item.text||"(sans texte)")).join("\n\n")}}
+  outcome={decided} busy={busy} error={error} blockedNote={batch.digest?undefined:"Approbation bloquée : le lot n’a pas pu être vérifié."} expiresAt={batch.expiresAt??undefined}
+  onApprove={()=>void decide("approve")} onReject={()=>void decide("reject")}/>;
+}
+
+type Reply={id:string;text:string;version:number;status:string;digest:string;comment:{text:string;author:string};account:{label:string;network:string}};
+/** A reply to a comment, published only after « Autoriser ». */
+export function SocialReplyCard({replyId,onUpdated}:{replyId:string;onUpdated?:()=>void}){
+ const [reply,setReply]=useState<Reply|null>(null),[busy,setBusy]=useState<"approve"|"reject"|null>(null),[error,setError]=useState("");const pending=useRef(false);
+ useEffect(()=>{let stop=false;api<Reply>("/api/social/replies/"+encodeURIComponent(replyId)).then(next=>{if(!stop)setReply(next);}).catch(e=>{if(!stop)setError(errorText(e));});return()=>{stop=true;};},[replyId]);
+ if(!reply)return error?<p className="approval-error" role="alert">{error}</p>:null;
+ const decide=async(decision:"approve"|"reject")=>{
+  if(pending.current)return;pending.current=true;setBusy(decision);setError("");
+  try{const next=await api<Partial<Reply>>("/api/social/replies/"+encodeURIComponent(reply.id)+"/decision",post({version:reply.version,digest:reply.digest,decision}));setReply({...reply,...next,status:typeof next.status==="string"?next.status:decision==="approve"?"published":"rejected"});onUpdated?.();}
+  catch(e){setError(errorText(e));}finally{pending.current=false;setBusy(null);}
+ };
+ const outcome:Outcome|null=reply.status==="draft"?null:reply.status==="rejected"?{tone:"refused",label:"Refusé"}:reply.status==="published"?{tone:"done",label:"Autorisé · Réponse publiée"}:{tone:"warning",label:"Résultat à vérifier"};
+ return <ApprovalCard icon={<PlugZap size={18}/>} title={`Autoriser Braand à publier cette réponse sur ${appName(reply.account.network)} ?`} summary={reply.comment.author?`En réponse à ${reply.comment.author} : « ${reply.comment.text} »`:`En réponse à « ${reply.comment.text} »`}
+  fields={[{label:"Compte",value:reply.account.label}]} content={{label:"Texte exact",text:reply.text}} outcome={outcome} busy={busy} error={error}
+  onApprove={()=>void decide("approve")} onReject={()=>void decide("reject")}/>;
+}

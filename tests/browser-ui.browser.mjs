@@ -234,7 +234,14 @@ try {
   checks.push('Activation requires a separate explicit consent and submits the current version exactly once');
 
   const approvalCommand = {kind: 'fill', pageId: observation.pageId, observationId: observation.id, targetRef: 'e1_fixture', value: 'Texte public de test'};
+  // A session started from a conversation is decided in that conversation, not here.
   sessions = [makeSession({status: 'awaiting_approval', version: 20, url: observation.url, title: observation.title, tabs: observation.tabs,
+    observation, pendingAction: makePending('approval-fixture', 9, approvalCommand)})];
+  await reload();
+  await page.getByText('Cette action attend votre accord dans la discussion, sous la carte du navigateur.', {exact: true}).waitFor();
+  assert.equal(await page.getByRole('button', {name: 'Approuver cette action', exact: true}).count(), 0);
+  checks.push('A session tied to a conversation sends its approval to the conversation');
+  sessions = [makeSession({status: 'awaiting_approval', version: 20, conversationId: null, url: observation.url, title: observation.title, tabs: observation.tabs,
     observation, pendingAction: makePending('approval-fixture', 9, approvalCommand)})];
   await reload();
   await page.getByText('Renseigner le champ « Message public »', {exact: true}).waitFor();
@@ -250,7 +257,7 @@ try {
     {decision: 'approve', version: 9, approved: true});
   checks.push('Approval shows exact command arguments and sends action version with explicit approval');
 
-  sessions = [makeSession({status: 'awaiting_approval', version: 30, url: observation.url, title: observation.title, tabs: observation.tabs,
+  sessions = [makeSession({status: 'awaiting_approval', version: 30, conversationId: null, url: observation.url, title: observation.title, tabs: observation.tabs,
     observation, pendingAction: makePending('rejection-fixture', 11, {kind: 'click', pageId: observation.pageId, observationId: observation.id, targetRef: 'e1_fixture'})})];
   await reload();
   await submit(page.getByRole('button', {name: 'Refuser', exact: true}), '/actions/rejection-fixture');
@@ -312,9 +319,12 @@ try {
   assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'resume', version: 41});
   checks.push('Pause and resume send the latest session version');
 
+  // Taking control is offered only to a paused session (or one waiting for a login), never mid-action.
+  assert.equal(await page.getByRole('button', {name: 'Prendre le contrôle', exact: true}).count(), 0, 'No takeover while the agent is acting');
+  await submit(pause, '/control');
   await submit(page.getByRole('button', {name: 'Prendre le contrôle', exact: true}), '/control');
   await page.getByRole('button', {name: /Rendre le contrôle/}).waitFor();
-  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'takeover', version: 42});
+  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'takeover', version: 43});
   const agentSnapshotsBeforeHuman = agentSnapshots;
   await screenshot.click();
   await page.waitForFunction(() => Array.from(document.images).some(image => image.complete && image.naturalWidth > 0));
@@ -359,18 +369,19 @@ try {
     const button = page.getByRole('button', {name, exact: true});
     const bounds = await button.boundingBox();
     assert.ok(bounds.width >= 44 && bounds.height >= 44, 'Mobile controls need usable touch targets: ' + name);
-    assert.equal(await button.evaluate(element => getComputedStyle(element).transitionDuration), '0s');
+    // Reduced motion: transitions are practically instant (the design system uses 0.001s).
+    assert.ok(Math.max(...(await button.evaluate(element => getComputedStyle(element).transitionDuration)).split(',').map(value => parseFloat(value))) <= 0.01, 'No visible transition with reduced motion: ' + name);
   }
   await capture('human-control-mobile.png');
   await submit(page.getByRole('button', {name: 'Rendre le contrôle à Braand', exact: true}), '/control');
-  await page.getByRole('button', {name: /Prendre le contrôle/}).waitFor();
-  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'return', version: 43});
+  await page.getByRole('button', {name: /Mettre en pause/}).waitFor();assert.equal(await page.getByRole('button', {name: 'Prendre le contrôle', exact: true}).count(), 0, 'Control returned to Braand: no takeover while it acts');
+  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'return', version: 44});
   assert.equal(await privateInput.count(), 0);
   checks.push('Returning control clears the private form and sends the current session version');
 
   await submit(page.getByRole('button', {name: 'Arrêter la session', exact: true}), '/control');
   await page.getByText('Arrêtée', {exact: true}).waitFor();
-  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'stop', version: 44});
+  assert.deepEqual(mutations.filter(request => request.path.endsWith('/control')).at(-1).body, {action: 'stop', version: 45});
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Stopped state must fit a 390px viewport');
   await capture('stopped-mobile.png');
   checks.push('Stop uses the current session version and the mobile session has no horizontal overflow');
