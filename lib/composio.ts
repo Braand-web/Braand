@@ -99,10 +99,27 @@ export async function authorizeConnector(who:BillingIdentity,toolkit:string){
   return {redirectUrl:url.href};
  }catch{throw new AppError('Connexion indisponible. Reconnectez l’application et vérifiez ses autorisations ; Meta Ads nécessite votre propre configuration.',409,'connector_auth_unavailable');}
 }
+async function listScopedAccounts(sdk:Client, filters:NonNullable<Parameters<Client['connectedAccounts']['list']>[0]>, targetId?:string){
+ const items:Awaited<ReturnType<Client['connectedAccounts']['list']>>['items']=[];
+ const cursors=new Set<string>();
+ let cursor:string|undefined;
+ do {
+  const page=await sdk.connectedAccounts.list({...filters,...(cursor?{cursor}:{})});
+  items.push(...page.items);
+  if(targetId && page.items.some(account=>account.id===targetId))break;
+  cursor=page.nextCursor||undefined;
+  if(cursor){
+   if(cursors.has(cursor)||cursors.size>=100)throw new AppError('Liste des connexions incomplète. Réessayez la vérification.',503,'connector_pagination_incomplete');
+   cursors.add(cursor);
+  }
+ }while(cursor);
+ return {items};
+}
+
 export async function revokeConnector(who:BillingIdentity,accountId:string){
  await authorize(who.tenant,who.user.userId,'write');
  const {sdk,scopeUser}=await connectorSession(who);
- const result=await sdk.connectedAccounts.list({userIds:[scopeUser],limit:100});
+ const result=await listScopedAccounts(sdk,{userIds:[scopeUser],limit:100},accountId);
  if(!result.items.some(a=>a.id===accountId))throw new AppError('Connexion introuvable pour cet utilisateur.',404);
  try{await sdk.connectedAccounts.revoke(accountId);await log(who,'revoke','revoked');return {revoked:true};}catch{throw providerError();}
 }
@@ -115,7 +132,7 @@ export async function diagnoseConnectors(who:BillingIdentity,input:unknown){
  try{
   const [catalogue,accounts]=await Promise.all([
    session.toolkits({toolkits:[...new Set(toolkits)],limit:8}),
-   sdk.connectedAccounts.list({userIds:[scopeUser],toolkitSlugs:[...new Set(toolkits)],limit:100})
+   listScopedAccounts(sdk,{userIds:[scopeUser],toolkitSlugs:[...new Set(toolkits)],limit:100})
   ]);
   return {configured:true,permissionStatus:'not_checked',writesRequireExactApproval:true,items:catalogue.items.map(toolkit=>{
    const owned=accounts.items.filter(account=>account.toolkit.slug===toolkit.slug);
@@ -154,7 +171,7 @@ async function ownedAccount(sdk:Client,session:Session,who:BillingIdentity,call:
  if(!toolkit)throw new AppError('Connecteur introuvable.',404);
  if(toolkit.connection?.isActive&&toolkit.connection.connectedAccount?.status==='ACTIVE'){
   const id=toolkit.connection.connectedAccount.id,scopeUser=await safeComposioUserId(who.tenant,who.user.userId);
-  const accounts=await sdk.connectedAccounts.list({userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[call.toolkit],limit:100});
+  const accounts=await listScopedAccounts(sdk,{userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[call.toolkit],limit:100},id);
   if(!accounts.items.some(a=>a.id===id&&a.status==='ACTIVE'&&a.toolkit.slug===call.toolkit))throw new AppError('Ce compte ne fait pas partie de vos connexions actives.',403,'connector_account_denied');
   return id;
  }
@@ -352,7 +369,7 @@ export async function decideConnectorAction(who:BillingIdentity,id:string,decisi
 export async function socialConnectorCall(who:BillingIdentity,call:{toolkit:string;toolSlug:string;arguments:Record<string,unknown>;accountId?:string},permit?:{deliveryId:string;ordinal:number;payloadDigest:string}|{replyId:string;payloadDigest:string}){
  await authorize(who.tenant,who.user.userId,'write');
  const parsed=callSchema.parse({toolkit:call.toolkit,toolSlug:call.toolSlug,arguments:call.arguments,mode:'connected'}),{sdk,session,scopeUser}=await connectorSession(who,'social');
- const tool=await metadata(sdk,parsed),accounts=await sdk.connectedAccounts.list({userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[parsed.toolkit],limit:100});
+ const tool=await metadata(sdk,parsed),accounts=await listScopedAccounts(sdk,{userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[parsed.toolkit],limit:100},call.accountId);
  if(!call.accountId||!accounts.items.some(a=>a.id===call.accountId&&a.status==='ACTIVE'&&a.toolkit.slug===parsed.toolkit))throw new AppError('Le compte social doit être reconnecté.',409,'social_account_disconnected');
  const read=isReadOnlyTool(tool);
  if(!read){
@@ -366,5 +383,5 @@ export async function socialConnectorCall(who:BillingIdentity,call:{toolkit:stri
 
 export async function socialConnections(who:BillingIdentity,toolkit:string){
  toolkit=toolkitSchema.parse(toolkit);const {sdk,scopeUser}=await connectorSession(who,'social');
- const accounts=await sdk.connectedAccounts.list({userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[toolkit],limit:100});return accounts.items.map(account=>({id:account.id,status:account.status,toolkit:account.toolkit.slug}));
+ const accounts=await listScopedAccounts(sdk,{userIds:[scopeUser],statuses:['ACTIVE'],toolkitSlugs:[toolkit],limit:100});return accounts.items.map(account=>({id:account.id,status:account.status,toolkit:account.toolkit.slug}));
 }

@@ -51,7 +51,7 @@ function makeSession(id,userId,options){
 globalThis.__composioTest={NativeInputRequiredError,env:{DB,COMPOSIO_API_KEY:'fixture_project_key_not_a_real_secret'},headers:new Headers({'x-braand-identity-id':'owner','x-braand-identity-email':'owner@test.invalid'}),makeClient(options){assert.equal(options.apiKey,'fixture_project_key_not_a_real_secret');return {
  sessions:{async create(userId,config){const id='session_fixture_'+(created.length+1);created.push({id,userId,config});return makeSession(id,userId,config);},async use(id){assert.ok(sessions.has(id),'A session must be persisted before reuse');return sessions.get(id);}},
  tools:{async getRawComposioTools({tools}){return tools.map(slug=>metadata.get(slug)).filter(Boolean);}},
- connectedAccounts:{async list({userIds}){assert.ok(userIds?.length===1,'Account listing must be scoped to one Braand user');return {items:[...accounts.values()].filter(account=>userIds.includes(account.userId))};},async revoke(id){revoked.push(id);accounts.get(id).status='REVOKED';return {};}}
+ connectedAccounts:{async list({userIds,cursor}){assert.ok(userIds?.length===1,'Account listing must be scoped to one Braand user');if(cursor===undefined)return {items:[],nextCursor:"fixture-owned-accounts-page-2"};assert.equal(cursor,"fixture-owned-accounts-page-2");return {items:[...accounts.values()].filter(account=>userIds.includes(account.userId)),nextCursor:null};},async revoke(id){revoked.push(id);accounts.get(id).status='REVOKED';return {};}}
  };}};
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async()=>{throw new Error('External calls are forbidden in this isolated suite');};
