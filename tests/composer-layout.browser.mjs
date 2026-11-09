@@ -26,8 +26,10 @@ const paragraphs=[
 const mutations=[],historyReads=[],externalRequests=[],pageErrors=[],checks=[],measurements=[];
 let stubbedFontStylesheets=0;
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+const drafts=new Map();
 const server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://fixture.test');
+  if(url.pathname==='/api/drafts'){if(req.method==='GET'){json(res,drafts.get(url.searchParams.get('context'))||{content:'',attachments:[],version:0,updatedAt:0});return;}if(req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw),version=(drafts.get(body.context)?.version||0)+1;drafts.set(body.context,{content:body.content,attachments:body.attachments||[],version,updatedAt:Date.now()});json(res,{version});return;}}
   if(url.pathname.startsWith('/api/')&&req.method!=='GET'){
     mutations.push({path:url.pathname,method:req.method});json(res,{error:'Ce test autorise uniquement les lectures locales.'},405);return;
   }
@@ -115,7 +117,7 @@ try{
       if(surface==='conversation'&&width===814)await page.screenshot({path:path.join(output,'composer-conversation-814.png'),fullPage:true});
       // Keyboard traversal never activates the send button or opens a file picker.
       await composer.focus();await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .attach').first().evaluate(element=>element===document.activeElement),true);
-      await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .screen-share').evaluate(element=>element===document.activeElement),true,'+ then screen sharing');
+      assert.equal(await page.locator('.composer-tools .screen-share').count(),0);
       await page.keyboard.press('Tab');assert.equal(await page.locator('.composer-tools .mode-button').evaluate(element=>element===document.activeElement),true);
       await page.keyboard.press('Enter');await page.getByRole('group',{name:'Mode de travail',exact:true}).waitFor();
       await page.keyboard.press('Escape');await page.getByRole('group',{name:'Mode de travail',exact:true}).waitFor({state:'hidden'});
@@ -137,7 +139,7 @@ try{
   assert.deepEqual(mutations,[],'The layout test must never send a message, upload, authorize or pay');
   assert.equal(historyReads.length,4);assert.ok(historyReads.every(id=>id===conversation.id));
   assert.deepEqual(externalRequests,[]);assert.deepEqual(pageErrors,[]);
-  checks.push('Read-only existing conversation fixture; zero API mutations, external requests and unhandled browser errors');
+  checks.push('Read-only existing conversation fixture; private draft saves only, zero external requests and unhandled browser errors');
   await writeFile(path.join(output,'results.json'),JSON.stringify({checks,measurements,historyReads:historyReads.length,apiMutations:mutations.length,externalRequests:externalRequests.length,stubbedFontStylesheets,pageErrors},null,2));
   for(const check of checks)console.log('PASS '+check);
 }catch(error){if(lastPage){await lastPage.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});console.error((await lastPage.locator('body').innerText()).slice(0,1000));}throw error;}
