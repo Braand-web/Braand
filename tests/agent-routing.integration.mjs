@@ -380,6 +380,13 @@ await check('an unresolved historical action blocks model continuation instead o
  const execution=await setup();sql.prepare('INSERT INTO messages(id,workspace_id,conversation_id,role,content,run_id,created_at) VALUES (?,?,?,\'assistant\',?,?,?)').run(crypto.randomUUID(),who.tenant,execution.conversationId,JSON.stringify([{type:'tool_use',id:'unknown-action',name:'braand_connector_action',input:{}}]),linkedRun?execution.runId:null,Date.now());await assert.rejects(()=>run(execution),error=>error.code==='history_needs_reconciliation');assert.equal(fixture.requests.length,0);assert.equal(fixture.external.length,0);
  }
 });
+await check('completed connector read continues with the returned agenda in the same conversation',async()=>{
+ const execution=await setup();
+ execution.budget.connectorReceipt={id:'approved-read',data:'{"events":[{"title":"Fixture planning meeting"}]}',truncated:false};
+ fixture.responses=[text('Le rendez-vous figure dans votre agenda.')];await run(execution);
+ assert.match(JSON.stringify(fixture.requests[0].body.messages.at(-1).content),/Fixture planning meeting/);
+ assert.equal(fixture.external.length,0);
+});
 await check('generic agent resource access cannot bypass private connector receipt authorization',async()=>{
  const action=await server.createResource(who.tenant,'connector_action','Private connector receipt',{requester:'another-user',result:'PRIVATE_RESULT'},'completed');await assert.rejects(()=>agent.executeTool(who.tenant,'get_workspace_resource',{id:action.id}),error=>error.status===404);
 });

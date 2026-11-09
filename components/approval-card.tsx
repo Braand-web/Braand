@@ -63,7 +63,7 @@ export function connectorContent(args:Record<string,unknown>){
 const CONNECTOR_OUTCOMES:Record<string,Outcome>={completed:{tone:"done",label:"Autorisé · Action effectuée"},succeeded:{tone:"done",label:"Autorisé · Action effectuée"},success:{tone:"done",label:"Autorisé · Action effectuée"},approved:{tone:"running",label:"Autorisé · En cours…"},executing:{tone:"running",label:"Autorisé · En cours…"},running:{tone:"running",label:"Autorisé · En cours…"},rejected:{tone:"refused",label:"Refusé"},cancelled:{tone:"refused",label:"Annulé"},expired:{tone:"warning",label:"Demande expirée"},failed:{tone:"warning",label:"Échec de l’action"},uncertain:{tone:"warning",label:"Résultat à vérifier dans l’application"},needs_input:{tone:"warning",label:"Informations manquantes"}};
 
 /** A connected-app action (Facebook, Gmail…) waiting for the user's decision. */
-export function ConnectorActionCard({resource,onUpdated}:{resource:Resource;onUpdated?:()=>void}){
+export function ConnectorActionCard({resource,onUpdated}:{resource:Resource;onUpdated?:(result:Resource,decision:"approve"|"reject")=>void}){
  const [current,setCurrent]=useState(resource),[busy,setBusy]=useState<"approve"|"reject"|null>(null),[error,setError]=useState("");const pending=useRef(false);
  const data=current.data||{},status=text(data.status)||current.status;
  const args=data.arguments&&typeof data.arguments==="object"&&!Array.isArray(data.arguments)?data.arguments as Record<string,unknown>:null;
@@ -74,7 +74,7 @@ export function ConnectorActionCard({resource,onUpdated}:{resource:Resource;onUp
  const allFields=[{label:"Action",value:connectorActionLabel(text(data.toolkit),text(data.toolSlug))},...fields,...(instant&&Number.isFinite(credits)?[{label:"Plafond",value:credits+" crédits"}]:[])];
  const decide=async(decision:"approve"|"reject")=>{
   if(pending.current)return;pending.current=true;setBusy(decision);setError("");
-  try{setCurrent(await api<Resource>("/api/connectors/approvals/"+encodeURIComponent(current.id),post({decision})));onUpdated?.();}
+  try{const result=await api<Resource>("/api/connectors/approvals/"+encodeURIComponent(current.id),post({decision}));setCurrent(result);onUpdated?.(result,decision);}
   catch(e){setError(errorText(e));}finally{pending.current=false;setBusy(null);}
  };
  const awaiting=["pending","awaiting_approval"].includes(status);

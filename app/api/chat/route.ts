@@ -1,3 +1,4 @@
+import {decisionOrigin} from '@/lib/decisions';
 import {checkedProject,resourceProject} from '@/lib/project-context';
 import {requireModel} from "@/lib/llm";
 import {routingEnabled,routedModel} from '@/lib/model-router';
@@ -21,19 +22,31 @@ export async function POST(request:Request){
   const who=await identity(request);tenant=who.tenant;
   await ensureModelPricing();
   if(routingEnabled(config()))routedModel(config(),{task:'conversation'});else requireModel();
-  const body=z.object({text:z.string().trim().min(1).max(16000),conversationId:z.string().max(160).optional(),projectId:z.string().max(160).nullable().optional(),referenceProjectIds:z.array(z.string().max(160)).max(3).default([]),attachments:z.array(z.string().max(160)).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied"),ui:z.unknown().optional()}).parse(await privateJSON(request,80000));
+  const body=z.object({receiptId:z.string().uuid().optional(),text:z.string().trim().min(1).max(16000),conversationId:z.string().max(160).optional(),projectId:z.string().max(160).nullable().optional(),referenceProjectIds:z.array(z.string().max(160)).max(3).default([]),attachments:z.array(z.string().max(160)).max(FILE_POLICY.maxFilesPerMessage).default([]),maxCredits:z.number().int().min(1).max(1000),workMode:z.enum(["accompanied","autonomous"]).default("accompanied"),ui:z.unknown().optional()}).parse(await privateJSON(request,80000));
   if(containsExplicitLoginSecret(body.text))throw new AppError('Cette saisie semble contenir un identifiant secret. Utilisez la saisie sécurisée dans Paramètres → Autorisations, ou dans le navigateur sous votre contrôle.',400,'secure_login_input_required');
   if((body.projectId||body.referenceProjectIds.length)&&config().PROJECT_CONTEXT_V1!=='true')throw new AppError('Le contexte par projet n’est pas encore activé.',409,'project_context_unavailable');
   if(body.projectId)await checkedProject(tenant,body.projectId);for(const id of body.referenceProjectIds)await checkedProject(tenant,id);
+  let receiptResult:string|undefined;
+  if(body.receiptId){
+   if(!body.conversationId||await decisionOrigin(tenant,body.receiptId)!==body.conversationId)throw new AppError('Action introuvable dans cette discussion.',404);
+   const row=await db().prepare("SELECT result FROM connector_actions WHERE id=? AND workspace_id=? AND user_id=? AND status='completed'").bind(body.receiptId,tenant,who.user.userId).first<{result:string}>();
+   if(!row?.result)throw new AppError('Résultat indisponible pour cette discussion.',404);
+   receiptResult=row.result;
+  }
   const conversation=body.conversationId?await getResource(tenant,body.conversationId):await createResource(tenant,"conversation",body.text.slice(0,70),{projectId:body.projectId??null},"saved");if(conversation.kind!=="conversation"||conversation.status==="deleted")throw new AppError("Discussion invalide.");const sidebar=conversation.data.sidebar;if(sidebar&&typeof sidebar==="object"&&!Array.isArray(sidebar)&&(sidebar as Record<string,unknown>).archived===true)throw new AppError("Restaurez cette discussion avant de la continuer.",409);conversationId=conversation.id;if(body.projectId!==undefined&&resourceProject(conversation.data)!==body.projectId)throw new AppError("Cette discussion appartient à un autre projet. Ouvrez une nouvelle discussion.",409,"project_scope_mismatch");
   const lock=await db().prepare("UPDATE resources SET status='streaming',updated_at=? WHERE id=? AND workspace_id=? AND (status!='streaming' OR updated_at<?)").bind(Date.now(),conversationId,tenant,Date.now()-300000).run();if(!lock.meta.changes)throw new AppError("Une réponse est déjà en cours dans cette discussion.",409);
   locked=true;
+  const userMessageId=body.receiptId?'connector-receipt:'+body.receiptId:uid();
+  if(body.receiptId&&await db().prepare('SELECT id FROM messages WHERE id=? AND conversation_id=? AND workspace_id=?').bind(userMessageId,conversationId,tenant).first()){
+   await db().prepare("UPDATE resources SET status='saved' WHERE id=? AND workspace_id=?").bind(conversationId,tenant).run();
+   return new Response(null,{status:204});
+  }
   const content:Array<Record<string,unknown>>=[{type:"text",text:body.text}];
   for(const id of body.attachments){const file=await getResource(tenant,id);if(file.kind!=="file")throw new AppError("Pièce jointe invalide.");const fileRow=await db().prepare("SELECT * FROM files WHERE id=? AND workspace_id=?").bind(id,tenant).first<FileRecord>();if(!fileRow||fileRow.status!=="ready")throw new AppError("Cette pièce jointe n’est pas encore disponible.",409,"file_not_ready");const bucket=(await import("cloudflare:workers")).env.BUCKET;content.push(...await chatAttachmentBlocks({title:file.title,data:{...file.data,mime:fileRow.detected_mime,key:fileRow.storage_key}},key=>bucket?.get(key)??Promise.resolve(null)));}
   const runId=uid(),now=Date.now();
   const creditContext=await (await import('@/lib/credit-outlook')).creditOutlook(who.organization).then(o=>import('@/lib/credit-outlook').then(m=>m.outlookContext(o))).catch(()=>null);
-  budget=await startRunBudget(who,runId,body.maxCredits);budget.creditContext=creditContext;budget.referenceProjectIds=body.referenceProjectIds;budget.uiContext=await (await import('@/lib/ui-context')).describeUiContext(tenant,body.ui).catch(()=>null);
-  await db().batch([db().prepare("INSERT INTO messages (id,workspace_id,conversation_id,role,content,attachments,created_at) VALUES (?,?,?,'user',?,?,?)").bind(uid(),tenant,conversationId,JSON.stringify(content),JSON.stringify(body.attachments),now),db().prepare("INSERT INTO runs (id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,'streaming',?,?)").bind(runId,tenant,conversationId,now,now)]);
+  budget=await startRunBudget(who,runId,body.maxCredits);budget.connectorReceipt=receiptResult?{id:body.receiptId!,data:receiptResult.slice(0,20000),truncated:receiptResult.length>20000}:undefined;budget.creditContext=creditContext;budget.referenceProjectIds=body.referenceProjectIds;budget.uiContext=await (await import('@/lib/ui-context')).describeUiContext(tenant,body.ui).catch(()=>null);
+  await db().batch([db().prepare("INSERT INTO messages (id,workspace_id,conversation_id,role,content,attachments,created_at) VALUES (?,?,?,'user',?,?,?)").bind(userMessageId,tenant,conversationId,JSON.stringify(content),JSON.stringify(body.attachments),now),db().prepare("INSERT INTO runs (id,workspace_id,conversation_id,status,created_at,updated_at) VALUES (?,?,?,'streaming',?,?)").bind(runId,tenant,conversationId,now,now)]);
   const encoder=new TextEncoder(),abort=new AbortController();let clientClosed=false,lastHeartbeat=Date.now();
   const stream=new ReadableStream({
    async start(controller){
