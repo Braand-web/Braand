@@ -773,10 +773,10 @@ try{
   await page.getByRole('button',{name:'Replier la navigation',exact:true}).click();
   const collapsedActivity=primary.getByRole('button',{name:'Activité',exact:true});await collapsedActivity.waitFor();const activityBounds=await collapsedActivity.boundingBox();assert.ok(activityBounds.x>=0&&activityBounds.x+activityBounds.width<=1280);
   await page.getByRole('button',{name:'Déployer la navigation',exact:true}).click();await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===248);await capture({path:path.join(output,'essential-sidebar-desktop.png'),fullPage:true});
-  assert.equal(await primary.getByRole('button',{name:'Suggestions',exact:true}).count(),0);
+  assert.equal(await primary.getByRole('button',{name:/^Suggestions(?:,|$)/}).count(),1);
   assert.ok(await primary.locator('.recent-chat-section[aria-label] .recent-chat').count()<=3);
   const projectDisclosure=primary.locator('.sidebar-project-disclosure');assert.equal(await projectDisclosure.getAttribute('open'),null);await projectDisclosure.locator('summary').click();assert.equal(await primary.getByRole('button',{name:'Ouvrir le projet Un projet réel de la fixture',exact:true}).isVisible(),true);await projectDisclosure.locator('summary').click();
-  await page.locator('.account-trigger').click();await page.getByRole('menuitem',{name:/Suggestions/}).waitFor();await page.keyboard.press('Escape');
+  await page.locator('.account-trigger').click();assert.equal(await page.getByRole('menuitem',{name:/Suggestions/}).count(),0);await page.keyboard.press('Escape');
   checks.push('Conversation-first navigation keeps Chat, Bibliothèque and Activité; every former tab stays one section switch or one ⌘K shortcut away; Connecteurs stays in settings');
   await page.getByRole('button',{name:'Ouvrir l’espace de travail',exact:true}).click();
   const panel=page.getByRole('complementary',{name:'Espace de travail',exact:true});
