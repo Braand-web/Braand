@@ -29,7 +29,7 @@ jobs:
       - name: Build and deploy the sandbox Worker and its container image
         run: |
           node services/code-sandbox/prepare-config.mjs production
-          npx --no-install wrangler deploy --config .wrangler/deploy/code-sandbox-production.json --keep-vars
+          npx --yes wrangler@4.158.0 deploy --config .wrangler/deploy/code-sandbox-production.json --keep-vars
       - name: Share fresh secrets and bind the sandbox to Braand
         if: ${{ !inputs.refresh_only }}
         run: |
