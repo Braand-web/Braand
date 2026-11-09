@@ -16,7 +16,8 @@ test('Media route selects by bounded task, ignores unconfigured models and valid
 test('Missing, stale, future, unbounded or over-budget media rates cannot become executable quotes',()=>{
  const id='google/nano-banana-2.1';
  for(const candidate of [item(id,{verifiedAt:undefined}),item(id,{verifiedAt:new Date(now+1).toISOString()}),item(id,{verifiedAt:new Date(now-86400001).toISOString()}),item(id,{costCeilingXaf:25}),item(id,{kind:'video'})])assert.throws(()=>chooseMediaRoute([candidate],'image',{prompt:'x'},10,now));
- assert.throws(()=>chooseMediaRoute([item(id)],'image',{prompt:'x'},5,now));
+ assert.throws(()=>chooseMediaRoute([item(id)],'image',{prompt:'x'},5,now),e=>e.code==='media_budget_insufficient');
+ assert.throws(()=>chooseMediaRoute([item(id,{verifiedAt:undefined})],'image',{prompt:'x'},10,now),e=>e.code==='media_price_unavailable');
  assert.throws(()=>chooseMediaRoute([item(id)],'execute_js',{prompt:'x'},10,now),e=>e.code==='media_task_invalid');
 });
 test('Precision editing and narrative video have distinct capabilities, with no silent model change after approval',()=>{

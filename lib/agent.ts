@@ -43,7 +43,7 @@ import {modelEventSchema,modelBlockStartSchema,modelBlockDeltaSchema,modelBlockS
 const object=(properties:Record<string,unknown>,required:string[])=>({type:"object",properties,required,additionalProperties:false});
 const str={type:"string"};
 const knowledgeFields={title:str,content:str,source:str,memoryType:{type:'string',enum:['fact','preference','decision','hypothesis']}};
-const deliverableFields={title:str,content:str,summary:str,category:{type:'string',enum:['marketing','sales','commerce','content','management','analysis','research','software','operations','education','general']},sources:{type:'array',items:str,maxItems:12}};
+const deliverableFields={title:str,content:str,summary:str,category:{type:'string',enum:['marketing','sales','commerce','content','creative','management','analysis','research','software','operations','education','general']},sources:{type:'array',items:str,maxItems:12}};
 // Precise, actionable tool errors let the agent correct its own call on the next turn.
 export function toolErrorGuidance(error:unknown){
  if(error instanceof z.ZodError){
@@ -241,7 +241,11 @@ export async function runSpecialist(tenant:string,runId:string,input:unknown,emi
    if((escalated||contractRepair)&&calls.length)throw new AppError('La tentative de vérification doit rendre un rapport sans nouvel outil.',409,'model_escalation_limit');
    if(!calls.length){if(p.contract){try{structured=parseSpecialistOutput(report);if(structured.checks.length!==p.contract.successCriteria.length||p.contract.successCriteria.some(criterion=>structured!.checks.filter(check=>check.criterion===criterion).length!==1))throw new Error('Missing or mismatched criterion checks');}catch{if(contractRepair||round>=2)throw new AppError('Le livrable du spécialiste ne respecte pas son contrat.',502,'specialist_contract_invalid');contractRepair=true;messages.push({role:'user',content:'Le contrat de sortie est invalide. Rends uniquement le JSON demandé avec un contrôle pour chaque critère, sans nouvelle action.'});continue;}}if(!report.trim()&&!escalated&&!['analysis','review','coding'].includes(p.role)&&round<2){escalated=true;messages.push({role:'user',content:'Validation du résultat échouée : aucun rapport textuel. Fournis le rapport factuel demandé sans effectuer d’action externe.'});continue;}break;}
    const results:{type:string;tool_use_id:string;content:string;is_error?:boolean}[]=[];
-   for(const call of calls){await authorize(tenant,budget.who.user.userId,"write");await budget.beforeTool?.();if(!allowed.has(call.name))throw new AppError("Outil interdit au spécialiste.",403);try{if(sandbox&&codeSandboxToolNames.has(call.name)){await emit("tool_start",{name:call.name,id:call.id});const result=await runCodeSandboxTool(config(),sandbox,call.name,call.input,signal,sandboxStorage);await auditLog(tenant,budget.who.user.userId,"sandbox."+call.name,record.id,{exitCode:result.exitCode,timedOut:result.timedOut,path:result.path});await emit("tool_result",{name:call.name,id:call.id,result:result.resource?result.resource:{exitCode:result.exitCode,timedOut:result.timedOut,path:result.path}});results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});continue;}const result=await executeTool(tenant,call.name,call.input,skills,scope);if(call.name==='read_skill')await recordSkillRead(tenant,budget.who.user.userId,result);results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});}catch(error){results.push({type:"tool_result",tool_use_id:call.id,content:error instanceof AppError?error.message:"Lecture indisponible.",is_error:true});}}
+   for(const call of calls){await authorize(tenant,budget.who.user.userId,"write");await budget.beforeTool?.();if(!allowed.has(call.name))throw new AppError("Outil interdit au spécialiste.",403);try{if(sandbox&&codeSandboxToolNames.has(call.name)){await emit("tool_start",{name:call.name,id:call.id});const result=await runCodeSandboxTool(config(),sandbox,call.name,call.input,signal,sandboxStorage);await auditLog(tenant,budget.who.user.userId,"sandbox."+call.name,record.id,{exitCode:result.exitCode,timedOut:result.timedOut,path:result.path});await emit("tool_result",{name:call.name,id:call.id,result:result.resource?result.resource:{exitCode:result.exitCode,timedOut:result.timedOut,path:result.path}});results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});continue;}const result=await executeTool(tenant,call.name,call.input,skills,scope);if(call.name==='read_skill')await recordSkillRead(tenant,budget.who.user.userId,result);results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});}catch(error){
+     const message=error instanceof AppError?error.message:"Lecture indisponible.";
+     if(sandbox&&codeSandboxToolNames.has(call.name)) await emit("tool_result",{name:call.name,id:call.id,error:message});
+     results.push({type:"tool_result",tool_use_id:call.id,content:message,is_error:true});
+    }}
    messages.push({role:"user",content:results});
    if(round===(escalated?maxRounds-1:maxRounds-2))throw new AppError("Limite d’étapes du spécialiste atteinte.",409);
   }
@@ -268,6 +272,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
  const connectorContext=workMode!=='autonomous'?(connectorTools.length?connectorWorkPolicy+'\nOutils connectés disponibles pour découverte et diagnostic. Leur présence ne prouve pas une connexion utilisateur ni une permission de publication.':'Outils connectés indisponibles pendant cette réponse. Ne prétends pas avoir vérifié les comptes ou permissions ; propose de vérifier les connexions dans les paramètres, sans simuler une action.'):'Les actions connectées sont exclues de ce mandat. Préserve le plan et indique qu’une publication ou dépense nécessite le parcours Accompagné et son approbation exacte.';
  const capacityEnabled=config().MODEL_ROUTING_ENABLED==='true'&&config().MODEL_ROUTING_POLICY==='adaptive';
  let capacity:CapacityState={tier:'light',changes:0},visibleText=false;
+ let mediaEnableFailures = 0;
  const capacityEvidence={toolFailure:false,validationFailure:false};
  budget.videoMotionPreferred=false;
  if(capacityEnabled)tools.push(modelCapacityTool);
@@ -349,6 +354,7 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
    let operationSucceeded=false;let receipt:string|undefined;
    try{
     if(!availableToolNames.has(call.name))throw new AppError('Outil indisponible.',403,'tool_unavailable');
+    if(call.name==='enable_media_model' && mediaEnableFailures >= 2) throw new AppError('La vérification du catalogue a échoué deux fois. Utilise un modèle déjà validé compatible avec le plafond ou explique le blocage.',409,'media_discovery_paused');
     if(call.name==='response_formats'){
      z.object({}).strict().parse(call.input);if(!availableToolNames.has('present_response')){tools.push(richPresentationTool);availableToolNames.add('present_response');}
      results.push({type:'tool_result',tool_use_id:call.id,content:richPresentationInstruction});return;
@@ -462,7 +468,9 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
     if(failedTools.has(call.name)){failedTools.delete(call.name);await recordToolRecovery(call.name);}
     await emit("tool_result",{name:call.name,id:call.id,result:publicSkillResult(call.name,result)});
    }catch(error){
-    if(call.name!==modelCapacityTool.name&&!operationSucceeded&&availableToolNames.has(call.name)&&agentToolAllowedForMode(workMode,call.name)&&!(error instanceof AppError&&[401,403].includes(error.status)))capacityEvidence.toolFailure=true;
+    if(call.name==='enable_media_model' && error instanceof AppError && ['fal_source_unavailable','fal_price_unavailable'].includes(error.code)) mediaEnableFailures++;
+    const configurationFailure = error instanceof z.ZodError || (error instanceof AppError && ['fal_not_ready','media_discovery_paused','fal_source_unavailable','fal_price_unavailable','media_price_unavailable','media_route_unavailable','media_budget_insufficient'].includes(error.code));
+    if(!configurationFailure&&call.name!==modelCapacityTool.name&&!operationSucceeded&&availableToolNames.has(call.name)&&agentToolAllowedForMode(workMode,call.name)&&!(error instanceof AppError&&[401,403].includes(error.status)))capacityEvidence.toolFailure=true;
     if(error instanceof AppError&&error.code==='file_check_failed')capacityEvidence.validationFailure=true;
     if(receipt&&!operationSucceeded)await failLocalTool(tenant,runId,receipt,error instanceof z.ZodError);
     const message=withoutSupplierNames(operationSucceeded?"L’outil a terminé, mais sa confirmation n’a pas pu être transmise. Relis la ressource avant toute nouvelle modification.":error instanceof AppError?error.message:toolErrorGuidance(error));

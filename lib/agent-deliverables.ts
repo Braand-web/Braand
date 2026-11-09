@@ -3,7 +3,7 @@ import {AppError} from './core.mjs';
 import {createResource,getResource,updateResource} from './server';
 import {linkResearchSources} from './research';
 
-export const deliverableInput=z.object({title:z.string().trim().min(1).max(160),content:z.string().trim().min(1).max(150000),summary:z.string().trim().min(1).max(600),category:z.enum(['marketing','sales','commerce','content','management','analysis','research','software','operations','education','general']),sources:z.array(z.string().trim().min(1).max(500)).max(12)}).strict();
+export const deliverableInput=z.object({title:z.string().trim().min(1).max(160),content:z.string().trim().min(1).max(150000),summary:z.string().trim().min(1).max(600),category:z.enum(['marketing','sales','commerce','content','creative','management','analysis','research','software','operations','education','general']),sources:z.array(z.string().trim().min(1).max(500)).max(12)}).strict();
 
 export async function saveDeliverable(tenant:string,input:unknown){
  const data=deliverableInput.parse(input);
