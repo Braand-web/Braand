@@ -219,6 +219,7 @@ await check('Receipt returns authoritative persisted status and result without a
  await s.updateResource(who.tenant,finished.id,finished.version,{data:{...finished.data,result:{tampered:true}}});
  const receipt=await c.executeConnectorAgentTool(who,'chat-fixture','braand_connector_receipt',{id:pending.id});
  assert.equal(receipt.status,'completed');assert.equal(receipt.logId,'log_execution_fixture');assert.equal(receipt.result.resultType,'completed');assert.deepEqual(receipt.result.data,{data:[{id:'act_fixture',name:'Fictional test account'}]});assert.equal(receipt.result.tampered,undefined);assert.equal(countExecutions(),before);
+ await assert.rejects(()=>c.executeConnectorAgentTool(who,'different-conversation','braand_connector_receipt',{id:pending.id}),error=>error.status===404);
  const other=await secondUser();await assert.rejects(()=>c.executeConnectorAgentTool(other,'chat-fixture','braand_connector_receipt',{id:pending.id}));
  await assert.rejects(()=>c.executeConnectorAgentTool(who,'chat-fixture','braand_connector_receipt',{id:pending.id,arguments:{tampered:true}}));assert.equal(countExecutions(),before);
 });

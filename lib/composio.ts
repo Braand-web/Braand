@@ -232,7 +232,7 @@ export async function executeConnectorAgentTool(who:BillingIdentity,conversation
  if(name==='braand_connector_receipt'){
   const {id}=z.object({id:z.string().uuid()}).strict().parse(input);
   const row=await query('SELECT status,result,log_id FROM connector_actions WHERE id=? AND workspace_id=? AND user_id=?',id,who.tenant,who.user.userId).first<{status:string;result:string|null;log_id:string|null}>();
-  if(!row)throw new AppError('Action introuvable pour cet utilisateur.',404);
+  if(!row||await (await import('./decisions')).decisionOrigin(who.tenant,id)!==conversationId)throw new AppError('Action introuvable dans cette discussion.',404);
   return {id,status:row.status,result:row.result?JSON.parse(row.result):null,logId:row.log_id};
  }
  if(name==='braand_connect_toolkit'){const p=z.object({toolkit:toolkitSchema,reason:z.string().trim().max(240).optional()}).strict().parse(input);const {redirectUrl}=await authorizeConnector(who,p.toolkit);return {kind:'connect_request',toolkit:p.toolkit,reason:p.reason||'',redirectUrl,notice:'Une carte « Autoriser » est affichée à l’utilisateur. Attends qu’il revienne ; ne prétends pas que le service est connecté.'};}
@@ -254,9 +254,9 @@ export async function executeConnectorAgentTool(who:BillingIdentity,conversation
    try{return await executeConnected(who,session,call,account);}
    catch(error){if(!(error instanceof AppError)||error.code!=='connector_approval_required')throw error;}
   }
-  return proposeAction(who,session,call,account,work);
+  return proposeAction(who,conversationId,session,call,account,work);
  }
- return proposeAction(who,session,call,undefined,work);
+ return proposeAction(who,conversationId,session,call,undefined,work);
 }
 
 /** An approved work can read connected tools and propose exact writes, never approve them. */
@@ -277,7 +277,7 @@ export async function executeMissionConnectorTool(who:BillingIdentity,conversati
  return result;
 }
 
-async function proposeAction(who:BillingIdentity,session:Session,call:ConnectorCall,account?:string,work?:{id:string;stepId:string}){
+async function proposeAction(who:BillingIdentity,conversationId:string,session:Session,call:ConnectorCall,account?:string,work?:{id:string;stepId:string}){
  let maxMicros=0,maxCredits=0,sessionId=session.sessionId;
  const policy=await instantPolicy(who);
  if(call.mode==='instant'){
@@ -291,7 +291,7 @@ async function proposeAction(who:BillingIdentity,session:Session,call:ConnectorC
   await (await import('./model-pricing')).ensureModelPricing();
   const rate=modelRate();maxCredits=Math.ceil(((maxMicros/1e6)*rate.usdXaf*1.2+rate.overheadXaf)/4*100);
  }
- const data={...call,accountId:account||null,requester:who.user.userId,sessionId,priceUsd:maxMicros?maxMicros/1e6:null,maxCredits:maxCredits/100,expiresAt:Date.now()+15*60000,status:'pending'};
+ const data={...call,conversationId,accountId:account||null,requester:who.user.userId,sessionId,priceUsd:maxMicros?maxMicros/1e6:null,maxCredits:maxCredits/100,expiresAt:Date.now()+15*60000,status:'pending'};
  const resource=await createResource(who.tenant,'connector_action',call.toolkit+' · '+call.toolSlug,data,'pending');
  const insertion=query('INSERT INTO connector_actions(id,workspace_id,organization_id,user_id,session_id,payload,expires_at,created_at,max_micros,month,user_limit,org_limit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',resource.id,who.tenant,who.organization,who.user.userId,sessionId,canonicalJSON(data),data.expiresAt,Date.now(),maxMicros,new Date().toISOString().slice(0,7),policy.monthlyMicros,policy.organizationMonthlyMicros);
  await db().batch([insertion,...(work?[query('INSERT INTO agent_work_artifacts(work_id,step_id,resource_id) VALUES (?,?,?)',work.id,work.stepId,resource.id)]:[])]);

@@ -468,7 +468,10 @@ export async function runAgent(tenant:string,conversationId:string,runId:string,
     if(call.name==='read_skill')await recordSkillRead(tenant,budget.who.user.userId,result);
     const saved=result&&typeof result==='object'?result as Record<string,unknown>:{};
     await auditLog(tenant,budget.who.user.userId,"tool."+call.name,runId,{callId:call.id,outcome:reused?'reused':'succeeded',...(typeof saved.id==='string'?{resourceId:saved.id,version:saved.version,status:saved.status}:{})});
-    results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(result)});
+    const modelResult=saved.kind==='connector_action'&&saved.status==='pending'
+     ? {id:saved.id,status:'awaiting_approval',instruction:"La carte est affichée. Explique brièvement ce que le clic autorisera. Attends la décision sans relancer cet outil, annoncer un échec ou demander de recopier les données."}
+     : result;
+    results.push({type:"tool_result",tool_use_id:call.id,content:JSON.stringify(modelResult)});
     if(failedTools.has(call.name)){failedTools.delete(call.name);await recordToolRecovery(call.name);}
     await emit("tool_result",{name:call.name,id:call.id,result:publicSkillResult(call.name,result)});
    }catch(error){

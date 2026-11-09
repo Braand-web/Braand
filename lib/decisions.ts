@@ -28,6 +28,7 @@ export async function pendingDecisions(tenant:string,conversationId:string):Prom
 /** The conversation where this item is decided, or null when the user made it by hand. */
 export async function decisionOrigin(tenant:string,id:string):Promise<string|null>{
  const reads=[
+  "SELECT json_extract(payload,'$.conversationId') c FROM connector_actions WHERE workspace_id=? AND id=?",
   "SELECT ru.conversation_id c FROM events e JOIN runs ru ON ru.id=e.run_id WHERE ru.workspace_id=? AND e.type='tool_result' AND json_extract(e.data,'$.result.id')=? LIMIT 1",
   "SELECT w.conversation_id c FROM agent_work w JOIN agent_work_artifacts a ON a.work_id=w.id WHERE w.workspace_id=? AND a.resource_id=? LIMIT 1",
   "SELECT conversation_id c FROM browser_sessions WHERE workspace_id=? AND id=? LIMIT 1",
