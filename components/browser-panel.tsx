@@ -52,7 +52,7 @@ export function BrowserPanel({conversationId,sessionId,embedded=false}:{conversa
  const fieldId=useId(),[overview,setOverview]=useState<Overview|null>(null),[selectedId,setSelectedId]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[showCreate,setShowCreate]=useState(false),[activation,setActivation]=useState<string|null>(null),[activationConsent,setActivationConsent]=useState(false),[details,setDetails]=useState<SessionDetails|null>(null),[preview,setPreview]=useState<Preview|null>(null),[point,setPoint]=useState({x:0,y:0}),[deleteProfile,setDeleteProfile]=useState<string|null>(null),[resultConsent,setResultConsent]=useState<string|null>(null),[now,setNow]=useState(()=>Date.now());
  const [returning,setReturning]=useState(false),[liveURL,setLiveURL]=useState('');
  const lock=useRef(false),mounted=useRef(true),humanText=useRef<HTMLInputElement>(null),urlField=useRef<HTMLInputElement>(null),image=useRef<HTMLImageElement>(null),captureNonce=useRef(0),overviewSequence=useRef(0);
- const sessions=overview?.sessions.filter(session=>!embedded&&!conversationId||(session.conversationId||undefined)===conversationId)||[];
+ const sessions=overview?.sessions.filter(session=>!embedded||(session.conversationId||undefined)===conversationId)||[];
  const requestedId=selectedId||sessionId;
  const selected=requestedId?sessions.find(session=>session.id===requestedId):sessions[0];
  const ready=overview?.readiness.ready===true,human=selected?.control==='human',active=selected&&!terminal.has(selected.status)&&selected.status!=='draft',canAct=ready&&selected?.status==='running'&&!human&&!busy;

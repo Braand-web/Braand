@@ -27,8 +27,9 @@ function useKeyedState<T>(key: string, initial: T): [T, Dispatch<SetStateAction<
   return [value, update];
 }
 
-export function FilePreviewDialog({embedded=false}: {embedded?:boolean}) {
-  const { activeId, file, loading, unavailable, contextFileIds, contextIndex, goToFile, closePreview, addToConversation, getSignedUrl, fetchContent } = useFilePreview();
+export function FilePreviewDialog({embedded=false,onClose}: {embedded?:boolean;onClose?:()=>void}) {
+  const { activeId, file, loading, unavailable, contextFileIds, contextIndex, goToFile, closePreview:closeFilePreview, addToConversation, getSignedUrl, fetchContent } = useFilePreview();
+  const closePreview=useCallback(()=>{closeFilePreview();onClose?.();},[closeFilePreview,onClose]);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const viewerRoot = useRef<HTMLDivElement>(null);
   const focusReturn = useRef<HTMLElement | null>(null);

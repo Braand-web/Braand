@@ -57,7 +57,7 @@ export function FilePreviewProvider({ children }: { children: ReactNode }) {
     if (!id) delete state.braandFilePreview;
     history[mode === "push" ? "pushState" : "replaceState"](state, "", url);
   }, []);
-  const resetPreview=useCallback(()=>{setActiveId(null);setMetadataResult(null);setContextFileIds([]);fileCache.current.clear();updateUrl(null,'replace');},[updateUrl]);
+  const resetPreview=useCallback(()=>{setActiveId(null);setMetadataResult(null);setContextFileIds([]);updateUrl(null,'replace');},[updateUrl]);
 
   const openPreview = useCallback((fileId: string, options: OpenPreviewOptions = {}) => {
     if (!fileId) return;

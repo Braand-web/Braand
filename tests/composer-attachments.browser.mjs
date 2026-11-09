@@ -107,7 +107,7 @@ try{
     await composer.screenshot({path:path.join(output,`attachments-${width}.png`)});
     if(securePreview){
       const documentTile=tiles.nth(2);assert.equal(await documentTile.locator('.file-card-attachment-caption').innerText(),files[2].name);
-      await tiles.first().locator('.file-card-open').click();await page.locator('.file-preview-dialog[open]').waitFor();
+      await tiles.first().locator('.file-card-open').click();await page.locator('.file-preview-embedded').waitFor();
       await page.getByRole('button',{name:'Fichier suivant',exact:true}).click();
       await page.getByRole('button',{name:'Fermer l’aperçu',exact:true}).click();
       assert.equal(await field.inputValue(),'Mon brouillon');assert.equal(await tiles.count(),3);

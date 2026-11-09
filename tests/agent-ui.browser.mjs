@@ -585,12 +585,12 @@ try{
   assert.equal(await response.getByRole('button',{name:'2 sources',exact:true}).count(),1);
   checks.push('History reload restores real completion status, persisted feedback and citations');
   await page.getByRole('button',{name:'Rechercher',exact:true}).click();await page.getByRole('textbox',{name:'Rechercher dans votre espace'}).fill(proposal.title);await page.locator('.search-results button').filter({hasText:proposal.title}).click();
-  const sidePanel=page.getByRole('complementary',{name:'Espace de travail',exact:true});await sidePanel.getByRole('heading',{name:proposal.title,exact:true}).waitFor();
+  const sidePanel=page.getByRole('complementary',{name:'Espace de travail',exact:true});await sidePanel.getByRole('button',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByText(proposal.title,{exact:true}).waitFor();
   await composer.fill('Brouillon avec ressource ouverte');const messageCountBeforeSettings=await page.locator('.messages article').count(),scrollBeforeSettings=await page.locator('.messages').evaluate(element=>element.scrollTop);
   await page.locator('.account-trigger').click();await page.getByRole('menuitem',{name:/Crédits et facturation/}).click();await settings.waitFor();await settings.getByRole('heading',{name:'Facturation',exact:true}).waitFor();
   await settings.getByRole('button',{name:'Fermer les paramètres',exact:true}).click();await settings.waitFor({state:'hidden'});
   assert.equal(await composer.inputValue(),'Brouillon avec ressource ouverte');assert.equal(await page.locator('.messages article').count(),messageCountBeforeSettings);assert.equal(await page.locator('.messages').evaluate(element=>element.scrollTop),scrollBeforeSettings);
-  await sidePanel.getByRole('heading',{name:proposal.title,exact:true}).waitFor();assert.equal(approvals,0);assert.equal(checkoutCalls,0);
+  await sidePanel.getByRole('button',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByText(proposal.title,{exact:true}).waitFor();assert.equal(approvals,0);assert.equal(checkoutCalls,0);
   checks.push('Billing settings preserve the current messages, composer draft, conversation scroll and open resource panel');
   await page.getByRole('textbox',{name:'Votre demande à Braand'}).fill('Coupure réseau');await page.getByRole('textbox',{name:'Votre demande à Braand'}).press('Enter');
   await page.locator('[data-slot=ai-status][data-state=error]').waitFor();
