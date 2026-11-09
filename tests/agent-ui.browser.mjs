@@ -809,7 +809,7 @@ try{
   const captureCard=page.getByRole('dialog',{name:'Braand aimerait voir votre écran'});await captureCard.waitFor();assert.match(await captureCard.innerText(),/Voir ce que vous voyez/);
   await captureCard.getByRole('button',{name:'Non merci',exact:true}).click();assert.equal(await captureCard.count(),0);
   await navToast.getByRole('button',{name:'Revenir',exact:true}).click();await page.waitForFunction(()=>!new URL(location.href).searchParams.get('settings'));
-  assert.equal(await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).count(),0);
   checks.push('Braand receives the open screen with each message, opens Settings → Facturation itself with a way back, and asks to see the screen only through a card the user can decline');
   // The reported 774px layout must stay aligned, compact and usable with a real draft.
   await page.setViewportSize({width:1280,height:800});await page.goto(origin);await page.locator('.account-trigger:not(:disabled)').waitFor();

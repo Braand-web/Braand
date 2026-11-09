@@ -86,9 +86,9 @@ try{
     const before=await controls(),empty=await composer.boundingBox();
     if(width>=768)assert.equal(empty.height,58);
     if(securePreview){
-      const plus=await page.getByRole('button',{name:'Joindre une image ou un document',exact:true}).boundingBox(),screen=await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).boundingBox();
-      assert.ok(plus&&screen&&plus.width>=28&&screen.width>=28,'both composer buttons are visible');
-      assert.ok(plus.x+plus.width<=screen.x||screen.x+screen.width<=plus.x,'the + button is not covered by the screen button');
+      const plus=await page.getByRole('button',{name:'Joindre une image ou un document',exact:true}).boundingBox();
+      assert.ok(plus&&plus.width>=28,'attachment button remains visible');
+      assert.equal(await page.getByRole('button',{name:'Montrer mon écran à Braand',exact:true}).count(),0);
       const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Joindre une image ou un document',exact:true}).click();await (await chooser).setFiles([]);
     }
     await field.fill('Mon brouillon');
