@@ -15,7 +15,7 @@ export async function reviseDeliverable(tenant:string,input:unknown){
  if(current.kind!=='deliverable'||current.status==='deleted')throw new AppError('Livrable introuvable.',404);
  if(current.data.format==='source-project'||current.data.format==='data-analysis')throw new AppError('Ce livrable possède des sources structurées. Utilisez save_source_project ou analyze_data pour les préserver.',409,'structured_deliverable');
  const history=Array.isArray(current.data.history)?current.data.history:[];
- return updateResource(tenant,id,version,{title:data.title,status:'draft',data:{...data,format:'markdown',executionConfirmed:false,history:[...history,{version:current.version,content:current.data.content,at:Date.now()}].slice(-5)}});
+ return updateResource(tenant,id,version,{title:data.title,status:'draft',data:{...data,projectId:current.data.projectId??null,format:'markdown',executionConfirmed:false,history:[...history,{version:current.version,content:current.data.content,at:Date.now()}].slice(-5)}});
 }
 
 /** Append one chapter or section to a saved deliverable, so long documents and

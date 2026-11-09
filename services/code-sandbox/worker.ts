@@ -91,7 +91,8 @@ export async function handlePreview(request:Request,env:SandboxEnv){
   const access=await verifyPreview(entry[1],secret);
   if(!access)return previewPage('Lien d’aperçu expiré','Ce lien n’est plus valable. Demandez à Braand un nouvel aperçu.',403);
   const maxAge=Math.max(60,Math.floor((access.expiresAt-Date.now())/1000));
-  return new Response(null,{status:302,headers:{Location:'/','Set-Cookie':`${PREVIEW_COOKIE}=${entry[1]}; Path=/; Max-Age=${Math.min(maxAge,PREVIEW_TTL_MS/1000)}; Secure; HttpOnly; SameSite=Lax`,'cache-control':'no-store'}});
+  const cookieMode=url.searchParams.get('embedded')==='1'?'None; Partitioned':'Lax';
+  return new Response(null,{status:302,headers:{Location:'/','Set-Cookie':`${PREVIEW_COOKIE}=${entry[1]}; Path=/; Max-Age=${Math.min(maxAge,PREVIEW_TTL_MS/1000)}; Secure; HttpOnly; SameSite=${cookieMode}`,'cache-control':'no-store'}});
  }
  const access=await verifyPreview(previewCookie(request)||'',secret);
  if(!access)return previewPage('Aperçu introuvable','Ouvrez l’aperçu depuis le lien donné par Braand dans la discussion.',403);

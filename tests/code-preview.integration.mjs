@@ -23,6 +23,8 @@ const token=await signPreview({sandbox,port:3000,expiresAt:Date.now()+3600000},s
 const entry=await worker.default.fetch(new Request(origin+'/__preview/'+token),env);
 assert.equal(entry.status,302);assert.equal(entry.headers.get('location'),'/');
 const cookie=entry.headers.get('set-cookie');assert.match(cookie,/^braand_preview=.+; Path=\/; Max-Age=\d+; Secure; HttpOnly; SameSite=Lax$/);
+const embedded=await worker.default.fetch(new Request(origin+'/__preview/'+token+'?embedded=1'),env);assert.match(embedded.headers.get('set-cookie'),/SameSite=None; Partitioned/);
+pass('the embedded preview uses a secure partitioned cookie, separate from the app account');
 pass('the signed link sets a secure HttpOnly cookie on the preview site and opens the app');
 const page=await worker.default.fetch(new Request(origin+'/_next/static/app.js?v=1',{headers:{cookie:'theme=dark; braand_preview='+token}}),env);
 assert.equal(page.status,200);assert.equal(await page.text(),'<h1>App</h1>');

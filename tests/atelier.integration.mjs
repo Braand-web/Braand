@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdirSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import path from 'node:path';
+const root=path.resolve(import.meta.dirname,'..'),out=path.join(root,'.local-build/atelier.mjs');mkdirSync(path.dirname(out),{recursive:true});
+await build({entryPoints:[path.join(root,'lib/atelier.ts')],outfile:out,bundle:true,platform:'node',format:'esm'});
+const {atelierResources,annotatedPage}=await import(pathToFileURL(out));
+const resources=[{id:'a',data:{projectId:'ALPHA'},status:'ready'},{id:'b',data:{projectId:'BETA'},status:'ready'},{id:'general',data:{},status:'ready'},{id:'deleted',data:{projectId:'ALPHA'},status:'deleted'}];
+assert.deepEqual(atelierResources(resources,'ALPHA',new Set()).map(item=>item.id),['a']);
+assert.deepEqual(atelierResources(resources,'BETA',new Set()).map(item=>item.id),['b']);
+assert.deepEqual(atelierResources(resources,null,new Set()).map(item=>item.id),['general']);
+assert.deepEqual(atelierResources(resources,'ALPHA',new Set(['b'])).map(item=>item.id),['a','b']);
+const html=annotatedPage('<h1>Brief</h1><script>parent.stolen=true</script>','fixture-token');
+assert.ok(html.startsWith('<meta http-equiv="Content-Security-Policy"'));
+assert.match(html,/connect-src 'none'/);assert.match(html,/script-src 'nonce-fixture-token'/);assert.match(html,/form-action 'none'/);assert.match(html,/braand-preview-selection/);
+console.log('PASS project filtering, explicit references, deleted resources and annotation isolation policy.');

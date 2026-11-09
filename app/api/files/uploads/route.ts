@@ -1,3 +1,4 @@
+import {checkedProject} from '@/lib/project-context';
 import {privateJSON} from '@/lib/private-json';
 import {env} from "cloudflare:workers";
 import {z} from "zod";
@@ -142,7 +143,8 @@ async function rejectCompletedUpload(session:UploadSession,code:string,message:s
 
 async function completeUpload(request:Request){
  const {tenant,user,organization}=await fileIdentity(request);if(!env.BUCKET)throw new AppError("Stockage des fichiers indisponible.",503,"storage_unavailable");
- const input=z.object({action:z.literal("complete"),uploadId:z.string().uuid(),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await privateJSON(request,1048576));
+ const input=z.object({action:z.literal("complete"),projectId:z.string().max(160).nullable().optional(),uploadId:z.string().uuid(),sha256:z.string().regex(/^[a-f0-9]{64}$/iu)}).strict().parse(await privateJSON(request,1048576));
+ if(input.projectId)await checkedProject(tenant,input.projectId);
  let session=await findSession(input.uploadId,tenant,user.userId);if(!session)throw notFound();
  if(session.status==="completed"){const resource=await getResource(tenant,session.file_id);return Response.json({resource:safeResourceDto(resource),completed:true});}
  if(session.status==="failed"||session.status==="aborted"||uploadSessionExpired(session))throw notFound();
@@ -175,7 +177,7 @@ async function completeUpload(request:Request){
    return Response.json({deduplicated:true,resource:safeResourceDto(await getResource(tenant,duplicate.id))});
   }
   const text=detected==="text/plain"?new TextDecoder().decode(bytes.subarray(0,FILE_POLICY.legacyTextPreviewChars)):undefined;
-  const resourceData={key:session.storage_key,mime:detected,size:bytes.byteLength,sha256:session.sha256,...(text===undefined?{}:{text})};
+  const resourceData={projectId:input.projectId??null,key:session.storage_key,mime:detected,size:bytes.byteLength,sha256:session.sha256,...(text===undefined?{}:{text})};
   const meterId=uid(),finishedAt=Date.now();
   await db().batch([
    db().prepare("INSERT INTO resources (id,workspace_id,kind,title,data,status,created_at,updated_at) VALUES (?,?,'file',?,?, 'ready',?,?)").bind(session.file_id,tenant,session.display_name,JSON.stringify(resourceData),finishedAt,finishedAt),

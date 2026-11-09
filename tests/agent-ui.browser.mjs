@@ -788,6 +788,11 @@ try{
   await picker.click();await page.getByRole('group',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByRole('button',{name:'Page de contrôle B',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.page-frame iframe')?.getAttribute('srcdoc')?.includes('Page B'));
   await new Promise(resolve=>setTimeout(resolve,750));assert.ok(await panel.locator('.page-frame iframe').getAttribute('srcdoc').then(value=>value.includes('Page B')&&!value.includes('Page A')));
+  await panel.frameLocator('iframe').getByRole('heading',{name:'Page B',exact:true}).click();
+  await panel.locator('.atelier-selection').getByText('Page B',{exact:true}).waitFor();
+  assert.equal(await panel.getByRole('button',{name:'Modifier la sélection',exact:true}).count(),1);
+  await panel.getByRole('button',{name:'Effacer la sélection'}).click();
+  await picker.click();await page.getByRole('textbox',{name:'Rechercher un contenu',exact:true}).fill('Code de la page');assert.equal(await page.getByRole('group',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByRole('button').count(),1);await page.keyboard.press('Escape');
   await picker.click();await page.getByRole('group',{name:'Choisir le contenu de l’espace de travail',exact:true}).getByRole('button',{name:'Code de la page',exact:true}).click();assert.ok((await panel.locator('.atelier-source code').innerText()).includes('<h1>Page B</h1>'));
   assert.ok(await panel.locator('.atelier-source pre').evaluate(e=>e.scrollWidth<=e.clientWidth));
   await capture({path:path.join(output,'atelier-source-desktop.png'),fullPage:true});

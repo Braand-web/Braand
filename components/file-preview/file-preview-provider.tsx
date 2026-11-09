@@ -7,6 +7,8 @@ import type { PreviewFile, PreviewScope } from "./types";
 
 type OpenPreviewOptions = { contextFileIds?: string[] };
 type PreviewContextValue = {
+  resetPreview: () => void;
+  registerPreviewPanel: (handler: (fileId: string) => void) => () => void;
   openPreview: (fileId: string, options?: OpenPreviewOptions) => void;
   registerAddToConversation: (handler: (file: PreviewFile) => void) => () => void;
   getSignedUrl: (fileId: string, scope: PreviewScope) => Promise<string>;
@@ -31,7 +33,13 @@ export function useFilePreview() {
 }
 
 export function FilePreviewProvider({ children }: { children: ReactNode }) {
+  const [panelHandler, setPanelHandler] = useState<((fileId: string) => void) | null>(null);
+  const registerPreviewPanel = useCallback((handler: (fileId: string) => void) => {
+    setPanelHandler(() => handler);
+    return () => setPanelHandler((current: ((fileId: string) => void) | null) => current === handler ? null : current);
+  }, []);
   const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => { if (activeId) panelHandler?.(activeId); }, [activeId, panelHandler]);
   const [contextFileIds, setContextFileIds] = useState<string[]>([]);
   const [metadataResult, setMetadataResult] = useState<{ id: string; file: PreviewFile | null } | null>(null);
   const addHandler = useRef<((file: PreviewFile) => void) | null>(null);
@@ -49,6 +57,7 @@ export function FilePreviewProvider({ children }: { children: ReactNode }) {
     if (!id) delete state.braandFilePreview;
     history[mode === "push" ? "pushState" : "replaceState"](state, "", url);
   }, []);
+  const resetPreview=useCallback(()=>{setActiveId(null);setMetadataResult(null);setContextFileIds([]);fileCache.current.clear();updateUrl(null,'replace');},[updateUrl]);
 
   const openPreview = useCallback((fileId: string, options: OpenPreviewOptions = {}) => {
     if (!fileId) return;
@@ -138,6 +147,6 @@ export function FilePreviewProvider({ children }: { children: ReactNode }) {
     updateUrl(nextId, "replace");
   }, [activeId, contextFileIds, updateUrl]);
 
-  const value = useMemo(() => ({ openPreview, registerAddToConversation, getSignedUrl, fetchContent, closePreview, addToConversation, file, loading, unavailable, contextFileIds, contextIndex, activeId, goToFile }), [openPreview, registerAddToConversation, getSignedUrl, fetchContent, closePreview, addToConversation, file, loading, unavailable, contextFileIds, contextIndex, activeId, goToFile]);
-  return <PreviewContext.Provider value={value}>{children}<FilePreviewDialog/></PreviewContext.Provider>;
+  const value = useMemo(() => ({ resetPreview, registerPreviewPanel, openPreview, registerAddToConversation, getSignedUrl, fetchContent, closePreview, addToConversation, file, loading, unavailable, contextFileIds, contextIndex, activeId, goToFile }), [resetPreview, registerPreviewPanel, openPreview, registerAddToConversation, getSignedUrl, fetchContent, closePreview, addToConversation, file, loading, unavailable, contextFileIds, contextIndex, activeId, goToFile]);
+  return <PreviewContext.Provider value={value}>{children}{!panelHandler&&<FilePreviewDialog/>}</PreviewContext.Provider>;
 }

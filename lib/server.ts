@@ -57,7 +57,7 @@ export async function list(tenant:string,kind?:string){
  const result=await db().prepare(query).bind(...(kind?[tenant,kind]:[tenant])).all<StoredResource>();const resources=result.results.map(decode);
  const fileIds=resources.filter(resource=>resource.kind==="file").map(resource=>resource.id);if(!fileIds.length)return resources.map(safeResourceDto) as Resource[];
  const placeholders=fileIds.map(()=>"?").join(","),files=await db().prepare(`SELECT * FROM files WHERE workspace_id=? AND id IN (${placeholders})`).bind(tenant,...fileIds).all<FileRecord>(),byId=new Map(files.results.map(file=>[file.id,file]));
- return resources.map(resource=>{const file=resource.kind==="file"?byId.get(resource.id):undefined;if(!file)return safeResourceDto(resource) as Resource;const safe=safeFileDto(file);return {...resource,title:safe.name,status:file.status,data:{mime:safe.mime,size:safe.size,thumbnailAvailable:!!file.thumbnail_key}};});
+ return resources.map(resource=>{const file=resource.kind==="file"?byId.get(resource.id):undefined;if(!file)return safeResourceDto(resource) as Resource;const safe=safeFileDto(file);return {...resource,title:safe.name,status:file.status,data:{projectId:typeof resource.data.projectId==='string'?resource.data.projectId:null,mime:safe.mime,size:safe.size,thumbnailAvailable:!!file.thumbnail_key}};});
 }
 export function decode(row:StoredResource):Resource{const data:unknown=JSON.parse(row.data||"{}");if(!data||typeof data!=="object"||Array.isArray(data))throw new AppError("Données de l’élément invalides.",500,"resource_data_invalid");return {...row,data:data as Record<string,unknown>};}
 export async function getResource(tenant:string,id:string){
@@ -66,7 +66,7 @@ export async function getResource(tenant:string,id:string){
 export async function getClientResource(tenant:string,id:string){
  const resource=await getResource(tenant,id);if(resource.kind!=="file")return safeResourceDto(resource);
  const file=await db().prepare("SELECT * FROM files WHERE id=? AND workspace_id=?").bind(id,tenant).first<FileRecord>();if(!file)return safeResourceDto(resource);
- const safe=safeFileDto(file);return {...resource,title:safe.name,status:file.status,data:{mime:safe.mime,size:safe.size,thumbnailAvailable:!!file.thumbnail_key}};
+ const safe=safeFileDto(file);return {...resource,title:safe.name,status:file.status,data:{projectId:typeof resource.data.projectId==='string'?resource.data.projectId:null,mime:safe.mime,size:safe.size,thumbnailAvailable:!!file.thumbnail_key}};
 }
 export async function getFile(tenant:string,id:string){
  const row=await db().prepare("SELECT * FROM files WHERE id=? AND workspace_id=? AND status!='deleted'").bind(id,tenant).first<FileRecord>();

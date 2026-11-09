@@ -1,0 +1,20 @@
+.work-panel .panel-body{position:relative;min-width:0}
+.atelier-content-status{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;color:var(--color-text-muted);font-size:12px}
+.atelier-content-status details{min-width:0}.atelier-content-status summary{cursor:pointer}.atelier-content-status p{margin:6px 0}
+.atelier-edit-bar{position:sticky;bottom:0;padding:12px 20px;background:var(--color-surface);border-top:1px solid var(--color-border);display:flex;flex-direction:column;align-items:flex-start;gap:8px;z-index:2}
+.atelier-selection{display:flex;align-items:flex-start;gap:10px;width:100%;font-size:12px;color:var(--color-text-muted)}
+.atelier-selection p{margin:0;white-space:pre-wrap;max-height:80px;overflow:auto;flex:1;overflow-wrap:anywhere}
+.atelier-preview-help{font-size:12px;color:var(--color-text-muted);padding-inline:20px}
+.file-preview-embedded{display:flex;flex-direction:column;min-height:360px;height:calc(100dvh - 210px);width:100%;min-width:0;background:var(--color-surface);color:var(--color-text)}
+.file-preview-embedded .file-preview-toolbar{flex-wrap:wrap;padding:12px;gap:10px}
+.file-preview-embedded .file-preview-identity{min-width:0;flex:1}.file-preview-embedded .file-preview-identity strong{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.file-preview-embedded .file-preview-actions{flex-wrap:wrap;justify-content:flex-start}
+.file-preview-embedded .file-preview-stage{min-height:240px}.file-preview-embedded .file-preview-footer{padding:12px;flex-wrap:wrap}
+.workspace-menu-search{display:block;box-sizing:border-box;width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--color-text);font:inherit;margin-bottom:6px}
+.work-panel .panel-resize{touch-action:none}
+.work-panel .atelier-window-actions{flex-shrink:0}
+.atelier-application iframe{width:100%;height:70dvh;border:0;background:var(--color-surface)}
+.atelier-version-comparison{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:16px}
+.atelier-version-comparison pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:420px;overflow:auto}
+.browser-settings-link{margin:8px 0;border:0;background:transparent;color:var(--color-text-muted);font:inherit;cursor:pointer;text-decoration:underline}
+@media(max-width:767px){.file-preview-embedded{height:calc(100dvh - 180px)}.atelier-edit-bar{padding:12px}.atelier-selection .icon-button{min-height:44px;min-width:44px}}

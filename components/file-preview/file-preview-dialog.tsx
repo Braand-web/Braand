@@ -27,9 +27,10 @@ function useKeyedState<T>(key: string, initial: T): [T, Dispatch<SetStateAction<
   return [value, update];
 }
 
-export function FilePreviewDialog() {
+export function FilePreviewDialog({embedded=false}: {embedded?:boolean}) {
   const { activeId, file, loading, unavailable, contextFileIds, contextIndex, goToFile, closePreview, addToConversation, getSignedUrl, fetchContent } = useFilePreview();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const viewerRoot = useRef<HTMLDivElement>(null);
   const focusReturn = useRef<HTMLElement | null>(null);
   const mediaRef = useRef<HTMLAudioElement | HTMLVideoElement>(null);
   const pendingMediaPosition = useRef<{ time: number; playing: boolean } | null>(null);
@@ -160,6 +161,7 @@ export function FilePreviewDialog() {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      if (embedded && target instanceof Node && !viewerRoot.current?.contains(target)) return;
       if (event.key === "ArrowLeft" && contextIndex > 0) { event.preventDefault(); goToFile(contextIndex - 1); }
       if (event.key === "ArrowRight" && contextIndex < contextFileIds.length - 1) { event.preventDefault(); goToFile(contextIndex + 1); }
       if ((event.key === "+" || event.key === "=") && (kind === "image" || kind === "pdf")) setZoom(value => Math.min(3, value + 0.25));
@@ -168,7 +170,7 @@ export function FilePreviewDialog() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [contextFileIds.length, contextIndex, goToFile, isOpen, kind, setZoom]);
+  }, [contextFileIds.length, contextIndex, goToFile, isOpen, kind, setZoom, embedded]);
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     swipeStart.current = { x: event.clientX, y: event.clientY, touch: event.pointerType === "touch" };
@@ -183,8 +185,7 @@ export function FilePreviewDialog() {
     else if (dy > 110 && Math.abs(dy) > Math.abs(dx)) closePreview();
   };
 
-  return <dialog ref={dialogRef} className="file-preview-dialog" aria-label="Aperçu du fichier" onCancel={event => { event.preventDefault(); closePreview(); }} onClick={event => { if (event.target === dialogRef.current) closePreview(); }}>
-    <div className="file-preview-shell" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+  const content=<div ref={viewerRoot} className="file-preview-shell" onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
       <header className="file-preview-toolbar">
         <div className="file-preview-identity">
           <span className="file-preview-mark"><FileText size={17}/></span>
@@ -205,7 +206,7 @@ export function FilePreviewDialog() {
           <button type="button" data-preview-close className="file-preview-icon-button" onClick={closePreview} aria-label="Fermer l’aperçu"><X size={19}/></button>
         </div>
       </header>
-      <main className="file-preview-stage" aria-live="polite">
+      <div className="file-preview-stage" role="region" aria-label="Contenu du fichier" aria-live="polite">
         {(loading || status === "loading" || (file?.status === "ready" && kind === "pdf" && !pageCount)) && <div className="file-preview-state"><LoaderCircle className="spin" size={24}/><p>{loading ? "Ouverture du fichier…" : "Préparation de l’aperçu…"}</p></div>}
         {(!loading && (unavailable || file?.status === "deleted" || file?.status === "rejected")) && <div className="file-preview-state"><AlertCircle size={26}/><h2>{file?.status === "deleted" ? "Fichier supprimé" : "Fichier indisponible"}</h2><p>Ce fichier n’est pas accessible dans cet espace.</p></div>}
         {file?.status === "ready" && !unavailable && status === "error" && <div className="file-preview-state"><AlertCircle size={26}/><h2>Impossible d’ouvrir l’aperçu</h2><p>{errorMessage || "Une erreur est survenue lors du chargement du fichier."}</p><div className="file-preview-state-actions"><button type="button" className="button secondary" onClick={retry}><RotateCcw size={15}/>Réessayer</button><button type="button" className="button primary" onClick={() => void download()}><ArrowDownToLine size={15}/>Télécharger</button></div></div>}
@@ -222,11 +223,11 @@ export function FilePreviewDialog() {
         {file?.status === "ready" && !unavailable && status === "ready" && kind === "audio" && contentUrl && <div className="file-preview-media"><div className="file-preview-media-inner"><FileText size={36}/><h2>{file.name}</h2><p>{formatFileSize(file.size)}</p><audio ref={mediaRef as React.RefObject<HTMLAudioElement>} controls src={contentUrl} onLoadedMetadata={handleMediaLoaded} onError={() => void refreshMedia()} aria-label={`Lecture audio : ${file.name}`}/></div></div>}
         {file?.status === "ready" && !unavailable && status === "ready" && kind === "video" && contentUrl && <div className="file-preview-media"><video ref={mediaRef as React.RefObject<HTMLVideoElement>} controls playsInline src={contentUrl} onLoadedMetadata={handleMediaLoaded} onError={() => void refreshMedia()} aria-label={`Lecture vidéo : ${file.name}`}/></div>}
         {file?.status === "ready" && !unavailable && kind === "unsupported" && <div className="file-preview-state"><FileText size={26}/><h2>Aperçu non disponible</h2><p>Ce format ne peut pas être affiché ici. Vous pouvez télécharger le fichier.</p><button type="button" className="button primary" onClick={() => void download()}><ArrowDownToLine size={15}/>Télécharger</button></div>}
-      </main>
+      </div>
       <footer className="file-preview-footer">
         <span>{file?.status === "ready" && kind === "text" ? "Texte affiché en lecture seule." : kind === "pdf" ? "Les numéros correspondent aux pages physiques du PDF." : kind === "docx" || kind === "xlsx" || kind === "pptx" ? "Document Office affiché en lecture seule." : ""}</span>
         {file?.status === "ready" && !unavailable && <button type="button" className="file-preview-add" onClick={addToConversation}>Ajouter à la conversation</button>}
       </footer>
-    </div>
-  </dialog>;
+    </div>;
+  return embedded ? <section className="file-preview-embedded" aria-label="Aperçu du fichier">{content}</section> : <dialog ref={dialogRef} className="file-preview-dialog" aria-label="Aperçu du fichier" onCancel={event => { event.preventDefault(); closePreview(); }} onClick={event => { if (event.target === dialogRef.current) closePreview(); }}>{content}</dialog>;
 }
