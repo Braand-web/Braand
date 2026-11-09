@@ -112,6 +112,8 @@ try {
     assert.equal((await tick.POST(req('POST',undefined,'Bearer '+env.SCHEDULER_SECRET))).status,200);
     assert.equal(calls.length,0);
   });
+  // Isolate later delivery tests from clock-dependent scheduler notifications.
+  source.sql.exec('DELETE FROM notification_outbox');
   await check('A claimed job executes once despite repeated concurrent ticks',async()=>{
     let executions=0;await Promise.all(Array.from({length:4},()=>ops.runTrackedJob('fixture','fixture:once',async()=>{executions++;})));
     assert.equal(executions,1);assert.equal(source.sql.prepare("SELECT attempts FROM operations_jobs WHERE id='fixture:once'").get().attempts,1);
