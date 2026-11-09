@@ -28,7 +28,7 @@ const conversation={id:'conversation-fixture',workspace_id:'fixture',kind:'conve
 const sources=[{id:'source-real',title:'Rapport de test',domain:'example.org',url:'https://example.org/report'},{id:'source-unsafe',title:'<script>source non exécutable</script>',domain:'Document joint',url:'javascript:alert(1)'}];
 const history=[];const votes=new Map();
 const workspaceResources=[proposal,conversation],workspaceMutations=[];let decisionsAsked=false;
-let failSkills=false,browserWrites=0,anonymousSession=false,authSends=0;
+let failSkills=false,browserWrites=0,anonymousSession=false,workspaceUnavailable=false,authSends=0;
 let lastUi=null;let approvals=0,polls=0,chatCalls=0,stops=0,imageRequests=0,feedbackCalls=0,failFeedback=false;
 const firstChatHeaders=Promise.withResolvers();
 const backgroundCompletion=Promise.withResolvers();
@@ -69,7 +69,7 @@ if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JS
     const created={id:'fixture-imported-skill',workspace_id:'fixture',kind:body.kind,title:body.title,status:'candidate',version:1,created_at:now,updated_at:now,data:body.data};workspaceResources.push(created);json(res,created);return;
   }
   if(url.pathname==='/api/feedback/summary'){json(res,{enabled:true,team:false,newSinceVisit:2,unreadNotifications:0});return;}
-  if(url.pathname==='/api/workspace'){workspaceReads++;if(anonymousSession){json(res,{error:'Sign in required'},401);return;}json(res,{role:workspaceRole,user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:walletAvailable+walletReserved,reserved:walletReserved},resources:workspaceResources,catalog:[{id:'fixture-image',kind:'image'}],capabilities:{model:true,modelReady:true,filePreview:false,metaConnected:analyticsConnected}});return;}
+  if(url.pathname==='/api/workspace'){workspaceReads++;if(workspaceUnavailable){json(res,{error:'Connexion temporairement indisponible.',code:'authentication_unavailable'},503);return;}if(anonymousSession){json(res,{error:'Sign in required'},401);return;}json(res,{role:workspaceRole,user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:walletAvailable+walletReserved,reserved:walletReserved},resources:workspaceResources,catalog:[{id:'fixture-image',kind:'image'}],capabilities:{model:true,modelReady:true,filePreview:false,metaConnected:analyticsConnected}});return;}
   const campaignIndex=workspaceResources.findIndex(resource=>resource.kind==='campaign'&&url.pathname==='/api/resources/'+resource.id);
   if(campaignIndex>=0){
     if(req.method==='GET'){json(res,workspaceResources[campaignIndex]);return;}
@@ -837,6 +837,23 @@ try{
   assert.ok(await alignedHeader());await capture({path:path.join(output,'essential-touch-mobile.png'),fullPage:true});
   await page.locator('.nav-scrim').click({position:{x:380,y:100}});await page.waitForFunction(()=>getComputedStyle(document.querySelector('.sidebar')).visibility==='hidden');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  workspaceUnavailable=true;await page.setViewportSize({width:1280,height:800});await page.goto(origin);
+  const outage=page.locator('.session-unavailable');await outage.waitFor();
+  assert.equal(await page.locator('.app-shell').count(),1);assert.equal(await page.getByRole('button',{name:'Se connecter à Braand',exact:true}).count(),0);
+  assert.equal(await page.locator('.account-credit-row > small').innerText(),'Réessayer la connexion');
+  await composer.fill('Brouillon conservé pendant la panne');await composer.press('Enter');
+  assert.equal(chatCalls,callsBeforeLayout);assert.equal(await page.getByRole('button',{name:'Envoyer la demande',exact:true}).isDisabled(),true);
+  await page.waitForTimeout(900);await page.reload();await outage.waitFor();await page.waitForFunction(()=>document.querySelector('textarea')?.value==='Brouillon conservé pendant la panne');
+  const readsBeforeRetry=workspaceReads;await outage.getByRole('button',{name:'Réessayer',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.session-unavailable button')?.disabled);assert.equal(workspaceReads,readsBeforeRetry+1);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await capture({path:path.join(output,'session-unavailable-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1280,height:800});workspaceUnavailable=false;
+  await outage.getByRole('button',{name:'Réessayer',exact:true}).focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>!document.querySelector('.session-unavailable'));await page.waitForFunction(credits=>document.querySelector('.account-credit-row > small')?.textContent===credits+' disponibles',walletAvailable);
+  assert.equal(await composer.inputValue(),'Brouillon conservé pendant la panne');assert.equal(chatCalls,callsBeforeLayout);
+  assert.equal(await page.getByRole('button',{name:'Envoyer la demande',exact:true}).isEnabled(),true);
+  checks.push('Storage outage keeps the real shell usable, blocks sending without pretending the user is signed out, persists the draft across reload and recovers by keyboard retry on desktop and mobile');
   anonymousSession=true;await page.setViewportSize({width:1280,height:800});await page.goto(origin);const signIn=page.getByRole('button',{name:'Se connecter à Braand',exact:true});await signIn.waitFor();
   assert.equal(await signIn.getAttribute('aria-haspopup'),'dialog');assert.equal(await signIn.locator('.account-chevron').count(),0);assert.equal(await signIn.locator('strong').innerText(),'Se connecter');
   assert.equal(await page.locator('.sidebar-projects h2').count(),0);await page.getByRole('button',{name:'Ajouter un projet',exact:true}).click();

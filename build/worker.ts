@@ -5,7 +5,7 @@ import handler from "vinext/server/fetch-handler";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import { raiseOperationalAlert } from "../lib/operations";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
-import {authenticateRequest, cleanupAuth, handleAuth} from "../lib/auth-runtime";
+import {authenticateRequest, cleanupAuth, handleAuth, identityFreeHeaders} from "../lib/auth-runtime";
 import {secureResponse} from '../lib/response-security.mjs';
 import sitesGateway from "../services/sites/handler.mjs";
 import {recordTraffic} from "../lib/traffic";
@@ -94,9 +94,17 @@ export default {
     }
     const measured = request;
     // The local-only Vite middleware strips supplied headers before adding its fixture.
-    // Production always reconstructs identity from a private, revocable D1 session.
+    // The root is a public client shell, with no private server data. Its assets
+    // must load even when session storage is down, without reading D1 per chunk.
+    // API/auth requests still reconstruct identity from the revocable D1 session.
+    const path = new URL(request.url).pathname;
+    const publicShell = (request.method === "GET" || request.method === "HEAD") && (
+      path === "/" || /^\/(?:_next\/static|brand|fonts|onboarding)\//.test(path) ||
+      ["/auth.css", "/favicon.ico", "/favicon.svg", "/file.svg", "/globe.svg", "/window.svg"].includes(path)
+    );
     let sessionCookie: string | null = null;
-    if (!import.meta.env.DEV) {
+    if (!import.meta.env.DEV && publicShell) request = new Request(request, {headers: identityFreeHeaders(request.headers)});
+    else if (!import.meta.env.DEV) {
       try {
         const authResponse = await handleAuth(request, env);
         if (authResponse) return secureResponse(authResponse,request);

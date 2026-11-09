@@ -100,11 +100,17 @@ export async function sessionIdentity(headers: Headers, env: AuthEnv, now = Date
   return row ? {userId:row.id, email:row.email, displayName:row.email, fullName:null} : null;
 }
 export async function authenticatedRequest(request: Request, env: AuthEnv) {return (await authenticateRequest(request, env)).request;}
+// Public UI documents and static assets carry no authenticated identity. Reuse
+// the same stripping at both boundaries so supplied headers never become trusted.
+export function identityFreeHeaders(input: Headers): Headers {
+  const headers = new Headers(input);
+  for (const name of [...headers.keys()]) if (name.startsWith('oai-authenticated-user-') || name.startsWith('x-braand-identity-')) headers.delete(name);
+  return headers;
+}
 // Rebuilds identity from the private session and, for an active user, extends
 // the session once a day (atomic, capped at 90 days). Returns the cookie to set.
 export async function authenticateRequest(request: Request, env: AuthEnv, now = Date.now()): Promise<{request: Request; setCookie: string | null}> {
-  const headers = new Headers(request.headers);
-  for (const name of [...headers.keys()]) if (name.startsWith('oai-authenticated-user-') || name.startsWith('x-braand-identity-')) headers.delete(name);
+  const headers = identityFreeHeaders(request.headers);
   const user = await sessionIdentity(headers, env, now);
   let renewal: string | null = null;
   if (user) {

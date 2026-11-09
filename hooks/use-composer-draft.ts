@@ -78,11 +78,15 @@ export function useComposerDraft({ userId, workspaceId, context, content, onRest
                 setState('error');
                 return;
             }
-            const guest = authenticated && !migratedGuest.current && context === 'new' && guestKey ? local(guestKey) : null, memory=current.current.hasLocalState?{content:current.current.content,attachments:current.current.attachments,version:0,updatedAt:Date.now()}:null,cached = memory || local(key) || guest;
+            const guest = authenticated && !migratedGuest.current && context === 'new' && guestKey ? local(guestKey) : null, memory=current.current.hasLocalState?{content:current.current.content,attachments:current.current.attachments,version:0,updatedAt:Date.now()}:null,stored=local(key);
+            // Reconnection must not replace text written during an outage with
+            // an older account draft. Only the current tab's guest draft may
+            // migrate, and only to a new discussion in the verified account.
+            const cached = memory || (guest && (!stored || guest.updatedAt > stored.updatedAt) ? guest : stored);
             setState('loading');
             current.current.onRestore(cached?.content || '');
             current.current.onRestoreAttachments?.(cached?.attachments || []);
-            if (guest && guestKey) {
+            if (guest && guestKey && persist(key, cached?.content || '', cached?.attachments || [])) {
                 migratedGuest.current = true;
                 try {
                     localStorage.removeItem(guestKey);

@@ -11,6 +11,9 @@ html[data-design-system="muse"] :is(.sidebar-nav-item,.sidebar-project,.recent-c
 html[data-design-system="muse"] :is(.account-menu,.workspace-menu-list,.mode-menu){animation:calm-menu-in 120ms ease-out}
 html[data-design-system="muse"] :is(.view-content,.work-panel){animation:calm-content-in 140ms ease-out}
 html[data-design-system="muse"] .welcome-inner{padding-bottom:24px}
+html[data-design-system="muse"] .session-unavailable{align-items:center;flex-wrap:wrap;border-color:var(--color-border-strong);font-size:var(--text-xs)}
+html[data-design-system="muse"] .session-unavailable>span{min-width:160px}
+html[data-design-system="muse"] .session-unavailable>.button{min-height:44px;flex-shrink:0}
 @keyframes calm-menu-in{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
 @keyframes calm-content-in{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){
