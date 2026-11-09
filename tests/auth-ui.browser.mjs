@@ -71,7 +71,7 @@ try {
  await page.getByRole('button',{name:'Réessayer',exact:true}).click();await google().waitFor();check('Session preparation errors remain recoverable');
  assert.equal(await page.locator('input[type=email],input[type=password]').count(),0);assert.equal(await page.getByText('Créer un compte',{exact:true}).count(),0);check('No e-mail or password form is offered');
  const colors=await page.locator('.google-icon path').evaluateAll(paths=>paths.map(p=>p.getAttribute('fill')));assert.deepEqual(colors.sort(),['#34A853','#4285F4','#EA4335','#FBBC05']);check('The Google button shows the four-colour Google mark');
- await page.getByText('Gardons vos idées ensemble.').waitFor();
+ await page.getByText('Connectez-vous ou créez votre compte.').waitFor();
  assert.equal(await page.locator('main').evaluate(el=>el.scrollWidth<=el.clientWidth),true);await page.screenshot({path:path.join(output,'desktop.png')});
  await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth<=window.innerWidth),true);
  for(let i=0;i<8&&!await google().evaluate(el=>el===document.activeElement);i++)await page.keyboard.press('Tab');assert.equal(await google().evaluate(el=>getComputedStyle(el).outlineStyle),'solid');await page.screenshot({path:path.join(output,'mobile.png')});check('Mobile layout has no overflow and keyboard focus is visible');
@@ -81,7 +81,7 @@ try {
  const lot=sql.prepare("SELECT * FROM credit_lots WHERE source='free'").get();assert.equal(lot.balance,1500);assert.equal(lot.expires_at-lot.starts_at,7*86400000);check('The new account automatically receives one 15-credit grant with a seven-day lifetime');
  await page.evaluate(()=>{const form=document.createElement('form');form.method='post';form.action='/auth/sign-out';const input=document.createElement('input');input.name='confirm';input.value='yes';form.append(input);document.body.append(form);form.submit();});await page.getByRole('heading',{name:'Espace Braand'}).waitFor();
  assert.equal(await auth.sessionIdentity(new Headers({cookie:session.name+'='+session.value}),env),null);check('Logout revokes the stored session');
- await page.goto(env.APP_ORIGIN+'/auth/sign-in');await page.getByText('Bon retour sur Braand.').waitFor();
+ await page.goto(env.APP_ORIGIN+'/auth/sign-in');await page.getByText('Retrouvez votre espace.').waitFor();
  await google().click();await page.waitForURL(url=>new URL(url).searchParams.get('accueil')==='retour');
  assert.equal(sql.prepare('SELECT count(*) n FROM auth_users').get().n,1);assert.equal(sql.prepare('SELECT count(*) n FROM credit_lots').get().n,1);check('A returning user is greeted, recognized and keeps the same account');
  assert.deepEqual(errors,[]);assert.deepEqual(requestFailures,[]);assert.equal(providerCalls,2);check('No client errors and only the simulated Google exchanges');

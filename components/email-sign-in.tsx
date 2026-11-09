@@ -47,8 +47,7 @@ export function SignIn({returnTo}: {returnTo?: string}) {
 
  return <div className="auth-content" aria-busy={!form && !error || leaving}>
   <span className="brand-mark" aria-hidden="true"><BrandMark/></span>
-  <h3>{known ? "Bon retour sur Braand." : "Gardons vos idées ensemble."}</h3>
-  <p>{known ? "Continuez avec votre compte Google pour retrouver votre espace." : "Un seul clic avec Google : nous retrouvons votre espace s’il existe, sinon nous le créons pour vous."}</p>
+  <p>{known ? "Retrouvez votre espace." : "Connectez-vous ou créez votre compte."}</p>
   {form && !unavailable && <a className="button secondary auth-google" href={href} aria-disabled={leaving} onClick={event => {if (leaving) {event.preventDefault(); return;} setLeaving(true);}}>
    {leaving ? <LoaderCircle size={18} className="spin" aria-hidden="true"/> : <GoogleIcon/>}
    <span>{leaving ? "Ouverture de Google…" : "Continuer avec Google"}</span>
@@ -57,7 +56,6 @@ export function SignIn({returnTo}: {returnTo?: string}) {
   {error && <p className="auth-error" role="alert">{error}</p>}
   {!form && !error && <span role="status" className="sr-only">Vérification de votre session…</span>}
   {(error || unavailable) && <button type="button" className="button secondary" onClick={() => {setError(""); setForm(null); setRevision(value => value + 1);}}>Réessayer</button>}
-  <span className="fine-print">Nouveau sur Braand ? Votre compte est créé automatiquement à la première connexion. Vous revenez à la page ouverte, brouillon compris.</span>
  </div>;
 }
 

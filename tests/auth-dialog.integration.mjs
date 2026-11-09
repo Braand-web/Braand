@@ -32,6 +32,6 @@ const signedIn=ui.settings({...base,sessionState:'authenticated',user:{id:'curre
 assert.match(signedIn,/Current account/);assert.match(signedIn,/Se déconnecter/);assert.doesNotMatch(signedIn,/Connectez-vous pour retrouver/);
 for(const tab of ['help','legal']) assert.doesNotMatch(ui.settings({...base,tab,sessionState:'loading'}),/Vérification de votre session/);
 const form=ui.login();
-assert.match(form,/Vérification de votre session/);assert.match(form,/Gardons vos idées ensemble\./);assert.match(form,/créé automatiquement/);
+assert.match(form,/Vérification de votre session/);assert.match(form,/Connectez-vous ou créez votre compte\./);
 assert.doesNotMatch(form,/type="email"|type="password"|Mot de passe|Créer un compte|Recevoir un lien/);
 console.log('PASS: unresolved sessions never masquerade as signed-out accounts; sign-in is Google only and waits for its secure browser binding.');
