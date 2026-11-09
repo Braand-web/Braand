@@ -68,6 +68,7 @@ if(failSkills){res.writeHead(503,{'content-type':'application/json'});res.end(JS
     const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks).toString());workspaceMutations.push(body);
     const created={id:'fixture-imported-skill',workspace_id:'fixture',kind:body.kind,title:body.title,status:'candidate',version:1,created_at:now,updated_at:now,data:body.data};workspaceResources.push(created);json(res,created);return;
   }
+  if(url.pathname==='/api/feedback/summary'){json(res,{enabled:true,team:false,newSinceVisit:2,unreadNotifications:0});return;}
   if(url.pathname==='/api/workspace'){workspaceReads++;if(anonymousSession){json(res,{error:'Sign in required'},401);return;}json(res,{role:workspaceRole,user:{id:'fixture-user',name:'Compte de test',email:'fixture@example.test'},workspace:{id:'fixture',name:'Espace de test',credits:walletAvailable+walletReserved,reserved:walletReserved},resources:workspaceResources,catalog:[{id:'fixture-image',kind:'image'}],capabilities:{model:true,modelReady:true,filePreview:false,metaConnected:analyticsConnected}});return;}
   const campaignIndex=workspaceResources.findIndex(resource=>resource.kind==='campaign'&&url.pathname==='/api/resources/'+resource.id);
   if(campaignIndex>=0){
@@ -772,6 +773,10 @@ try{
   await page.getByRole('button',{name:'Replier la navigation',exact:true}).click();
   const collapsedActivity=primary.getByRole('button',{name:'Activité',exact:true});await collapsedActivity.waitFor();const activityBounds=await collapsedActivity.boundingBox();assert.ok(activityBounds.x>=0&&activityBounds.x+activityBounds.width<=1280);
   await page.getByRole('button',{name:'Déployer la navigation',exact:true}).click();await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===248);await capture({path:path.join(output,'essential-sidebar-desktop.png'),fullPage:true});
+  assert.equal(await primary.getByRole('button',{name:'Suggestions',exact:true}).count(),0);
+  assert.ok(await primary.locator('.recent-chat-section[aria-label] .recent-chat').count()<=3);
+  const projectDisclosure=primary.locator('.sidebar-project-disclosure');assert.equal(await projectDisclosure.getAttribute('open'),null);await projectDisclosure.locator('summary').click();assert.equal(await primary.getByRole('button',{name:'Ouvrir le projet Un projet réel de la fixture',exact:true}).isVisible(),true);await projectDisclosure.locator('summary').click();
+  await page.locator('.account-trigger').click();await page.getByRole('menuitem',{name:/Suggestions/}).waitFor();await page.keyboard.press('Escape');
   checks.push('Conversation-first navigation keeps Chat, Bibliothèque and Activité; every former tab stays one section switch or one ⌘K shortcut away; Connecteurs stays in settings');
   await page.getByRole('button',{name:'Ouvrir l’espace de travail',exact:true}).click();
   const panel=page.getByRole('complementary',{name:'Espace de travail',exact:true});
@@ -822,7 +827,7 @@ try{
   await page.getByRole('button',{name:'Déployer la navigation',exact:true}).click();await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar').getBoundingClientRect().width)===248);
   await composer.fill('Je voudrais créer un visuel pour mon produit.');assert.ok(await alignedHeader());
   assert.ok(await page.locator('.welcome').evaluate(element=>element.scrollHeight<=element.clientHeight+1));
-  assert.ok(await page.locator('.home-footer').evaluate(element=>element.getBoundingClientRect().bottom<=innerHeight+1));
+  assert.equal(await page.locator('.home-footer').count(),0);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await capture({path:path.join(output,'essential-aligned-tablet.png'),fullPage:true});
   await page.setViewportSize({width:1280,height:800});assert.equal(await page.locator('.app-shell.sidebar-collapsed').count(),0);

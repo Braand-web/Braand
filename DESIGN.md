@@ -1,5 +1,7 @@
 # Direction
 
+L’accueil conserve le compagnon, le titre et la saisie avec un texte indicatif stable. Le slogan et le raccourci connecteurs du pied de page sont retirés. La navigation principale présente Chat, Bibliothèque et Activité. Suggestions est accessible dans le menu du compte quand le service est ouvert. Les projets sont repliables, avec le projet actif en premier, et trois discussions au total sont visibles avant Tout voir, en donnant priorité aux épingles. Les transitions de couleur durent 140 ms et les ouvertures de menus 120 ms. Les préférences de réduction du mouvement s’appliquent aussi au défilement de la conversation.
+
 Identité Braand Relais, approuvée le 30 octobre 2026, sur le design system existant. Surface de travail sobre et française ; Manrope conservée et auto-hébergée sous licence OFL, aucune fonte propriétaire importée. Les dimensions et comportements hérités de la référence Muse v3 restent des adaptations sémantiques à Braand.
 
 Palette sémantique dans `app/design-tokens.css` : fond #181819, fenêtre #28292b, surface élevée #323435, couches blanches translucides, texte blanc, action #1793ff avec texte noir, focus bleu. Les petits textes secondaires sont éclaircis pour maintenir leur contraste.
