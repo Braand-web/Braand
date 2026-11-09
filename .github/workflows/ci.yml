@@ -154,15 +154,6 @@ jobs:
           npx --no-install wrangler deploy --config .wrangler/deploy/production-live.json --no-x-provision --keep-vars --message "Verified production ${GITHUB_SHA}"
           curl --fail --silent --show-error https://braand.fun/api/health
           node scripts/check-production-brain.mjs
-      - name: Publish the compatible preview Worker when its source changed
-        env:
-          BRAAND_PRODUCTION_CODE_SANDBOX_INTERNET: 'true'
-          BRAAND_PRODUCTION_CODE_SANDBOX_ENABLED: 'true'
-        run: |
-          if ! git diff --quiet HEAD^ HEAD -- services/code-sandbox/worker.ts; then
-            node services/code-sandbox/prepare-config.mjs production
-            npx --no-install wrangler deploy --config .wrangler/deploy/code-sandbox-production.json --keep-vars
-          fi
       - name: Activate published sites on the Worker's workers.dev address
         if: env.BRAAND_SITES_ORIGIN != ''
         continue-on-error: true

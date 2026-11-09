@@ -3,6 +3,12 @@ name: Activate the code sandbox (GitHub projects and live previews)
 # running it again rotates the shared secrets and redeploys the sandbox image.
 on:
   workflow_dispatch:
+    inputs:
+      refresh_only:
+        description: Publish verified runtime changes while preserving existing secrets
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 jobs:
@@ -25,6 +31,7 @@ jobs:
           node services/code-sandbox/prepare-config.mjs production
           npx --no-install wrangler deploy --config .wrangler/deploy/code-sandbox-production.json --keep-vars
       - name: Share fresh secrets and bind the sandbox to Braand
+        if: ${{ !inputs.refresh_only }}
         run: |
           export CODE_SANDBOX_CALL_TOKEN=$(openssl rand -hex 32)
           export CODE_PREVIEW_SECRET=$(openssl rand -hex 32)
