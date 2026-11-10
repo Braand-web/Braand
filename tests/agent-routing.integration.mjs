@@ -512,6 +512,12 @@ await check('the coding specialist writes, runs, fixes and re-runs code in its i
  }finally{delete fixture.env.CODE_SANDBOX;delete fixture.env.CODE_SANDBOX_ENABLED;delete fixture.env.CODE_SANDBOX_CALL_TOKEN;}
 });
 
+await check('an exact owned workflow read preserves its stored fixture for a targeted revision',async()=>{
+ const execution=await setup(),workflow=await server.createResource(who.tenant,'workflow','Fixture préservée',{ownerId:who.user.userId,projectId:null,steps:[{operation:'select',columns:['value']}],fixture:{input:[{value:1}],expected:[{value:1}]}},'draft');
+ const scope={tenant:who.tenant,userId:who.user.userId,conversationId:execution.conversationId,runId:execution.runId,projectId:null,coveredRowid:0};
+ const read=await agent.executeTool(who.tenant,'get_workspace_resource',{id:workflow.id},undefined,scope);assert.deepEqual(read.resource.data.fixture,workflow.data.fixture);
+ await assert.rejects(()=>agent.executeTool(who.tenant,'get_workspace_resource',{id:workflow.id},undefined,{...scope,userId:'someone-else'}),e=>e.status===404);
+});
 await check('expert advice stays read-only, shares the run budget and is limited to one consultation',async()=>{
  const previous={...fixture.env};
  try{
