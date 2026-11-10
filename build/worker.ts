@@ -1,3 +1,4 @@
+import {ensureContextSearchSchema} from '../lib/agent-context-schema';
 import {ensureModelRates} from "../lib/model-rate-refresh";
 import {ensureFalRates} from '../lib/fal-rate-refresh';
 import {ensureApprovedFalModels} from '../lib/fal-models';
@@ -23,6 +24,7 @@ async function runScheduledTasks(
   ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>,
   cron?: string,
 ) {
+  await ensureContextSearchSchema(env.DB,scheduledTime);
   await ensureModelRates(env);
   await ensureFalRates(env as unknown as Record<string,unknown> & {BUCKET?:R2Bucket});await ensureApprovedFalModels(env as unknown as Record<string,unknown>);
   const secret = env.SCHEDULER_SECRET;

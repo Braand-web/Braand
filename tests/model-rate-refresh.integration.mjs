@@ -71,4 +71,8 @@ try {
  const chosen=backup.routedModel(outage,{task:'conversation'},now);
  assert.equal(chosen.rate.fxSource,'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml');assert.equal(chosen.rate.conversionBasis,'ecb_eur_peg_reference');assert.equal(chosen.rate.usdXaf,Math.round(655.957/1.1212*1.005*10000)/10000);
  console.log('PASS a BEAC outage (HTTP 530) uses the ECB euro-peg reference instead of blocking the assistant');
+ const optional=await import(url+'?optional-expert'),expert={...rates.opus,rate:{...rates.opus.rate,model:'anthropic/claude-fable-5.2',verifiedAt:'1970-01-01T00:00:00Z'}},withExpert={...outage,MODEL_ROUTING_CATALOG_JSON:JSON.stringify({...rates,fable52:expert})};
+ assert.equal((await optional.ensureModelRates(withExpert,now)).status,'available');assert.equal(optional.routedModel(withExpert,{task:'conversation'},now).key,'haiku');
+ assert.throws(()=>optional.routedModel(withExpert,{task:'review',modelKey:'fable52'},now),e=>e.code==='rate_unverified');
+ console.log('PASS missing optional expert metadata blocks only the expert, keeping all core tiers available');
 } finally {globalThis.fetch=originalFetch;console.error=originalError;}

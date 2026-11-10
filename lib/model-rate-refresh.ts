@@ -34,7 +34,9 @@ function overlays(env:Environment, selected:Target[], snapshot:Snapshot, fingerp
  if (snapshot?.version !== 1 || snapshot.fingerprint !== fingerprint || !Number.isFinite(snapshot.checkedAt) || snapshot.checkedAt > now || now - snapshot.checkedAt > MAX_AGE_MS) throw new Error('model_rate_snapshot_expired');
  const entries:Record<string,Entry> = {};
  for (const target of selected) {
-  const saved = snapshot.entries?.[target.key], rate = modelRateSchema.parse(saved?.rate);
+  const saved = snapshot.entries?.[target.key];
+  if(target.key==='fable52'&&!saved)continue; // Optional expert cannot take down the three core tiers.
+  const rate = modelRateSchema.parse(saved?.rate);
   if (rate.model !== target.rate.model || rate.provider !== 'openrouter' || Date.parse(rate.verifiedAt) !== snapshot.checkedAt || !Number.isSafeInteger(saved.maxInputTokens) || saved.maxInputTokens < 1 || saved.maxInputTokens > target.maxInputTokens || !Number.isSafeInteger(saved.maxOutputTokens) || saved.maxOutputTokens < 128 || saved.maxOutputTokens > target.maxOutputTokens) throw new Error('model_rate_snapshot_invalid');
   // Policy fees are owned by Braand and cannot be replaced by cached supplier data.
   if (rate.fundingFeeBps !== target.rate.fundingFeeBps || rate.overheadXaf !== target.rate.overheadXaf || rate.pricingSource !== MODEL_PRICING_URL || !FX_SOURCES.includes(String(rate.fxSource))) throw new Error('model_rate_snapshot_policy_changed');
@@ -86,7 +88,7 @@ export async function ensureModelRates(bindings:object & {BUCKET?:R2Bucket}, now
    const [pricing,fx]=await Promise.all([sourceText(MODEL_PRICING_URL,5000000),fxReference((url:string)=>sourceText(url,2000000),parseBEACReference,now)]);
    const data=object(JSON.parse(pricing)).data;if(!Array.isArray(data))throw new Error('model_rate_catalog_invalid');
    const entries:Record<string,Entry>={};
-   for(const target of selected){const matches=data.filter(value=>object(value).id===target.rate.model);if(matches.length!==1)throw new Error('model_rate_missing');entries[target.key]=refreshOpenRouterRate(matches[0],target.rate,target,fx,now);}
+   for(const target of selected){try{const matches=data.filter(value=>object(value).id===target.rate.model);if(matches.length!==1)throw new Error('model_rate_missing');entries[target.key]=refreshOpenRouterRate(matches[0],target.rate,target,fx,now);}catch(error){if(target.key!=='fable52')throw error;}}
    const snapshot:Snapshot={version:1,fingerprint,checkedAt:now,entries};
    const values=overlays(env,selected,snapshot,fingerprint,now);
    current.snapshot=snapshot;current.values=values;current.retryAt=0;current.reason=undefined;

@@ -1,14 +1,15 @@
 // Adaptive "brain" enabled by default, without extra Worker variables (the
 // Worker is at its 64-variable limit). The catalog is derived from the current
 // OpenRouter tariff: same Braand fees and sources, one entry per level —
-// light Haiku 5.5, standard Sonnet 5.5, advanced Opus 5.5. Sonnet and Opus
+// light Haiku 5.5, standard Sonnet 5.5, advanced Opus 5.5 and an optional
+// read-only Fable 5.2 advisor. Sonnet, Opus and Fable
 // start with an expired verification date, so they can never be billed before
 // the live OpenRouter price refresh confirms their real cost. Explicit
 // MODEL_ROUTING_* variables always win (rollback without code).
 import {modelRateSchema} from './model-protocol';
 
 export const ADAPTIVE_BRAIN_DEFAULT=true;
-const LEVELS={haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5'} as const;
+const LEVELS={haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5',fable52:'anthropic/claude-fable-5.2'} as const;
 const cache=new Map<string,string>();
 
 export function withRoutingDefaults<T extends object>(env:T):T{

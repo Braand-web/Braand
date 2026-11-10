@@ -1,3 +1,4 @@
+import {indexedContextIds} from './context-search';
 import {z} from 'zod';
 import {authorize,db,getResource} from './server';
 import {AppError} from './core.mjs';
@@ -22,9 +23,10 @@ export async function searchProjectContext(tenant:string,scope:ProjectContext,in
  const match=patterns.map(()=>"(lower(title) LIKE ? ESCAPE '\\' OR lower(data) LIKE ? ESCAPE '\\')");
  const score=patterns.map(()=>"(CASE WHEN lower(title) LIKE ? ESCAPE '\\' OR lower(data) LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)").join('+');
  const twice=patterns.flatMap(pattern=>[pattern,pattern]);
- const rows=await db().prepare("SELECT id,title,data,version,updated_at,("+score+") AS hits FROM resources WHERE workspace_id=? AND kind IN ('knowledge','deliverable') AND status!='deleted' AND json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.projectId') IS ? AND ("+match.join(' OR ')+") ORDER BY hits DESC,CASE WHEN status='saved' THEN 0 ELSE 1 END,updated_at DESC LIMIT 8").bind(...twice,tenant,target,...twice).all<{id:string;title:string;data:string;version:number;updated_at:number;hits:number}>();
+ const indexIds=await indexedContextIds(tenant,p.query,target,scope.userId);
+ const rows=indexIds!==null?{results:indexIds.length?(await db().prepare("SELECT id,title,data,version,updated_at,1 AS hits FROM resources WHERE workspace_id=? AND id IN ("+indexIds.map(()=>'?').join(',')+") AND status!='deleted' ORDER BY updated_at DESC LIMIT 8").bind(tenant,...indexIds).all<{id:string;title:string;data:string;version:number;updated_at:number;hits:number}>()).results:[]}:await db().prepare("SELECT id,title,data,version,updated_at,("+score+") AS hits FROM resources WHERE workspace_id=? AND kind IN ('knowledge','deliverable') AND status!='deleted' AND json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.projectId') IS ? AND (json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.userId') IS NULL OR json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END,'$.userId')=?) AND ("+match.join(' OR ')+") ORDER BY hits DESC,CASE WHEN status='saved' THEN 0 ELSE 1 END,updated_at DESC LIMIT 8").bind(...twice,tenant,target,scope.userId,...twice).all<{id:string;title:string;data:string;version:number;updated_at:number;hits:number}>();
  const extractable:{id:string;title:string;version:number;content:string}[]=[];
- const items=rows.results.flatMap(row=>{const data=JSON.parse(row.data) as Record<string,unknown>;const value=cross?data.reusableMethod:data.content;
+ const items=rows.results.flatMap(row=>{const data=JSON.parse(row.data) as Record<string,unknown>;if(resourceProject(data)!==target||(typeof data.userId==='string'&&data.userId!==scope.userId))return [];const value=cross?data.reusableMethod:data.content;
   // A cross-project source without a curated method is never returned as is:
   // the caller extracts reusable principles in a separate bounded step.
   if(cross&&(typeof value!=='string'||!value.trim())){if(typeof data.content==='string'&&data.content.trim())extractable.push({id:row.id,title:row.title,version:row.version,content:data.content.slice(0,12000)});return [];}

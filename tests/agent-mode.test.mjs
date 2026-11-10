@@ -49,3 +49,7 @@ test('native computations and source exports keep the distinction between planni
 });
 
 test('autonomy does not acquire approval, shell or raw connector execution rights',()=>{for(const tool of ['approve','publish_page','execute_code','run_shell','COMPOSIO_MULTI_EXECUTE_TOOL','COMPOSIO_REMOTE_BASH_TOOL'])assert.equal(agentToolAllowedForMode('autonomous',tool),false);});
+test('private profile and subscription drafts stay outside executing missions',()=>{
+ for(const tool of ['save_agent_profile','handoff_task','subscribe_event']){assert.equal(agentToolAllowedForMode('autonomous',tool),true);assert.equal(agentToolAllowedForMode('approved_mission',tool),false);}
+ for(const tool of ['propose_workflow','test_workflow','execute_workflow','consult_expert'])assert.equal(agentToolAllowedForMode('approved_mission',tool),true);
+});

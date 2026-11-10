@@ -52,6 +52,7 @@ jobs:
           BRAAND_PLAYWRIGHT_MODULE: ${{ runner.temp }}/braand-browser/node_modules/playwright/index.mjs
         run: |
           node tests/agent-ui.browser.mjs
+          node tests/agent-operations.browser.mjs
           node tests/atelier-ui.browser.mjs
           node tests/rich-response.browser.mjs
           node tests/auth-ui.browser.mjs
@@ -75,6 +76,7 @@ jobs:
           name: browser-fixture-screenshots
           path: |
             .tmp/agent-ui-browser/*.png
+            .tmp/agent-operations-ui/*.png
             .tmp/auth-ui/*.png
             .tmp/routines-ui/*.png
             .tmp/browser-live-vault-ui/*.png

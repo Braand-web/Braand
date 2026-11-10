@@ -508,4 +508,29 @@ await check('the coding specialist writes, runs, fixes and re-runs code in its i
  }finally{delete fixture.env.CODE_SANDBOX;delete fixture.env.CODE_SANDBOX_ENABLED;delete fixture.env.CODE_SANDBOX_CALL_TOKEN;}
 });
 
+await check('expert advice stays read-only, shares the run budget and is limited to one consultation',async()=>{
+ const previous={...fixture.env};
+ try{
+  const rate={provider:'openrouter',model:'anthropic/claude-fable-5.2',input:1,output:5,cacheWrite:1.25,cacheRead:.1,usdXaf:600,overheadXaf:0,fundingFeeBps:550,verifiedAt:new Date().toISOString()};
+  Object.assign(fixture.env,{MODEL_ROUTING_ENABLED:'true',MODEL_ROUTING_POLICY:'task',OPENROUTER_API_KEY:'fixture-only',MODEL_ROUTING_CATALOG_JSON:JSON.stringify({fable52:{enabled:true,transport:'openrouter',rate,maxInputTokens:90000,maxOutputTokens:8192}})});
+  const execution=await setup(),question={reason:'architecture_decision',question:'Quelle architecture vérifier ici ?',context:'Deux options à comparer, sans action externe.'};
+  const advice=text('Vérifier les contraintes avec un test isolé.').replace('event: message_stop','event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\nevent: message_stop');
+  fixture.responses=[stream([{type:'tool_use',id:'expert-1',name:'consult_expert',input:question},{type:'tool_use',id:'expert-2',name:'consult_expert',input:{...question,context:'Une seconde consultation ne doit pas partir.'}}]),advice,text('Conseil reçu. Exécution encore à vérifier.')];
+  await run(execution);
+  const expertRequests=fixture.requests.filter(r=>r.role==='advisor');assert.equal(expertRequests.length,1);assert.equal(expertRequests[0].budget,execution.budget);assert.equal(expertRequests[0].routing.modelKey,'fable52');assert.equal(expertRequests[0].body.tools,undefined);assert.equal(expertRequests[0].body.max_tokens,2048);
+  assert.equal(fixture.requests.filter(r=>r.role!=='advisor').some(r=>r.routing?.modelKey==='fable52'),false,'expert cannot silently replace the main model');
+  assert.equal(sql.prepare("SELECT COUNT(*) n FROM resources WHERE kind='advisor_report' AND json_extract(data,'$.runId')=?").get(execution.runId).n,1);assert.equal(fixture.external.length,0);
+ }finally{for(const key of Object.keys(fixture.env))delete fixture.env[key];Object.assign(fixture.env,previous);}
+});
+await check('truncated expert output is not persisted as a completed review or automatically retried',async()=>{
+ const previous={...fixture.env};
+ try{
+  const rate={provider:'openrouter',model:'anthropic/claude-fable-5.2',input:1,output:5,cacheWrite:1,cacheRead:.1,usdXaf:600,overheadXaf:0,fundingFeeBps:550,verifiedAt:new Date().toISOString()};
+  Object.assign(fixture.env,{MODEL_ROUTING_ENABLED:'true',MODEL_ROUTING_POLICY:'task',OPENROUTER_API_KEY:'fixture-only',MODEL_ROUTING_CATALOG_JSON:JSON.stringify({fable52:{enabled:true,transport:'openrouter',rate,maxInputTokens:90000,maxOutputTokens:8192}})});
+  const execution=await setup(),partial=text('Réponse incomplète').replace('event: message_stop','event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}\n\nevent: message_stop');
+  fixture.responses=[stream([{type:'tool_use',id:'expert-partial',name:'consult_expert',input:{reason:'validation_failed',question:'Quel échec vérifier maintenant ?',context:'Test en échec.'}}]),partial,text('La consultation est incomplète. Je conserve cette limite.')];
+  await run(execution);assert.equal(fixture.requests.filter(r=>r.role==='advisor').length,1);assert.equal(sql.prepare("SELECT COUNT(*) n FROM resources WHERE kind='advisor_report' AND json_extract(data,'$.runId')=?").get(execution.runId).n,0);
+  assert.ok(fixture.requests.at(-1).body.messages.some(m=>JSON.stringify(m).includes('expert_incomplete')||JSON.stringify(m).includes('Conseil expert incomplet')));
+ }finally{for(const key of Object.keys(fixture.env))delete fixture.env[key];Object.assign(fixture.env,previous);}
+});
 console.log(count+' agent routing integration checks passed; no external model or provider calls.');

@@ -18,13 +18,14 @@ export const REASONING_MODELS={
  solpro:{provider:'openrouter',model:'openai/gpt-6.1-sol-pro'},
  terra:{provider:'openrouter',model:'openai/gpt-6.1-terra'},
  fable:{provider:'openrouter',model:'anthropic/claude-fable-5.1'},
+ fable52:{provider:'openrouter',model:'anthropic/claude-fable-5.2'},
 } as const;
 export type ModelKey=keyof typeof REASONING_MODELS;
 const taskModel:Record<ModelTask,ModelKey>={conversation:'sol',orchestration:'sol',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'astra',review:'opus',coding:'opus',browser:'sonnet',video_motion:'opus'};
 const adaptiveTaskModel:Record<ModelTask,ModelKey>={conversation:'haiku',orchestration:'sonnet',creative:'sonnet',campaigns:'sonnet',extraction:'haiku',analysis:'opus',review:'opus',coding:'opus',browser:'sonnet',video_motion:'opus'};
 const tierModel:Record<ModelTier,ModelKey>={light:'haiku',standard:'sonnet',advanced:'opus'};
-const openRouterModels:Partial<Record<ModelKey,string>>={solpro:'openai/gpt-6.1-sol-pro',terra:'openai/gpt-6.1-terra',fable:'anthropic/claude-fable-5.1',haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5'};
-const routingSchema=z.object({task:z.enum(MODEL_TASKS),modelKey:z.enum(['sol','solpro','terra','fable','haiku','sonnet','astra','opus']).optional(),tier:z.enum(MODEL_TIERS).optional(),escalation:z.object({reason:z.enum(['validation_failed','contradictory_evidence','incomplete_result']),attempt:z.literal(1)}).strict().optional()}).strict();
+const openRouterModels:Partial<Record<ModelKey,string>>={solpro:'openai/gpt-6.1-sol-pro',terra:'openai/gpt-6.1-terra',fable:'anthropic/claude-fable-5.1',fable52:'anthropic/claude-fable-5.2',haiku:'anthropic/claude-haiku-5.5',sonnet:'anthropic/claude-sonnet-5.5',opus:'anthropic/claude-opus-5.5'};
+const routingSchema=z.object({task:z.enum(MODEL_TASKS),modelKey:z.enum(['sol','solpro','terra','fable','fable52','haiku','sonnet','astra','opus']).optional(),tier:z.enum(MODEL_TIERS).optional(),escalation:z.object({reason:z.enum(['validation_failed','contradictory_evidence','incomplete_result']),attempt:z.literal(1)}).strict().optional()}).strict();
 const entrySchema=z.object({enabled:z.literal(true),transport:z.enum(['openai','anthropic','openrouter']).optional(),rate:modelRateSchema,maxInputTokens:z.number().int().min(1).max(100000),maxOutputTokens:z.number().int().min(128).max(32768)}).strict();
 export type RoutedModel={key:ModelKey;provider:'openai'|'anthropic'|'openrouter';model:string;rate:ModelRate;maxInputTokens:number;maxOutputTokens:number;apiKey:string;url:string;headers:Record<string,string>;routing:RoutingRequest};
 export function routingEnabled(env:Record<string,string|undefined>){return env.MODEL_ROUTING_ENABLED==='true';}
@@ -47,7 +48,7 @@ export function routedModel(env:Record<string,string|undefined>,request:RoutingR
  const entries=z.record(z.unknown()).safeParse(catalog),parsed=entrySchema.safeParse(entries.success?entries.data[key]:undefined);
  if(!parsed.success)throw new AppError('Le modèle requis et son tarif doivent être configurés.',503,'rate_unverified');
  const definition=REASONING_MODELS[key],entry=parsed.data,provider=entry.transport||definition.provider,model=provider==='openrouter'?openRouterModels[key]:definition.model;
- if(['solpro','terra','fable'].includes(key)&&provider!=='openrouter')throw new AppError('Ce modèle n’est pas disponible pour le moment.',503,'model_not_configured');
+ if(['solpro','terra','fable','fable52'].includes(key)&&provider!=='openrouter')throw new AppError('Ce modèle n’est pas disponible pour le moment.',503,'model_not_configured');
  if(model)entry.rate=currentPricingRate(model,provider,now)||entry.rate;
  const age=now-Date.parse(entry.rate.verifiedAt);
  if(!model||provider!=='openrouter'&&provider!==definition.provider||entry.rate.model!==model||entry.rate.provider&&entry.rate.provider!==provider||!Number.isFinite(age)||age<0||age>86400000||provider==='openrouter'&&(typeof entry.rate.fundingFeeBps!=='number'||!Number.isFinite(entry.rate.fundingFeeBps)||entry.rate.fundingFeeBps<0||entry.rate.fundingFeeBps>10000))throw new AppError('Le tarif exact du modèle et le taux de change doivent être vérifiés.',503,'rate_unverified');

@@ -1,3 +1,4 @@
+import {indexedContextIds} from './context-search';
 import {memoryVisibilitySql,memoryVisibilityArgs,memoryVisible} from './agent-memory';
 import {db,getResource} from './server';
 import {AppError} from './core.mjs';
@@ -35,9 +36,10 @@ export async function searchConversation(tenant:string,conversationId:string,inp
 export async function searchMemory(tenant:string,input:unknown,projectId:string|null=null,userId=''){
  const p=z.object({query:z.string().max(300).default(''),ids:z.array(z.string().min(1).max(160)).max(8).default([])}).strict().parse(input);
  const pattern='%'+p.query.replace(/[\\%_]/g,'\\$&')+'%';
- const rows=await db().prepare("SELECT id,title,version,data,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND "+memoryVisibilitySql+" AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT 12").bind(tenant,...memoryVisibilityArgs(projectId,userId),pattern,pattern).all<{id:string;title:string;version:number;data:string;updated_at:number}>();
+ const indexIds=await indexedContextIds(tenant,p.query,projectId,userId,true);
+ const rows=indexIds!==null?{results:indexIds.length?(await db().prepare("SELECT id,title,version,data,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND "+memoryVisibilitySql+" AND id IN ("+indexIds.map(()=>'?').join(',')+") ORDER BY updated_at DESC LIMIT 12").bind(tenant,...memoryVisibilityArgs(projectId,userId),...indexIds).all<{id:string;title:string;version:number;data:string;updated_at:number}>()).results:[]}:await db().prepare("SELECT id,title,version,data,updated_at FROM resources WHERE workspace_id=? AND kind='knowledge' AND status='saved' AND "+memoryVisibilitySql+" AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT 12").bind(tenant,...memoryVisibilityArgs(projectId,userId),pattern,pattern).all<{id:string;title:string;version:number;data:string;updated_at:number}>();
  const selected=new Map<string,{id:string;title:string;version:number;data:unknown;updated_at:number}>();
  for(const id of p.ids){try{const r=await getResource(tenant,id);if(r.kind==='knowledge'&&r.status==='saved'&&memoryVisible(r.data as Record<string,unknown>,projectId,userId))selected.set(id,{...r,data:r.data});}catch{/* No foreign data or existence signal. */}}
  for(const row of rows.results)try{if(!selected.has(row.id))selected.set(row.id,{...row,data:JSON.parse(row.data)});}catch{/* Malformed memory is not trusted. */}
- return {strategy:p.ids.length?'model_selected_and_lexical':'lexical_fallback',items:[...selected.values()].slice(0,8).map(row=>({...row,data:JSON.stringify(row.data).slice(0,2500),truncated:JSON.stringify(row.data).length>2500})),untrusted:true};
+ return {strategy:indexIds!==null?'indexed_scoped':p.ids.length?'model_selected_and_lexical':'lexical_fallback',items:[...selected.values()].slice(0,8).map(row=>({...row,data:JSON.stringify(row.data).slice(0,2500),truncated:JSON.stringify(row.data).length>2500})),untrusted:true};
 }

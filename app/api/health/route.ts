@@ -7,6 +7,11 @@ import {routingReadiness} from '@/lib/model-router';
 export async function GET(request?:Request) {
   try {
     await db().prepare('SELECT 1 AS ok').first();
+    if(request&&new URL(request.url).searchParams.get('check')==='agent-operations'){
+      const schema=await db().prepare("SELECT value FROM platform_settings WHERE key='agent_context_schema_v1'").first<{value:string}>();
+      const ready=schema?.value==='ready';
+      return Response.json({status:ready?'ok':'pending',schemaVersion:1,indexedProjectSearch:ready,privateTableWorkflows:true,signedEvents:ready,arbitraryCode:false},{status:ready?200:503,headers:{'Cache-Control':'no-store'}});
+    }
     if (request && new URL(request.url).searchParams.get('check') === 'assistant') {
       const pricing=await ensureModelRates(env);
       const ready=modelReadiness().ready;

@@ -1,3 +1,4 @@
+import {operationSnapshot} from './agent-operation-visibility';
 import {withoutSupplierNames} from './supplier-names.mjs';
 import {modelRateEnvironment} from "./model-rate-refresh";
 import {withRoutingDefaults} from './model-routing-defaults';
@@ -54,7 +55,7 @@ export async function authorize(tenant:string,userId:string,action='read'){
 }
 export async function list(tenant:string,kind?:string){
  const query=kind?"SELECT * FROM resources WHERE workspace_id=? AND kind=? AND status!='deleted' ORDER BY updated_at DESC LIMIT 200":"SELECT * FROM resources WHERE workspace_id=? AND status!='deleted' ORDER BY updated_at DESC LIMIT 300";
- const result=await db().prepare(query).bind(...(kind?[tenant,kind]:[tenant])).all<StoredResource>();const resources=result.results.map(decode);
+ const result=await db().prepare(query).bind(...(kind?[tenant,kind]:[tenant])).all<StoredResource>();const resources=result.results.map(decode).map(operationSnapshot);
  const fileIds=resources.filter(resource=>resource.kind==="file").map(resource=>resource.id);if(!fileIds.length)return resources.map(safeResourceDto) as Resource[];
  const placeholders=fileIds.map(()=>"?").join(","),files=await db().prepare(`SELECT * FROM files WHERE workspace_id=? AND id IN (${placeholders})`).bind(tenant,...fileIds).all<FileRecord>(),byId=new Map(files.results.map(file=>[file.id,file]));
  return resources.map(resource=>{const file=resource.kind==="file"?byId.get(resource.id):undefined;if(!file)return safeResourceDto(resource) as Resource;const safe=safeFileDto(file);return {...resource,title:safe.name,status:file.status,data:{projectId:typeof resource.data.projectId==='string'?resource.data.projectId:null,mime:safe.mime,size:safe.size,thumbnailAvailable:!!file.thumbnail_key}};});

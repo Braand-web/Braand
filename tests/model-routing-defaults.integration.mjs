@@ -16,8 +16,9 @@ const env={OPENROUTER_API_KEY:'FIXTURE',OPENROUTER_MODEL:rate.model,OPENROUTER_R
 const on=withRoutingDefaults(env);
 assert.equal(on.MODEL_ROUTING_ENABLED,'true');assert.equal(on.MODEL_ROUTING_POLICY,'adaptive');assert.equal(on.BUCKET,env.BUCKET,'Bindings are kept');
 const catalog=JSON.parse(on.MODEL_ROUTING_CATALOG_JSON);
-assert.deepEqual(Object.keys(catalog),['haiku','sonnet','opus']);
+assert.deepEqual(Object.keys(catalog),['haiku','sonnet','opus','fable52']);
 assert.deepEqual(catalog.haiku.rate,rate,'The light level keeps the verified tariff');
+assert.equal(catalog.fable52.rate.model,'anthropic/claude-fable-5.2');assert.equal(catalog.fable52.rate.verifiedAt,'1970-01-01T00:00:00.000Z');
 for(const key of ['sonnet','opus']){const r=catalog[key].rate;assert.equal(r.model,'anthropic/claude-'+key+'-5.5');assert.equal(r.verifiedAt,'1970-01-01T00:00:00.000Z','Never billable before a live price check');assert.equal(r.fundingFeeBps,550);assert.equal(r.overheadXaf,1);assert.equal(r.pricingSource,rate.pricingSource);assert.equal(catalog[key].transport,'openrouter');}
 assert.equal(withRoutingDefaults({...env,MODEL_ROUTING_ENABLED:'false'}).MODEL_ROUTING_ENABLED,'false','An explicit variable wins');
 assert.equal(withRoutingDefaults({...env,MODEL_ROUTING_POLICY:'task'}).MODEL_ROUTING_POLICY,'task');
