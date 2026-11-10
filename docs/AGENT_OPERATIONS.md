@@ -78,6 +78,8 @@ Vérification déployée : `GET /api/health?check=agent-operations` doit retourn
 
 Retour arrière : redéployer l’ancienne version. Les tables et ressources additives peuvent rester stockées ; aucun effacement n’est requis. Ne pas supprimer l’index tant qu’une version l’utilise.
 
+Les sauvegardes chiffrées conservent les données sources et les reçus, et excluent uniquement l’index FTS dérivé et ses tables internes. La restauration reconstruit cet index avec le SQL de cette version après les données. Le schéma arbitraire d’une table virtuelle n’est jamais accepté depuis une archive. Le test de restauration vérifie les lignes métier, les écritures financières uniques, la recherche reconstruite et ses triggers.
+
 ## Conseil expert facultatif
 
 `consult_expert` consulte `anthropic/claude-fable-5.2` via l’adaptateur OpenRouter et la comptabilisation existants. Une consultation au maximum par réponse, 2 048 tokens de sortie, 90 secondes, sans outils ni délégation. Motifs admis : validation en échec, preuves contradictoires, décision d’architecture. Les références privées et les projets sont revérifiés.

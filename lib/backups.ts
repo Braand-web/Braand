@@ -1,5 +1,6 @@
 import {config, db, uid} from './server';
 import {AppError} from './core.mjs';
+import {contextSchemaStatements} from './agent-context-schema.generated.mjs';
 
 // SQL remains bounded for one atomic D1 restore. Media never enters this buffer.
 // The SQL snapshot is read by pages: a Worker run may issue at most 1,000
@@ -54,14 +55,18 @@ export function backupReadiness() {
   if (c.BACKUP_MAINTENANCE_CONFIRMED !== 'true') return {ready:false,reason:'backup_maintenance_required',limits};
   return {ready:true,reason:null,limits};
 }
-async function schema(database: D1Database) {
+const derivedContextObject=(name:string)=>/^agent_context_fts(?:_(?:data|idx|content|docsize|config|insert|update|delete))?$/.test(name);
+async function schema(database: D1Database,omitDerived=false) {
   const result = await database.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all<SchemaEntry>();
-  if (result.results.filter(row => row.type === 'table').length > MAX_TABLES) throw new AppError('Sauvegarde trop volumineuse pour ce parcours.',409,'backup_too_large');
-  for (const row of result.results) {
+  // The search index is derived from resources. Never archive FTS shadow
+  // internals or accept arbitrary virtual-table SQL from an archive.
+  const entries=omitDerived?result.results.filter(row=>!derivedContextObject(row.name)):result.results;
+  if (entries.filter(row => row.type === 'table').length > MAX_TABLES) throw new AppError('Sauvegarde trop volumineuse pour ce parcours.',409,'backup_too_large');
+  for (const row of entries) {
     identifier(row.name);
     if (!['table','index','trigger'].includes(row.type) || !/^CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|TRIGGER)\b/i.test(row.sql)) throw new AppError('Schéma non pris en charge.',409,'backup_schema_invalid');
   }
-  return result.results;
+  return entries;
 }
 function encodeRow(row: Record<string, unknown>): Record<string, Cell> {
   return Object.fromEntries(Object.entries(row).map(([column,value]) => {
@@ -77,7 +82,7 @@ function encodeRow(row: Record<string, unknown>): Record<string, Cell> {
 // second copy of every row as objects. The result is the same JSON document as
 // a v1 snapshot, so restore is unchanged.
 async function snapshot(id: string, now: number): Promise<{bytes: Uint8Array; tables: number; rows: number}> {
-  const database = db(), entries = await schema(database), tableNames = entries.filter(entry => entry.type === 'table').map(entry => entry.name);
+  const database = db(), entries = await schema(database,true), tableNames = entries.filter(entry => entry.type === 'table').map(entry => entry.name);
   const sequenceTable = await database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").first();
   const sequences = sequenceTable ? (await database.prepare('SELECT name,seq FROM sqlite_sequence').all<{name:string;seq:number}>()).results : [];
   const head = encoder.encode(JSON.stringify({format:'braand-backup-v1',id,createdAt:now,schema:entries,sequences,objects:[]}).slice(0,-1) + ',"tables":[');
@@ -299,6 +304,9 @@ export async function restoreEncryptedBackup(id: string, destination: D1Database
     if (entry.type !== 'trigger' || !/^CREATE\s+TRIGGER\b/i.test(entry.sql)) throw new AppError('Archive invalide.',409,'backup_schema_invalid');
     statements.push(destination.prepare(entry.sql));
   }
+  // Rebuild only from restored primary data using this release's trusted SQL.
+  // Preserve all archived business rows, including the migration marker.
+  if(archive.tables.some(table=>table.name==='resources')&&archive.tables.some(table=>table.name==='platform_settings'))statements.push(...contextSchemaStatements.map(sql=>destination.prepare(sql)));
   if(manifest){
     if(manifest.rows!==rows||manifest.tables!==archive.tables.length)throw invalid();
     // Preflight all pages and chunks before the first destination mutation.

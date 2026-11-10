@@ -178,11 +178,14 @@ try {
   source.sql.prepare("INSERT INTO runs(id,workspace_id,conversation_id,status,created_at,updated_at) VALUES ('restore-run','ops-owner','restore-conversation','completed',?,?)").run(now,now);
   source.sql.prepare("INSERT INTO events(seq,run_id,type,data,created_at) VALUES (100,'restore-run','test','{}',?)").run(now);
   source.sql.prepare("DELETE FROM events WHERE seq=100").run();
+  source.sql.prepare("INSERT INTO resources(id,workspace_id,kind,title,data,status,created_at,updated_at) VALUES ('restore-memory','ops-owner','knowledge','Mémoire à restaurer',?,'saved',?,?)").run(JSON.stringify({content:'Réparation de mémoire indexée',projectId:null}),now,now);
+  source.sql.prepare("INSERT OR REPLACE INTO platform_settings(key,value,updated_at) VALUES ('agent_context_schema_v1','ready',?)").run(now);
   // A conversation long enough to need many pages: production already holds more rows than one query per row allows.
   const insertMessage=source.sql.prepare("INSERT INTO messages(id,workspace_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?)");
   for(let index=0;index<3200;index++)insertMessage.run('restore-message-'+String(index).padStart(5,'0'),'ops-owner','restore-conversation',index%2?'assistant':'user',JSON.stringify([{type:'text',text:'Message '+index+' é ✓'}]),now+index);
   await media.binding.put('ops-owner/files/fixture.txt','sensitive-fixture-content',{httpMetadata:{contentType:'text/plain'},customMetadata:{fixture:'yes'}});
-  const expectedTables=source.sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY name").all().map(row=>row.name);
+  const derived=name=>/^agent_context_fts(?:_(?:data|idx|content|docsize|config|insert|update|delete))?$/.test(name);
+  const expectedTables=source.sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY name").all().map(row=>row.name).filter(name=>!derived(name));
   const expected=Object.fromEntries(expectedTables.map(name=>[name,source.sql.prepare('SELECT * FROM "'+name+'"').all()]));
   const callsBefore=source.binding.calls;
   const archive=await backups.createEncryptedBackup();
@@ -200,6 +203,9 @@ try {
     assert.equal(target.sql.prepare("SELECT id FROM auth_users WHERE email='recovery@braand.test'").get().id,'auth-restore-user','Restore preserves the independent identity that owns the workspace');
     assert.equal(target.sql.prepare("SELECT count(*) n FROM credit_ledger WHERE lot_id='restore-lot'").get().n,1);
     assert.equal(target.sql.prepare("SELECT seq FROM sqlite_sequence WHERE name='events'").get().seq,100);
+    assert.equal(target.sql.prepare("SELECT resource_id FROM agent_context_fts WHERE agent_context_fts MATCH 'réparation'").get().resource_id,'restore-memory','derived search data must rebuild from restored resources');
+    target.sql.prepare("UPDATE resources SET data=? WHERE id='restore-memory'").run(JSON.stringify({content:'Contenu corrigé',projectId:null}));
+    assert.equal(target.sql.prepare("SELECT COUNT(*) n FROM agent_context_fts WHERE agent_context_fts MATCH 'réparation'").get().n,0,'rebuilt triggers must remove obsolete search entries');
     assert.equal(await (await targetMedia.binding.get('ops-owner/files/fixture.txt')).text(),'sensitive-fixture-content');
     assert.deepEqual(targetMedia.objects.get('ops-owner/files/fixture.txt').customMetadata,{fixture:'yes'});
     assert.deepEqual(target.sql.prepare('PRAGMA foreign_key_check').all(),[]);target.sql.close();
@@ -215,7 +221,7 @@ try {
     assert.equal(targetMedia.objects.size,0);assert.equal(empty.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get().n,0);empty.sql.close();
   });
   await check('Legacy v1 encrypted archives still restore financial rows, sequence values, metadata and object bytes',async()=>{
-    const id=crypto.randomUUID(),schema=source.sql.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all();
+    const id=crypto.randomUUID(),schema=source.sql.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all().filter(row=>!derived(row.name));
     const raw=new TextEncoder().encode('legacy-sensitive-content'),sha256=Buffer.from(await crypto.subtle.digest('SHA-256',raw)).toString('base64');
     const snapshot={format:legacyPrefix+'-backup-v1',id,createdAt:now,schema,tables:expectedTables.map(name=>({name,rows:expected[name]})),sequences:source.sql.prepare('SELECT name,seq FROM sqlite_sequence').all(),objects:[{key:'legacy.txt',bytes:Buffer.from(raw).toString('base64'),sha256,httpMetadata:{contentType:'text/plain'},customMetadata:{legacy:'yes'}}]};
     await archives.binding.put(legacyPrefix+'-backups/'+id+'.bin',await encryptLegacyFixture(id,'',new TextEncoder().encode(JSON.stringify(snapshot)),1));
