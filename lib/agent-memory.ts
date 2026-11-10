@@ -18,7 +18,7 @@ export async function reviseKnowledge(tenant:string,input:unknown,userId?:string
  if(resource.kind!=='knowledge'||resource.status==='deleted'||userId&&memoryOwnedByOther(resource.data as Record<string,unknown>,userId))throw new AppError('Information de mémoire introuvable.',404);
  // Replacing, rather than retaining a hidden history, makes a correction or
  // withdrawal effective for subsequent requests. Existing chat history is separate.
- return updateResource(tenant,id,version,{title:facts.title,status:'saved',data:{...facts,scope:(resource.data as Record<string,unknown>).scope??facts.scope,...(typeof resource.data.projectId==='string'?{projectId:resource.data.projectId}:{}),...(typeof (resource.data as Record<string,unknown>).userId==='string'?{userId:(resource.data as Record<string,unknown>).userId}:{}),validatedAt:Date.now()}});
+ return updateResource(tenant,id,version,{title:facts.title,status:'saved',data:{...facts,scope:(resource.data as Record<string,unknown>).scope??facts.scope,projectId:typeof resource.data.projectId==='string'?resource.data.projectId:null,...(typeof (resource.data as Record<string,unknown>).userId==='string'?{userId:(resource.data as Record<string,unknown>).userId}:{}),validatedAt:Date.now()}});
 }
 
 export async function forgetKnowledge(tenant:string,input:unknown,userId?:string){

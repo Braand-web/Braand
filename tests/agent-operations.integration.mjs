@@ -75,6 +75,8 @@ await check('snapshots are bounded, CSV escapes formulas and private downloads c
  assert.equal((await route.GET(new Request('https://braand.test/api/agent-operations'))).status,400);
 });
 await check('missing numbers, unknown operations, prototype fields and collisions fail without code execution',async()=>{
+ assert.deepEqual(contract.evaluateWorkflow([{operation:'aggregate',column:'amount',method:'sum'}],[{amount:0.1},{amount:0.2}]),[{result:0.3}]);
+ assert.throws(()=>contract.evaluateWorkflow([{operation:'aggregate',column:'amount',method:'sum'}],[{amount:9007199254740992}]));
  assert.throws(()=>contract.evaluateWorkflow(fixture.steps,[{category:'A',amount:null}]));
  assert.throws(()=>contract.evaluateWorkflow([{operation:'eval',code:'globalThis.pwned=true'}],[]));
  assert.throws(()=>contract.evaluateWorkflow([{operation:'rename',from:'a',to:'constructor'}],[{a:1}]));

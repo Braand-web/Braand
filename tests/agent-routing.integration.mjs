@@ -131,6 +131,10 @@ await check('personal memories stay with their owner across projects; project an
  const colleague=await memory.workspaceMemoryContext(who.tenant,null,'someone-else');assert.doesNotMatch(colleague,/PERSONAL_TONE/);assert.match(colleague,/COLLEAGUE_PRIVATE/);
  const saved=await agent.executeTool(who.tenant,'save_knowledge',{title:'Format',content:'Réponses courtes',source:'demande explicite',scope:'user'},undefined,{tenant:who.tenant,conversationId:'c',runId:'r',coveredRowid:0,projectId:project.id,userId:who.user.userId});
  assert.equal(saved.data.scope,'user');assert.equal(saved.data.userId,who.user.userId);assert.equal(saved.data.projectId,null);
+ const personalScope={tenant:who.tenant,conversationId:'c',runId:'r',coveredRowid:0,projectId:project.id,userId:who.user.userId};
+ assert.equal((await agent.executeTool(who.tenant,'get_workspace_resource',{id:saved.id},undefined,personalScope)).resource.data.content,'Réponses courtes');
+ const revised=await agent.executeTool(who.tenant,'revise_knowledge',{id:saved.id,version:saved.version,title:'Format',content:'Réponses brèves',source:'Correction explicite',scope:'user'},undefined,personalScope);assert.equal(revised.data.projectId,null);
+ assert.equal((await agent.executeTool(who.tenant,'forget_knowledge',{id:saved.id,version:revised.version},undefined,personalScope)).status,'deleted');
  const other=(await server.list(who.tenant,'knowledge')).find(item=>item.title==='Préférence d’un collègue');
  await assert.rejects(()=>memory.forgetKnowledge(who.tenant,{id:other.id,version:other.version},who.user.userId),e=>e.status===404);
  await assert.rejects(()=>agent.executeTool(who.tenant,'get_workspace_resource',{id:other.id},undefined,{tenant:who.tenant,conversationId:'c',runId:'r',coveredRowid:0,projectId:null,userId:who.user.userId}),e=>e.status===404);

@@ -2,7 +2,7 @@ import {operationHiddenFrom,privateOperationKinds,operationSnapshot} from './age
 import {z} from "zod";
 import {richPresentationTool,richPresentationInstruction} from './rich-response';
 import {prepareRichResponse,persistRichResponse} from './rich-response-server';
-import {projectContextTool,projectContextInstruction,conversationProject,searchProjectContext,resourceProject,assertProjectResource,reusableMethodExtraction} from './project-context';
+import {projectContextTool,projectContextInstruction,conversationProject,searchProjectContext,resourceProject,reusableMethodExtraction} from './project-context';
 import {meteredMessage,type RunBudget} from "./metering";
 import {authorize} from "./server";
 import {config,db,uid,createResource,list,updateResource,getResource,getClientResource,auditLog} from "./server";
@@ -40,7 +40,7 @@ import {agentRuntimeContext,currentTime,readAgentContext,updateAgentContext,expl
 import {recordUserLearning} from './agent-learning';
 import {routedModel} from './model-router';
 import {advisorTool,consultExpert} from './agent-advisor';
-import {operationTools,operationMutationNames,operationInstruction} from './agent-operation-tools';
+import {operationTools,operationMutationNames,operationInstruction} from './agent-operation-tools.mjs';
 import {executeAgentOperation} from './agent-operation-runtime';
 export {runBrowserAgentTurn} from './browser-agent';
 import {modelEventSchema,modelBlockStartSchema,modelBlockDeltaSchema,modelBlockStopSchema,modelRecordSchema,isModelToolUse,modelRateSchema,type ModelContentBlock,type ModelMessage} from './model-protocol';
@@ -123,7 +123,10 @@ async function recordSkillRead(tenant:string,actor:string,result:unknown){
  await auditLog(tenant,actor,'skill.read',item.id,{version:item.version,reference:item.reference,chars:item.chars,truncated:item.truncated,digest:item.provenance.digest});
 }
 export async function executeTool(tenant:string,name:string,input:unknown,skills:SkillSession=createSkillSession(),scope?:AgentScope){
- if(scope?.projectId!==undefined&&input&&typeof input==='object'&&'id' in input&&typeof input.id==='string'&&['get_workspace_resource','revise_knowledge','forget_knowledge','revise_deliverable','revise_page','verify_deliverable','explain_memory'].includes(name))await assertProjectResource(tenant,input.id,scope.projectId);
+ if(scope?.projectId!==undefined&&input&&typeof input==='object'&&'id' in input&&typeof input.id==='string'&&['get_workspace_resource','revise_knowledge','forget_knowledge','revise_deliverable','revise_page','verify_deliverable','explain_memory'].includes(name)){
+  const resource=await getResource(tenant,input.id),personal=resource.kind==='knowledge'&&resource.data.scope==='user'&&resource.data.userId===scope.userId&&['get_workspace_resource','revise_knowledge','forget_knowledge','explain_memory'].includes(name);
+  if(resource.status==='deleted'||!personal&&resourceProject(resource.data)!==scope.projectId)throw new AppError('Cet élément appartient à un autre contexte de projet.',403,'project_scope_mismatch');
+ }
  switch(name){
  case 'get_current_time':return currentTime(input);
  case 'read_agent_guide':return readAgentGuide(input);

@@ -1,4 +1,4 @@
-import {operationTools} from './agent-operation-tools';
+import {operationTools} from './agent-operation-tools.mjs';
 import {agentContextTools} from './agent-system.mjs';
 // Public tool contracts only. Implementations are loaded on demand on the server.
 import {internalTools} from './internal-tools.mjs';

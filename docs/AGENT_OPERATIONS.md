@@ -21,7 +21,7 @@ Cette extension réutilise les ressources, discussions, permissions, reçus d’
 4. L’exécution conserve les données calculées dans un nouveau `workflow_run`. La source n’est pas modifiée.
 5. Toute modification du workflow ou de son skill source invalide le droit d’exécuter cette ancienne version.
 
-Limites : 12 étapes, 500 lignes, 40 colonnes par ligne, 2 000 caractères par cellule, 200 000 caractères de données, 120 000 caractères par définition. Les données absentes ne sont jamais converties silencieusement en zéro. Les secrets reconnaissables sont refusés avant l’enregistrement des entrées réelles.
+Limites : 12 étapes, 500 lignes, 40 colonnes par ligne, 2 000 caractères par cellule, 200 000 caractères de données, 120 000 caractères par définition. Les agrégations réutilisent le moteur décimal existant (six décimales, grands entiers exacts sous forme de texte, colonnes de calcul limitées à 1 000 caractères). Les données absentes ne sont jamais converties silencieusement en zéro. Les secrets reconnaissables sont refusés avant l’enregistrement des entrées réelles.
 
 Le même `requestId` avec les mêmes entrées retrouve le résultat. Un autre contenu avec cet identifiant est refusé. Un état en cours, échoué ou incertain n’est pas rejoué automatiquement. Les aperçus ne transportent que cinq lignes ; le CSV autorisé permet de récupérer le résultat complet et neutralise les formules injectées.
 

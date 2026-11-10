@@ -1,6 +1,7 @@
 import {z} from 'zod';
+import {analyzeTable} from './data-engine.mjs';
 const column=z.string().trim().min(1).max(60).refine(v=>!['__proto__','constructor','prototype'].includes(v),'Reserved column');
-const scalar=z.union([z.string().max(2000),z.number().finite(),z.boolean(),z.null()]);
+const scalar=z.union([z.string().max(2000),z.number().finite().refine(n=>!Number.isInteger(n)||Number.isSafeInteger(n),'Unsafe integer: supply as text'),z.boolean(),z.null()]);
 export const workflowRows=z.array(z.record(column,scalar)).max(500).superRefine((rows,ctx)=>{if(rows.some(row=>Object.keys(row).length>40)||JSON.stringify(rows).length>200000)ctx.addIssue({code:'custom',message:'Table too large'});});
 export const workflowStep=z.discriminatedUnion('operation',[
  z.object({operation:z.literal('select'),columns:z.array(column).min(1).max(40)}).strict(),
@@ -31,9 +32,12 @@ export function evaluateWorkflow(steps:unknown,input:unknown){
   else if(step.operation==='replace_text'){requireColumn(step.column);rows=rows.map(row=>{const value=row[step.column];if(typeof value!=='string')throw new Error('La retouche exige une colonne texte.');return {...row,[step.column]:value.split(step.find).join(step.replacement)};});}
   else{
    requireColumn(step.column);if(step.groupBy==='result')throw new Error('Renommez la colonne de groupe result avant cette opération.');if(step.groupBy)requireColumn(step.groupBy);
-   const groups=new Map<string,{group:WorkflowRow[string];values:WorkflowRow[string][]}>();
-   for(const row of rows){const group=step.groupBy?row[step.groupBy]:null,key=canonical(group);if(!groups.has(key))groups.set(key,{group,values:[]});groups.get(key)!.values.push(row[step.column]);}
-   rows=[...groups.values()].map(({group,values})=>{if(step.method!=='count'&&values.some(v=>typeof v!=='number'))throw new Error('Une donnée absente ou non numérique ne vaut pas zéro.');const numbers=values as number[],value=step.method==='count'?values.length:step.method==='sum'?numbers.reduce((sum,n)=>sum+n,0):step.method==='min'?Math.min(...numbers):Math.max(...numbers);if(!Number.isFinite(value))throw new Error('Résultat numérique hors limites.');return {...(step.groupBy?{[step.groupBy]:group}:{}),result:value};});
+   if(step.method!=='count'&&rows.some(row=>typeof row[step.column]!=='number'))throw new Error('Une donnée absente ou non numérique ne vaut pas zéro.');
+   const columns=[...new Set([step.column,...(step.groupBy?[step.groupBy]:[])])];
+   const result=analyzeTable({columns,rows:rows.map(row=>columns.map(key=>row[key]))},[{op:'group',by:step.groupBy?[step.groupBy]:[],aggregates:[{op:step.method,column:step.column,as:'result'}]}]);
+   // Reuse the existing fixed-decimal engine instead of binary floating sums.
+   // Preserve exact decimal text when JSON numbers cannot round-trip it safely.
+   rows=result.rows.map((row:WorkflowRow[string][])=>Object.fromEntries(result.columns.map((key,index)=>{const value=row[index];if(key==='result'&&typeof value==='string'){const number=Number(value);return [key,Number.isFinite(number)&&(!Number.isInteger(number)||Number.isSafeInteger(number))&&String(number)===value?number:value];}return [key,value];})));
   }
   workflowRows.parse(rows);
  }
