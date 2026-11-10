@@ -11,6 +11,7 @@ import type {BrowserActionDTO,BrowserSessionDTO} from "@/lib/browser-contracts";
 import "./approval-card.css";
 
 export type ApprovalField={label:string;value:string};
+const essentialField=(label:string)=>/^(Compte|Dépôt|Page|Publication|Destination|Destinataire|Canal|Date)$/.test(label)||/\b(plafond|budget|montant|devise|amount|currency|price|cost|spend)\b/i.test(label);
 type Outcome={tone:"done"|"refused"|"warning"|"running";label:string};
 type CardProps={icon:ReactNode;title:string;compactTitle?:string;summary?:string;fields:ApprovalField[];essentials?:ApprovalField[];content?:{label:string;text:string};exact?:string;children?:ReactNode;className?:string;resultAction?:ReactNode;approveLabel?:string;busyLabel?:string;
  outcome?:Outcome|null;busy?:"approve"|"reject"|null;error?:string;blockedNote?:string;expiresAt?:number;onApprove:()=>void;onReject?:()=>void};
@@ -23,7 +24,7 @@ export function ApprovalCard({icon,title,compactTitle,summary,fields,essentials,
  const shown:Outcome|null=outcome||(expired?{tone:"warning",label:"Demande expirée"}:null);
  const state=shown?shown.tone+':'+shown.label:'pending',open=disclosure?.state===state&&disclosure.open;
  const label=compactTitle||title.replace(/^Autoriser Braand à /,'').replace(/\s*\?$/,'').replace(/^./,letter=>letter.toUpperCase());
- const visibleFields=essentials??fields.filter(field=>/^(Compte|Dépôt|Page|Publication|Destination|Destinataire|Canal|Plafond|Budget|Montant|Devise|Date)$/.test(field.label));
+ const visibleFields=essentials??fields.filter(field=>essentialField(field.label));
  return <section className={'approval-card'+(className?' '+className:'')} data-state={shown?shown.tone:"pending"} aria-label={title} aria-busy={!!busy}>
   <div className="approval-row">
    <span className="approval-icon" aria-hidden="true">{busy||shown?.tone==='running'?<LoaderCircle size={16} className="approval-spin"/>:icon}</span>
@@ -60,7 +61,7 @@ const keyLabel=(key:string)=>({post_id:"Publication",object_id:"Publication",pag
 /** The text that will be published, and the other simple parameters as lines. */
 export function connectorContent(args:Record<string,unknown>){
  const textKey=TEXT_KEYS.find(key=>typeof args[key]==="string"&&String(args[key]).trim());
- const fields:ApprovalField[]=Object.entries(args).filter(([key,value])=>key!==textKey&&["string","number","boolean"].includes(typeof value)&&String(value).length<=200).slice(0,5).map(([key,value])=>({label:keyLabel(key),value:String(value)}));
+ const fields:ApprovalField[]=Object.entries(args).filter(([key,value])=>key!==textKey&&["string","number","boolean"].includes(typeof value)&&String(value).length<=200).map(([key,value])=>({label:keyLabel(key),value:String(value)})).sort((a,b)=>Number(essentialField(b.label))-Number(essentialField(a.label))).slice(0,12);
  return {fields,content:textKey?{label:textKey==="subject"||textKey==="title"?"Titre":"Texte exact",text:String(args[textKey])}:undefined};
 }
 
