@@ -6,6 +6,7 @@ import {CheckCircle2,CircleAlert,LoaderCircle,RotateCcw,Sparkles} from "lucide-r
 import {api} from "@/lib/client-api";
 import type {Resource} from "@/lib/contracts";
 import "./media-plan-view.css";
+import {ApprovalCard} from './approval-card';
 
 type StepState={id:string;label:string;task:string;model?:string;status:"pending"|"running"|"done"|"failed";attempts:number;outputs:string[];mediaId?:string;review?:{pass:boolean;issues:string[]};notes:string[]};
 type PlanState={id:string;status:string;budget:number;expected:number;spent:number;reason?:string;steps:StepState[]};
@@ -22,7 +23,7 @@ function Output({url,label}:{url:string;label:string}){
  return <img className="plan-output" src={url} alt={label} loading="lazy"/>;
 }
 
-export function MediaPlanView({proposal,onApprove,busy}:{proposal:Resource;onApprove:()=>void;busy:boolean}){
+export function MediaPlanView({proposal,onApprove,busy,approvalError}:{proposal:Resource;onApprove:()=>void;busy:boolean;approvalError?:string}){
  const data=proposal.data as {rationale?:string;maxCredits:number;payload:Payload};
  const [state,setState]=useState<PlanState|null>(null),[error,setError]=useState("");
  const awaiting=proposal.status==="awaiting_approval";
@@ -34,14 +35,12 @@ export function MediaPlanView({proposal,onApprove,busy}:{proposal:Resource;onApp
 
  if(awaiting){
   const quotes=new Map(data.payload.quotes.map(q=>[q.stepId,q.credits]));
-  return <div className="resource-detail media-plan">
-   {data.rationale&&<p>{data.rationale}</p>}
-   <div className="approval-budget"><span>Budget total</span><strong>{data.maxCredits} crédits</strong></div>
-   <p className="muted small-text">Coût prévu {data.payload.expectedCredits} crédits. La marge sert aux corrections automatiques ; seuls les crédits utilisés sont débités.</p>
+  return <ApprovalCard icon={<Sparkles size={16}/>} title={'Autoriser le plan de création « '+proposal.title+' » ?'} compactTitle={proposal.title}
+   summary={data.rationale} fields={[{label:'Créations',value:String(data.payload.steps.length)},{label:'Plafond',value:data.maxCredits+' crédits maximum'},{label:'Estimation',value:data.payload.expectedCredits+' crédits'}]}
+   busy={busy?'approve':null} error={approvalError} onApprove={onApprove} approveLabel={`Autoriser ${data.payload.steps.length} création${data.payload.steps.length>1?'s':''}`} busyLabel="Validation…">
+   <p className="approval-summary">La marge permet les corrections automatiques. Seuls les crédits utilisés sont débités.</p>
    <ol className="plan-steps">{data.payload.steps.map(step=><li key={step.id} className="plan-step"><span className="plan-step-icon" aria-hidden="true"><Sparkles size={15}/></span><div><strong>{step.label}</strong><small>{TASK_LABELS[step.task]||step.task} · {quotes.get(step.id)} crédits{step.review?.length?" · contrôle visuel":""}</small></div></li>)}</ol>
-   <button className="button primary full-width" onClick={onApprove} disabled={busy}><CheckCircle2 size={16}/>{busy?"Validation en cours…":`Autoriser ${data.payload.steps.length} création${data.payload.steps.length>1?"s":""}`}</button>
-   <p className="fine-print">Une seule approbation pour tout le plan. Braand s’arrête avant de dépasser {data.maxCredits} crédits.</p>
-  </div>;
+  </ApprovalCard>;
  }
  const done=state?.steps.filter(step=>step.status==="done").length??0,total=data.payload.steps.length;
  const spentRatio=state?Math.min(100,Math.round(state.spent/Math.max(1,state.budget)*100)):0;

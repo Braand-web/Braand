@@ -39,6 +39,7 @@ try{
  assert.equal(await form.locator('input[type=password]').count(),2);assert.match(await form.innerText(),/DATABASE_URL · déjà enregistrée[\s\S]*OPENAI_API_KEY/);
  assert.equal(await form.getByRole('button',{name:'Enregistrer en sécurité'}).isDisabled(),true);
  const prCard=page.getByRole('region',{name:'Autoriser Braand à ouvrir cette pull request sur Awa/boutique ?'});await prCard.waitFor();
+ assert.equal(await prCard.locator('.github-pr-files').count(),0);assert.match(await prCard.innerText(),/Ajouter la section Hero[\s\S]*Awa\/boutique/);
  await page.screenshot({path:path.join(output,'desktop-dark.png'),fullPage:true});
  await form.locator('input').nth(1).fill('sk-test-secret');
  await form.getByRole('button',{name:'Enregistrer en sécurité'}).dblclick();
@@ -47,9 +48,11 @@ try{
  assert.ok(!(await page.content()).includes('sk-test-secret'),'the value is not shown back');
  assert.match(await page.evaluate(()=>window.sent[0]),/1 clé \(OPENAI_API_KEY\)/);assert.ok(!(await page.evaluate(()=>window.sent[0])).includes('sk-test'),'the follow-up message carries names only');
  pass('keys are typed in password fields, sent once, never shown back, and the conversation continues with their names only');
+ await prCard.getByRole('button',{name:'Détails de la demande'}).click();
  assert.match(await prCard.innerText(),/src\/app\/page\.tsx[\s\S]*modifié[\s\S]*\+3[\s\S]*−1[\s\S]*src\/components\/Hero\.tsx[\s\S]*ajouté[\s\S]*\+12/);
  await prCard.getByRole('button',{name:'Autoriser',exact:true}).dblclick();
  await page.getByRole('link',{name:'Voir la pull request'}).waitFor();
+ assert.equal(await prCard.locator('.github-pr-files').count(),0,'the decided card folds into its result');
  assert.equal(calls.filter(c=>c.path==='/api/github/pr/res-1').length,1,'one decision on a double click');assert.deepEqual(calls.find(c=>c.path==='/api/github/pr/res-1').body,{decision:'approve',version:1});
  assert.equal(await page.getByRole('link',{name:'Voir la pull request'}).getAttribute('href'),'https://github.com/Awa/boutique/pull/7');
  pass('the pull request card shows the exact files, sends one approval with the version and links to the pull request');

@@ -1,8 +1,8 @@
 "use client";
 // One approval card for every action Braand wants to take outside the app,
-// shown in the conversation: a plain question, the details (open the first
-// time), the exact content that will be sent, Autoriser / Refuser. Once
-// decided it folds into a single line that stays readable in the history.
+// shown as a compact action row. Exact content stays behind an accessible
+// disclosure; destinations and spending ceilings remain visible. Decisions
+// fold into their real outcome without repeating the assistant's explanation.
 import {useEffect,useId,useRef,useState,type ReactNode} from "react";
 import {ChevronDown,Globe2,LoaderCircle,PlugZap} from "lucide-react";
 import {api,post} from "@/lib/client-api";
@@ -12,33 +12,37 @@ import "./approval-card.css";
 
 export type ApprovalField={label:string;value:string};
 type Outcome={tone:"done"|"refused"|"warning"|"running";label:string};
-type CardProps={icon:ReactNode;title:string;summary?:string;fields:ApprovalField[];content?:{label:string;text:string};exact?:string;
- outcome?:Outcome|null;busy?:"approve"|"reject"|null;error?:string;blockedNote?:string;expiresAt?:number;onApprove:()=>void;onReject:()=>void};
+type CardProps={icon:ReactNode;title:string;compactTitle?:string;summary?:string;fields:ApprovalField[];essentials?:ApprovalField[];content?:{label:string;text:string};exact?:string;children?:ReactNode;className?:string;resultAction?:ReactNode;approveLabel?:string;busyLabel?:string;
+ outcome?:Outcome|null;busy?:"approve"|"reject"|null;error?:string;blockedNote?:string;expiresAt?:number;onApprove:()=>void;onReject?:()=>void};
 
-export function ApprovalCard({icon,title,summary,fields,content,exact,outcome,busy,error,blockedNote,expiresAt,onApprove,onReject}:CardProps){
- const titleId=useId(),[open,setOpen]=useState(()=>!outcome&&!(expiresAt&&expiresAt<=Date.now()));
+export function ApprovalCard({icon,title,compactTitle,summary,fields,essentials,content,exact,children,className,resultAction,approveLabel='Autoriser',busyLabel='Exécution…',outcome,busy,error,blockedNote,expiresAt,onApprove,onReject}:CardProps){
+ const detailsId=useId(),[disclosure,setDisclosure]=useState<{state:string;open:boolean}|null>(null);
  const [now,setNow]=useState(()=>Date.now());
  useEffect(()=>{if(outcome||!expiresAt)return;const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[outcome,expiresAt]);
  const expired=!outcome&&!!expiresAt&&expiresAt<=now;
  const shown:Outcome|null=outcome||(expired?{tone:"warning",label:"Demande expirée"}:null);
- return <section className="approval-card" data-state={shown?shown.tone:"pending"} aria-labelledby={titleId} aria-busy={!!busy}>
-  <header className="approval-head"><span className="approval-icon" aria-hidden="true">{icon}</span><h3 id={titleId}>{title}</h3>{shown&&<span className="approval-outcome" role="status">{shown.label}</span>}</header>
-  <div className="approval-body" data-open={open||undefined}>
-   <button type="button" className="approval-toggle" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
-    <span className="approval-summary">{summary||"Détails de la demande"}</span><ChevronDown size={18} aria-hidden="true"/>
-   </button>
-   {open&&<div className="approval-details">
+ const state=shown?shown.tone+':'+shown.label:'pending',open=disclosure?.state===state&&disclosure.open;
+ const label=compactTitle||title.replace(/^Autoriser Braand à /,'').replace(/\s*\?$/,'').replace(/^./,letter=>letter.toUpperCase());
+ const visibleFields=essentials??fields.filter(field=>/^(Compte|Dépôt|Page|Publication|Destination|Destinataire|Canal|Plafond|Budget|Montant|Devise|Date)$/.test(field.label));
+ return <section className={'approval-card'+(className?' '+className:'')} data-state={shown?shown.tone:"pending"} aria-label={title} aria-busy={!!busy}>
+  <div className="approval-row">
+   <span className="approval-icon" aria-hidden="true">{busy||shown?.tone==='running'?<LoaderCircle size={16} className="approval-spin"/>:icon}</span>
+   <div className="approval-copy"><h3>{label}</h3>{visibleFields.length>0&&<dl className="approval-essentials">{visibleFields.map((field,index)=><div key={field.label+index}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>}</div>
+   {shown?<div className="approval-result"><span className="approval-outcome" role="status">{shown.label}</span>{resultAction}</div>:<div className="approval-actions">
+    <button type="button" className="approval-approve" disabled={!!busy||!!blockedNote} onClick={onApprove}>{busy==="approve"?busyLabel:approveLabel}</button>
+    {onReject&&<button type="button" className="approval-reject" disabled={!!busy} onClick={onReject}>{busy==="reject"?"Refus…":"Refuser"}</button>}
+   </div>}
+   <button type="button" className="approval-toggle" aria-label="Détails de la demande" title="Détails de la demande" aria-expanded={open} aria-controls={open?detailsId:undefined} onClick={()=>setDisclosure({state,open:!open})}><ChevronDown size={16} aria-hidden="true"/></button>
+  </div>
+  {open&&<div className="approval-details" id={detailsId}>
+    {summary&&<p className="approval-summary">{summary}</p>}
     {fields.length>0&&<dl>{fields.map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>}
     {content&&<div className="approval-content"><strong>{content.label}</strong><p>{content.text}</p></div>}
+    {children}
     {exact&&<details className="approval-exact"><summary>Paramètres exacts</summary><pre tabIndex={0}>{exact}</pre></details>}
    </div>}
-  </div>
   {!shown&&blockedNote&&<p className="approval-note" role="note">{blockedNote}</p>}
   {error&&<p className="approval-error" role="alert">{error}</p>}
-  {!shown&&<div className="approval-actions">
-   <button type="button" className="approval-approve" disabled={!!busy||!!blockedNote} onClick={onApprove}>{busy==="approve"&&<LoaderCircle size={16} className="approval-spin" aria-hidden="true"/>}{busy==="approve"?"Exécution…":"Autoriser"}</button>
-   <button type="button" className="approval-reject" disabled={!!busy} onClick={onReject}>{busy==="reject"?"Refus…":"Refuser"}</button>
-  </div>}
  </section>;
 }
 
@@ -64,7 +68,8 @@ const CONNECTOR_OUTCOMES:Record<string,Outcome>={completed:{tone:"done",label:"A
 
 /** A connected-app action (Facebook, Gmail…) waiting for the user's decision. */
 export function ConnectorActionCard({resource,onUpdated}:{resource:Resource;onUpdated?:(result:Resource,decision:"approve"|"reject")=>void}){
- const [current,setCurrent]=useState(resource),[busy,setBusy]=useState<"approve"|"reject"|null>(null),[error,setError]=useState("");const pending=useRef(false);
+ const [local,setCurrent]=useState(resource),[busy,setBusy]=useState<"approve"|"reject"|null>(null),[error,setError]=useState("");const pending=useRef(false);
+ const current=local.id!==resource.id||resource.version>local.version?resource:local;
  const data=current.data||{},status=text(data.status)||current.status;
  const args=data.arguments&&typeof data.arguments==="object"&&!Array.isArray(data.arguments)?data.arguments as Record<string,unknown>:null;
  let exact:string|undefined;try{exact=args?JSON.stringify(args,null,2):undefined;}catch{exact=undefined;}
@@ -94,7 +99,7 @@ export function BrowserActionApproval({session,action,onDecided}:{session:Browse
   try{await api("/api/browser/sessions/"+encodeURIComponent(session.id)+"/actions/"+encodeURIComponent(action.id),post({decision,version:action.version,...(decision==="approve"?{approved:true}:{})}));setOutcome(decision==="approve"?{tone:"done",label:"Autorisé"}:{tone:"refused",label:"Refusé"});onDecided();}
   catch(e){setError(errorText(e));}finally{pending.current=false;setBusy(null);}
  };
- return <ApprovalCard icon={<Globe2 size={18}/>} title="Autoriser Braand à faire cette action dans le navigateur ?" summary={action.description} fields={fields}
+ return <ApprovalCard icon={<Globe2 size={18}/>} title="Autoriser Braand à faire cette action dans le navigateur ?" compactTitle={command.kind==='click'&&target?.name?'Cliquer sur « '+target.name+' »':'Navigateur · '+(BROWSER_ACTIONS[command.kind]||'Action')} summary={action.description} fields={fields}
   content={command.value!==undefined?{label:"Texte exact",text:command.value||"(vide)"}:undefined} exact={JSON.stringify(command,null,2)}
   outcome={outcome} busy={busy} error={error} expiresAt={action.expiresAt} onApprove={()=>void decide("approve")} onReject={()=>void decide("reject")}/>;
 }
@@ -115,7 +120,7 @@ export function SocialBatchCard({batchId,onUpdated}:{batchId:string;onUpdated?:(
   catch(e){setError(errorText(e));}finally{pending.current=false;setBusy(null);}
  };
  const list=(decided?batch.posts:drafts);
- return <ApprovalCard icon={<PlugZap size={18}/>} title={`Autoriser Braand à programmer ${list.length>1?list.length+" publications":"cette publication"} ?`} summary={batch.title}
+ return <ApprovalCard icon={<PlugZap size={18}/>} title={`Autoriser Braand à programmer ${list.length>1?list.length+" publications":"cette publication"} ?`} compactTitle={`Programmer ${list.length>1?list.length+' publications':'cette publication'} · ${batch.title}`} summary={batch.title}
   fields={list.length===1?[{label:"Date",value:when(list[0].scheduledAt)},{label:"Format",value:list[0].format}]:list.map((item,index)=>({label:"Publication "+(index+1),value:when(item.scheduledAt)}))}
   content={list.length===1?{label:"Texte exact",text:list[0].text||"(sans texte)"}:{label:"Textes exacts",text:list.map((item,index)=>(index+1)+". "+(item.text||"(sans texte)")).join("\n\n")}}
   outcome={decided} busy={busy} error={error} blockedNote={batch.digest?undefined:"Approbation bloquée : le lot n’a pas pu être vérifié."} expiresAt={batch.expiresAt??undefined}

@@ -609,7 +609,7 @@ try{
   // The panel never approves: it leads to the conversation, where the card decides.
   assert.equal(await sidePanel.getByRole('button',{name:'Approuver et générer'}).count(),0);
   await sidePanel.getByRole('button',{name:'Décider dans la discussion',exact:true}).click();
-  const inChat=page.locator('.messages .proposal-card').filter({hasText:proposal.title}).first();
+  const inChat=page.locator('.messages .approval-card').filter({hasText:proposal.title}).first();
   await inChat.getByRole('button',{name:/^Générer/}).evaluate(button=>{button.click();button.click();});
   checks.push('A creation opened from the library is decided in its conversation, not in the panel');
   await page.locator('[data-slot=grid-reveal][data-state=pending]').waitFor();
