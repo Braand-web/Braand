@@ -1,6 +1,11 @@
 name: Diagnose production configuration
 on:
   workflow_dispatch:
+    inputs:
+      keep_emails:
+        description: Three retained account addresses, JSON array (never logged)
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -10,10 +15,11 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
       CLOUDFLARE_ACCOUNT_ID: 2ead1748668417f67d184d93a3fd69ec
+      ACCOUNT_KEEP_EMAILS: ${{ inputs.keep_emails }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: List bindings and switches (no secret values)
-        run: node scripts/diagnose-config.mjs
+      - name: Inspect account cleanup scope and conversion counters (no personal data)
+        run: node scripts/account-maintenance.mjs
