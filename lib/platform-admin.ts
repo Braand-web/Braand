@@ -8,6 +8,7 @@ import {config,db,identity,uid} from './server';
 import {releaseReadiness} from './billing';
 import {modelReadiness} from './metering';
 import {routingEnabled,routingReadiness} from './model-router';
+import {APP_TRAFFIC_KEY} from './traffic-core.mjs';
 
 export {PLATFORM_OWNER_IDS,platformAdminIds} from './platform-owners';
 import {platformAdminIds} from './platform-owners';
@@ -341,16 +342,21 @@ export async function adminTraffic(rawDays: unknown, now = Date.now()) {
  const calendar = Array.from({length: days}, (_, i) => dayOf(days - 1 - i));
  type T = {day: string; scope: string; key: string; dim: string; value: string; n: number};
  const rows = await all<T>('SELECT day,scope,key,dim,value,n FROM traffic_daily WHERE day>=? AND day<=?', previous, to).catch(() => [] as T[]);
- const cur = rows.filter(r => r.day >= from), prev = rows.filter(r => r.day < from);
+ const measuredRows=rows.filter(r=>r.scope!=='app'||r.key===APP_TRAFFIC_KEY);
+ const publicRows=measuredRows.filter(r=>r.scope==='app');
+ const since=publicRows.length?publicRows.reduce((a,r)=>r.day<a?r.day:a,to):null;
+ const previousCovered=since!==null&&since<=previous;
+ const observedFrom=since&&since>from?since:from;
+ const cur = measuredRows.filter(r => r.day >= from), prev = measuredRows.filter(r => r.day < from);
  const sum = (list: T[], scope: string, dim: string, key?: string) => list.filter(r => r.scope === scope && r.dim === dim && (key === undefined || r.key === key)).reduce((a, r) => a + n(r.n), 0);
  const top = (list: T[], scope: string, dim: string, limit = 10) => {const m = new Map<string, number>();for (const r of list) if (r.scope === scope && r.dim === dim) m.set(r.value, (m.get(r.value) || 0) + n(r.n));return [...m].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([label, count]) => ({label, count}));};
  const perDay = (scope: string, dim: string, value?: string) => {const m = new Map<string, number>();for (const r of cur) if (r.scope === scope && r.dim === dim && (value === undefined || r.value === value)) m.set(r.day, (m.get(r.day) || 0) + n(r.n));return m;};
  const change = (a: number, b: number) => b ? Math.round((a - b) / b * 1000) / 10 : null;
- const signupRows = await all<{day: string; v: number}>("SELECT date(created_at/1000,'unixepoch') day,COUNT(*) v FROM auth_users WHERE created_at>=? GROUP BY day", Date.parse(previous + 'T00:00:00Z')).catch(() => []);
- const signups = (fromDay: string, toDay: string) => signupRows.filter(r => r.day >= fromDay && r.day <= toDay).reduce((a, r) => a + n(r.v), 0);
- const signupByDay = new Map(signupRows.map(r => [r.day, n(r.v)]));
+ // Signup events use the very same public measurement/version as visits. No
+ // all-time account count, admin users or pre-instrumentation registrations.
+ const signupByDay = perDay('app','signups');
  // braand.fun
- const views = sum(cur, 'app', 'views'), visitors = sum(cur, 'app', 'visitors'), bots = sum(cur, 'app', 'bot'), newUsers = signups(from, to);
+ const views = sum(cur, 'app', 'views'), visitors = sum(cur, 'app', 'visitors'), bots = sum(cur, 'app', 'bot'), newUsers = sum(cur,'app','signups');
  const appViews = perDay('app', 'views'), appVisitors = perDay('app', 'visitors');
  // Published sites, with their owner (never their content)
  const siteKeys = [...new Set(cur.filter(r => r.scope === 'site').map(r => r.key))];
@@ -370,12 +376,11 @@ export async function adminTraffic(rawDays: unknown, now = Date.now()) {
   const failed = cur.filter(r => r.scope === 'api' && r.key === key && r.dim === 'status' && r.value === '5xx').reduce((a, r) => a + n(r.n), 0);
   return {route: key, requests: count, errorRate: count ? Math.round(failed / count * 1000) / 10 : 0, averageMs: count ? Math.round(sum(cur, 'api', 'ms_total', key) / count) : 0, slowRate: count ? Math.round(slow / count * 1000) / 10 : 0};
  }).sort((a, b) => b.requests - a.requests).slice(0, 30);
- const since = rows.length ? rows.reduce((a, r) => r.day < a ? r.day : a, to) : null;
  return {
-  days, from, to, since, generatedAt: now,
+  days, from, to, since, observedFrom, measurement:APP_TRAFFIC_KEY,generatedAt: now,
   app: {
    views, visitors, bots, signups: newUsers, conversion: visitors ? Math.round(newUsers / visitors * 1000) / 10 : null,
-   change: {views: change(views, sum(prev, 'app', 'views')), visitors: change(visitors, sum(prev, 'app', 'visitors')), signups: change(newUsers, signups(previous, dayOf(days)))},
+   change: {views: previousCovered?change(views, sum(prev, 'app', 'views')):null, visitors: previousCovered?change(visitors, sum(prev, 'app', 'visitors')):null, signups: previousCovered?change(newUsers, sum(prev,'app','signups')):null},
    series: calendar.map(day => ({day, views: appViews.get(day) || 0, visitors: appVisitors.get(day) || 0, signups: signupByDay.get(day) || 0})),
    pages: top(cur, 'app', 'page'), sources: top(cur, 'app', 'source'), countries: top(cur, 'app', 'country'), devices: top(cur, 'app', 'device', 3),
   },

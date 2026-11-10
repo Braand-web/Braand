@@ -50,11 +50,11 @@ export async function flushTraffic(db: DB) {
 
 type Context = {waitUntil(promise: Promise<unknown>): void};
 /** Records one served request; never throws. */
-export function recordTraffic(db: DB | undefined, ctx: Context | undefined, request: Request, response: Response, startedAt: number, site?: {slug: string}) {
+export function recordTraffic(db: DB | undefined, ctx: Context | undefined, request: Request, response: Response, startedAt: number, site?: {slug: string}, internal = false) {
  try {
   if (!db) return;
   const url = new URL(request.url), cf = (request as Request & {cf?: {country?: string}}).cf;
-  const {counters: added, visitor} = classify({method: request.method, url, status: response.status, ms: Date.now() - startedAt, headers: request.headers, kind: site ? 'site' : 'app', slug: site?.slug, contentType: response.headers.get('content-type'), country: cf?.country, ownHosts: ['braand.fun']});
+  const {counters: added, visitor} = classify({method: request.method, url, status: response.status, ms: Date.now() - startedAt, headers: request.headers, kind: site ? 'site' : 'app', slug: site?.slug, contentType: response.headers.get('content-type'), country: cf?.country, ownHosts: ['braand.fun'], internal});
   if (!added.length) return;
   addCounters(counters, added);events++;
   if (visitor && visitors.length < MAX_VISITORS) visitors.push({...visitor, ip: request.headers.get('cf-connecting-ip') || ''});

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {classify, pageShape, sourceOf, apiGroup, latencyBand, deviceOf, isBot, addCounters} from '../lib/traffic-core.mjs';
+import {classify, pageShape, sourceOf, apiGroup, latencyBand, deviceOf, isBot, addCounters,APP_TRAFFIC_KEY,INTERNAL_TRAFFIC_COOKIE,hasInternalTrafficCookie,internalTrafficCookie} from '../lib/traffic-core.mjs';
+import {PLATFORM_OWNER_IDS,platformAdminIdsFrom} from '../lib/platform-owner-ids.mjs';
 
 const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
@@ -11,6 +12,7 @@ test('a page visit counts a view with its page shape, source, device and country
   const result = classify(req('/aide?ref=abc', {referer: 'https://www.google.com/search?q=braand', 'cf-connecting-ip': '203.0.113.7'}));
   assert.deepEqual(dims(result), {views: '', page: '/aide', source: 'Google', device: 'Ordinateur', country: 'CM'});
   assert.ok(result.visitor);assert.equal('ip' in result.visitor, false);
+  assert.equal(result.visitor.key,APP_TRAFFIC_KEY);
   assert.ok(!JSON.stringify(result.counters).includes('203.0.113.7') && !JSON.stringify(result.counters).includes('ref=abc'));
 });
 
@@ -56,4 +58,27 @@ test('counters add up in memory before being written', () => {
   const map = new Map();
   addCounters(map, classify(req('/')).counters);addCounters(map, classify(req('/')).counters);
   const views = [...map.values()].find(c => c.dim === 'views');assert.equal(views.n, 2);
+});
+
+test('admin documents, API polling and identified admin browsers never enter traffic counters',()=>{
+ for(const path of ['/admin','/admin/','/admin/users?email=hidden','/api/admin/traffic','/api/admin/me'])assert.deepEqual(classify(req(path)).counters,[]);
+ for(const path of ['/','/aide','/api/chat']){
+  assert.deepEqual(classify(req(path,{}, {internal:true})).counters,[]);
+  assert.deepEqual(classify(req(path,{cookie:`other=x; ${INTERNAL_TRAFFIC_COOKIE}=1`})).counters,[]);
+ }
+ assert.ok(classify(req('/administration-guide')).visitor,'only the actual administration route is excluded');
+ assert.ok(classify(req('/',{'x-braand-identity-id':PLATFORM_OWNER_IDS[0]})).visitor,'supplied identity headers are not evidence of admin status');
+ assert.ok(classify(req('/',{cookie:INTERNAL_TRAFFIC_COOKIE+'=10'})).visitor);
+ assert.equal(hasInternalTrafficCookie(new Headers({cookie:INTERNAL_TRAFFIC_COOKIE+'=1'})),true);
+ assert.match(internalTrafficCookie(true),/^__Host-.*=1; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=7776000$/);
+ assert.match(internalTrafficCookie(false),/Max-Age=0$/);
+ const ids=platformAdminIdsFrom({OPS_ADMIN_IDS:' configured-admin, other ',BILLING_ADMIN_IDS:'billing-admin'});
+ for(const id of [...PLATFORM_OWNER_IDS,'configured-admin','other','billing-admin'])assert.ok(ids.has(id));
+});
+
+test('HEAD probes and prefetches are not visitors; a normal external page remains countable',()=>{
+ assert.deepEqual(classify(req('/',{},{method:'HEAD'})).counters,[]);
+ assert.deepEqual(classify(req('/',{purpose:'prefetch'})).counters,[]);
+ assert.deepEqual(classify(req('/',{'sec-purpose':'prefetch;prerender'})).counters,[]);
+ assert.equal(classify(req('/')).visitor.key,APP_TRAFFIC_KEY);
 });

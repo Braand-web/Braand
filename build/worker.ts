@@ -10,6 +10,8 @@ import {authenticateRequest, cleanupAuth, handleAuth, identityFreeHeaders} from 
 import {secureResponse} from '../lib/response-security.mjs';
 import sitesGateway from "../services/sites/handler.mjs";
 import {recordTraffic} from "../lib/traffic";
+import {platformAdminIdsFrom} from '../lib/platform-owner-ids.mjs';
+import {hasInternalTrafficCookie,internalTrafficCookie} from '../lib/traffic-core.mjs';
 export {BrowserSession} from "../lib/browser-session-do";
 
 const scheduledTasks = [
@@ -105,6 +107,7 @@ export default {
       ["/auth.css", "/favicon.ico", "/favicon.svg", "/file.svg", "/globe.svg", "/window.svg"].includes(path)
     );
     let sessionCookie: string | null = null;
+    let verifiedAdmin = false, verifiedUser = false;
     if (!import.meta.env.DEV && publicShell) request = new Request(request, {headers: identityFreeHeaders(request.headers)});
     else if (!import.meta.env.DEV) {
       try {
@@ -112,6 +115,8 @@ export default {
         if (authResponse) return secureResponse(authResponse,request);
         const authenticated = await authenticateRequest(request, env);
         request = authenticated.request;sessionCookie = authenticated.setCookie;
+        const userId=request.headers.get('x-braand-identity-id');verifiedUser=!!userId;
+        verifiedAdmin=!!userId&&platformAdminIdsFrom(env).has(userId);
       } catch {
         return secureResponse(Response.json({error:"Connexion temporairement indisponible.",code:"authentication_unavailable"}, {status:503,headers:{"Cache-Control":"no-store"}}),request);
       }
@@ -136,8 +141,14 @@ export default {
         },
       };
     }
-    const response = secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
-    recordTraffic(env.DB, ctx, measured, response, startedAt);
+    let response = secureResponse(await runWithConnectorBinding(binding, () => handler.fetch(request, env, ctx)),request);
+    recordTraffic(env.DB, ctx, measured, response, startedAt,undefined,verifiedAdmin);
+    // Remember a known administrator's browser without any identifier or D1
+    // read on the public shell. A verified non-admin clears the opt-out when
+    // sharing that browser. Supplied identity headers never reach this policy.
+    if(verifiedUser&&verifiedAdmin!==hasInternalTrafficCookie(measured.headers)){
+      response=new Response(response.body,response);response.headers.append('Set-Cookie',internalTrafficCookie(verifiedAdmin));
+    }
     // An active session is extended at most once a day; streaming bodies are left untouched.
     if (sessionCookie) {try {response.headers.append("Set-Cookie", sessionCookie);} catch {const copy = new Response(response.body, response);copy.headers.append("Set-Cookie", sessionCookie);return copy;}}
     return response;

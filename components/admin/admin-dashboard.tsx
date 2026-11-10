@@ -9,7 +9,7 @@ import "./admin.css";
 type View="overview"|"traffic"|"users"|"finance"|"sites"|"feedback"|"ai"|"quality"|"media"|"system"|"audit";
 const VIEWS:{id:View;label:string;help:string}[]=[
  {id:"overview",label:"Vue d’ensemble",help:"L’essentiel de Braand en un coup d’œil : utilisateurs, activité, argent et ce qui demande votre attention."},
- {id:"traffic",label:"Trafic",help:"Qui visite braand.fun et les sites publiés, d’où viennent les visiteurs, et la santé de l’API. Compté par Braand, par jour, sans cookie ni adresse IP conservée."},
+ {id:"traffic",label:"Trafic",help:"Trafic public de braand.fun, origine des pages vues, sites publiés et santé de l’API. Les pages d’administration et les navigateurs reconnus comme administrateurs sont exclus des visites de braand.fun."},
  {id:"users",label:"Utilisateurs",help:"Tous les comptes, leurs crédits et leur activité. Cliquez sur un compte pour agir : offrir des crédits, déconnecter, suspendre."},
  {id:"finance",label:"Revenus & crédits",help:"Commandes, abonnements, remboursements et mouvements de crédits."},
  {id:"sites",label:"Sites & forfaits",help:"Les sites publiés par vos clients (adresse, propriétaire, demandes reçues) et le catalogue des forfaits avec les abonnements actifs. Le contenu des sites n’est jamais affiché ici."},
@@ -103,14 +103,14 @@ function Traffic(){
    <div className="adm-seg" role="group" aria-label="Période">{[7,30,90].map(d=><button key={d} type="button" aria-pressed={days===d} onClick={()=>setDays(d)}>{d} jours</button>)}</div>
    <div className="adm-seg" role="group" aria-label="Trafic">{([["app","braand.fun"],["sites","Sites publiés"],["api","API"]] as const).map(([id,l])=><button key={id} type="button" aria-pressed={part===id} onClick={()=>setPart(id)}>{l}</button>)}</div>
   </div>
-  <p className="adm-note">{data.since?`Mesuré par Braand depuis le ${new Date(data.since+"T00:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",timeZone:"UTC"})}.`:"La mesure démarre avec ce déploiement : les premiers chiffres arrivent après les premières visites."} Sans cookie ni adresse IP conservée ; les robots sont exclus. Chiffres minimaux : les dernières secondes d’activité peuvent arriver avec un léger retard.</p>
+  <p className="adm-note">{part==="app"?<>{data.since?`Mesure hors administration depuis le ${new Date(data.since+"T00:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",timeZone:"UTC"})}.`:"La mesure hors administration démarre avec ce déploiement."} L’ancien historique, qui incluait les tests et visites d’administration, est conservé séparément et n’entre pas dans ces chiffres. Inscriptions et visites utilisent la même période mesurée. Aucun cookie de suivi : seul un témoin sans identifiant exclut les navigateurs administrateurs. Les adresses IP ne sont pas conservées.</>:"Mesure par jour, sans adresse IP conservée. Les dernières secondes d’activité peuvent arriver avec un léger retard."}</p>
   {part==="app"?<>
    <div className="adm-grid">
-    <Kpi label="Visiteurs" value={fmt(a.visitors)} hint={"Personnes différentes par jour, additionnées · "+trend(a.change.visitors)}/>
+    <Kpi label="Visiteurs journaliers cumulés" value={fmt(a.visitors)} hint={"Une même personne peut compter plusieurs jours · "+trend(a.change.visitors)}/>
     <Kpi label="Pages vues" value={fmt(a.views)} hint={trend(a.change.views)}/>
-    <Kpi label="Inscriptions" value={fmt(a.signups)} hint={trend(a.change.signups)}/>
-    <Kpi label="Conversion" value={a.conversion===null?"—":fmt(a.conversion,1)+" %"} hint="Inscriptions rapportées aux visiteurs de la période."/>
-    <Kpi label="Robots écartés" value={fmt(a.bots)} hint="Moteurs de recherche, aperçus de liens et outils automatiques : non comptés dans les visites."/>
+    <Kpi label="Inscriptions suivies" value={fmt(a.signups)} hint={"Depuis le début de la mesure hors administration · "+trend(a.change.signups)}/>
+    <Kpi label="Taux d’inscription indicatif" value={a.conversion===null?"—":fmt(a.conversion,1)+" %"} hint="Inscriptions suivies / visiteurs journaliers cumulés, sur les mêmes dates. Ce ratio ne mesure pas une conversion individuelle."/>
+    <Kpi label="Robots écartés" value={fmt(a.bots)} hint="Robots reconnus par leur navigateur, exclus des visites. Ce filtre ne garantit pas que tout trafic automatisé soit détecté."/>
    </div>
    <div className="adm-row">
     <div className="adm-card"><h2>Visiteurs et inscriptions par jour</h2><Chart points={a.series} bars={a.series.map(p=>p.visitors)} line={a.series.map(p=>p.signups)}/><p className="adm-legend">Barres : visiteurs · ligne : inscriptions</p></div>
@@ -118,7 +118,7 @@ function Traffic(){
    </div>
    <div className="adm-row">
     <Shares title="Pages les plus vues" items={a.pages} total={a.views}/>
-    <Shares title="D’où viennent les visiteurs" items={a.sources} total={a.views}/>
+    <Shares title="Origine des pages vues" items={a.sources} total={a.views} label={value=>value==="Lien direct"?"Direct ou source inconnue":value}/>
     <Shares title="Pays" items={a.countries} total={a.views} label={COUNTRY}/>
     <Shares title="Appareils" items={a.devices} total={a.views}/>
    </div>

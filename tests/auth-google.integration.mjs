@@ -52,5 +52,17 @@ try{
   let flow=await begin('/');token=await signed(flow.state,{email:'member@example.org',sub:'member-google-subject'});let response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,303);assert.equal(response.headers.get('location'),'/?accueil=retour');assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_google_identities WHERE user_id=?').get('existing-user').n,1);
   flow=await begin('https://evil.test/');token=await signed(flow.state,{email:'member@example.org',sub:'different-google-subject'});response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);assert.equal(response.status,409);assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_google_identities WHERE user_id=?').get('existing-user').n,1);
  });
+ await check('Google sets admin exclusion before returning to the public shell',async()=>{
+  const user=sql.prepare("SELECT id FROM auth_users WHERE email='owner@gmail.com'").get();env.OPS_ADMIN_IDS=user.id;
+  const flow=await begin('/');token=await signed(flow.state);const response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie),env,now);
+  assert.equal(response.status,303);assert.ok(response.headers.getSetCookie().some(value=>value.startsWith('__Host-braand_internal_traffic=1;')));delete env.OPS_ADMIN_IDS;
+ });
+ await check('new accounts created from an excluded admin browser do not inflate signup counters',async()=>{
+  const count=()=>Number(sql.prepare("SELECT COALESCE(SUM(n),0) n FROM traffic_daily WHERE scope='app' AND key='public-v2' AND dim='signups'").get().n),before=count();
+  const flow=await begin('/');token=await signed(flow.state,{email:'internal-signup@braand.test',sub:'internal-signup-subject'});
+  const response=await auth.handleAuth(req('/auth/google/callback?code=fixture-code&state='+flow.state,flow.cookie+'; __Host-braand_internal_traffic=1'),env,now);
+  assert.equal(response.status,303);assert.equal(count(),before);assert.equal(sql.prepare("SELECT COUNT(*) n FROM auth_users WHERE email='internal-signup@braand.test'").get().n,1);
+  assert.ok(response.headers.getSetCookie().some(value=>value.startsWith('__Host-braand_internal_traffic=;')&&value.endsWith('Max-Age=0')),'a verified non-admin clears the exclusion for subsequent visits');
+ });
 }finally{globalThis.fetch=originalFetch;sql.close();}
 console.log(`${checks} Google authentication checks passed; no external provider requests.`);

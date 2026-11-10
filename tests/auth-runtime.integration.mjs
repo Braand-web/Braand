@@ -114,5 +114,21 @@ try {
   const out=await auth.handleAuth(req('/auth/sign-out',{confirm:'yes',scope:'all'},first),env,now);assert.equal(out.status,303);
   for(const token of [first,second,old])assert.equal((await auth.authenticateRequest(req('/api/workspace',null,token),env,now+1000)).request.headers.get('x-braand-identity-id'),null);
  });
+ await check('signup measurement is atomic, idempotent and independent from account deletion',async()=>{
+  const count=()=>Number(sql.prepare("SELECT COALESCE(SUM(n),0) n FROM traffic_daily WHERE scope='app' AND key='public-v2' AND dim='signups'").get().n),before=count();
+  const first=await auth.startAccountSession(env,'signup-measurement@braand.test',now);assert.equal(first.created,true);assert.equal(count(),before+1);
+  await auth.startAccountSession(env,'signup-measurement@braand.test',now+1);assert.equal(count(),before+1);
+  sql.prepare('DELETE FROM auth_users WHERE id=?').run(first.userId);assert.equal(count(),before+1);
+ });
+ await check('only authenticated administrators receive analytics exclusion; opt-out never authenticates',async()=>{
+  const account=await auth.startAccountSession(env,'analytics-admin@braand.test',now),cookie='__Host-braand_session='+account.session;
+  const adminEnv={...env,OPS_ADMIN_IDS:account.userId};
+  const response=await worker.fetch(req('/account',null,cookie),adminEnv,{waitUntil(){}});
+  assert.equal((await response.json()).id,account.userId);assert.match(response.headers.get('set-cookie'),/__Host-braand_internal_traffic=1;/);
+  const member=await worker.fetch(req('/account',null,cookie+'; __Host-braand_internal_traffic=1'),env,{waitUntil(){}});
+  assert.match(member.headers.get('set-cookie'),/__Host-braand_internal_traffic=;.*Max-Age=0/);
+  const anonymous=await auth.authenticateRequest(req('/account',null,'__Host-braand_internal_traffic=1',{'x-braand-identity-id':account.userId}),adminEnv,now);
+  assert.equal(anonymous.request.headers.get('x-braand-identity-id'),null);
+ });
 } finally {globalThis.fetch=originalFetch;sql.close();}
 console.log(`${checks} independent authentication checks passed; zero real emails or payments.`);

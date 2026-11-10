@@ -1,7 +1,9 @@
 // Independent authentication. No trusted identity headers from clients.
 import {WELCOME_UNITS, WELCOME_TTL} from './welcome-credits.mjs';
 import {createRemoteJWKSet,jwtVerify} from 'jose';
-type AuthEnv = Pick<Cloudflare.Env, 'DB' | 'APP_ENV' | 'APP_ORIGIN' | 'AUTH_ENABLED' | 'AUTH_HASH_SECRET' | 'AUTH_GOOGLE_CLIENT_ID' | 'AUTH_GOOGLE_CLIENT_SECRET' | 'AUTH_GOOGLE_CONFIG' | 'RESEND_MODE' | 'RESEND_API_KEY' | 'RESEND_FROM' | 'RESEND_TEST_RECIPIENT' | 'RESEND_LIVE_APPROVED'>;
+import {APP_TRAFFIC_KEY,hasInternalTrafficCookie,internalTrafficCookie} from './traffic-core.mjs';
+import {platformAdminIdsFrom} from './platform-owner-ids.mjs';
+type AuthEnv = Pick<Cloudflare.Env, 'DB' | 'APP_ENV' | 'APP_ORIGIN' | 'AUTH_ENABLED' | 'AUTH_HASH_SECRET' | 'AUTH_GOOGLE_CLIENT_ID' | 'AUTH_GOOGLE_CLIENT_SECRET' | 'AUTH_GOOGLE_CONFIG' | 'RESEND_MODE' | 'RESEND_API_KEY' | 'RESEND_FROM' | 'RESEND_TEST_RECIPIENT' | 'RESEND_LIVE_APPROVED'> & {OPS_ADMIN_IDS?:string;BILLING_ADMIN_IDS?:string};
 export type BraandIdentity = {userId: string; email: string; displayName: string; fullName: null};
 const LOGIN_COOKIE = '__Host-braand_login';
 // Says only that this browser has signed in before; it carries no identity.
@@ -75,7 +77,7 @@ async function rate(env: AuthEnv, category: string, value: string, max: number, 
   const row = await env.DB!.prepare('INSERT INTO auth_rate_limits(bucket,count,expires_at) VALUES (?,1,?) ON CONFLICT(bucket) DO UPDATE SET count=count+1 WHERE count<? RETURNING count').bind(bucket, (slot+1)*period, max).first<{count:number}>();
   return !!row;
 }
-async function ensureUser(env:AuthEnv,email:string,now:number){
+async function ensureUser(env:AuthEnv,email:string,now:number,internal=false){
  const userId=crypto.randomUUID();
  await env.DB!.batch([
   env.DB!.prepare('INSERT INTO auth_users(id,email,verified_at,created_at) VALUES (?,?,?,?) ON CONFLICT(email) DO NOTHING').bind(userId,email,now,now),
@@ -84,7 +86,10 @@ async function ensureUser(env:AuthEnv,email:string,now:number){
   env.DB!.prepare("INSERT OR IGNORE INTO workspaces(id,name,created_at,organization_id) SELECT id,'Mon entreprise',created_at,id FROM auth_users WHERE id=?").bind(userId),
   env.DB!.prepare("INSERT OR IGNORE INTO members(id,workspace_id,user_id,role) SELECT id,id,id,'owner' FROM auth_users WHERE id=?").bind(userId),
   env.DB!.prepare('INSERT OR IGNORE INTO billing_claims(user_id,organization_id,day,units,created_at) SELECT id,id,?,?,created_at FROM auth_users WHERE id=?').bind(new Date(now).toISOString().slice(0,10),WELCOME_UNITS,userId),
-  env.DB!.prepare("INSERT OR IGNORE INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,expires_at,created_at) SELECT 'free:'||user_id,organization_id,'free',user_id,units,units,created_at,created_at+?,created_at FROM billing_claims WHERE user_id=?").bind(WELCOME_TTL,userId)
+  env.DB!.prepare("INSERT OR IGNORE INTO credit_lots(id,organization_id,source,source_id,granted,balance,starts_at,expires_at,created_at) SELECT 'free:'||user_id,organization_id,'free',user_id,units,units,created_at,created_at+?,created_at FROM billing_claims WHERE user_id=?").bind(WELCOME_TTL,userId),
+  // Same transaction and newly inserted UUID: retries/returning users add zero;
+  // deleting a test account cannot rewrite anonymous historical signup totals.
+  env.DB!.prepare("INSERT INTO traffic_daily(day,scope,key,dim,value,n) SELECT ?,'app',?,'signups','',1 FROM auth_users WHERE id=? AND ?=0 ON CONFLICT(day,scope,key,dim,value) DO UPDATE SET n=n+1").bind(new Date(now).toISOString().slice(0,10),APP_TRAFFIC_KEY,userId,internal?1:0)
  ]);
  const row=await env.DB!.prepare('SELECT id FROM auth_users WHERE email=?').bind(email).first<{id:string}>();
  return row?{id:row.id,created:row.id===userId}:null;
@@ -194,7 +199,7 @@ export async function handleAuth(request: Request, env: AuthEnv, now = Date.now(
         // Google identity already owns that account, the address was recycled: refuse.
         if(existing&&existing.google>0)return page('Compte déjà associé','<p>Cette adresse est déjà liée à un autre compte Google. Connectez-vous avec le compte Google habituel.</p>',409);
         if(existing)userId=existing.id;
-        else{const created=await ensureUser(env,email,now);if(!created)throw new Error('google_account_unavailable');userId=created.id;isNew=created.created;}
+        else{const created=await ensureUser(env,email,now,hasInternalTrafficCookie(request.headers));if(!created)throw new Error('google_account_unavailable');userId=created.id;isNew=created.created;}
         await env.DB!.prepare('INSERT OR IGNORE INTO auth_google_identities(subject,user_id,created_at) VALUES (?,?,?)').bind(subject,userId,now).run();
         const identity=await env.DB!.prepare('SELECT user_id FROM auth_google_identities WHERE subject=?').bind(subject).first<{user_id:string}>();
         if(identity?.user_id!==userId)throw new Error('google_identity_conflict');
@@ -203,7 +208,8 @@ export async function handleAuth(request: Request, env: AuthEnv, now = Date.now(
       // Tells the app whether to welcome a new account or greet a returning one.
       destination.searchParams.set('accueil',isNew?'nouveau':'retour');
       const response=redirect(destination.pathname+destination.search+destination.hash,setCookie(SESSION_COOKIE,session,604800));
-      response.headers.append('Set-Cookie',setCookie(LOGIN_COOKIE,'',0));response.headers.append('Set-Cookie',`${KNOWN_COOKIE}=1; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=31536000`);return response;
+      response.headers.append('Set-Cookie',setCookie(LOGIN_COOKIE,'',0));response.headers.append('Set-Cookie',`${KNOWN_COOKIE}=1; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+      response.headers.append('Set-Cookie',internalTrafficCookie(platformAdminIdsFrom(env).has(userId)));return response;
     }catch{return page('Connexion Google impossible','<p>La connexion n’a pas pu être vérifiée. Réessayez dans un instant.</p>',503);}
   }
   // E-mail links and passwords are retired: Braand signs in with Google only.

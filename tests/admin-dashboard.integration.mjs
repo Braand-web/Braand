@@ -149,6 +149,10 @@ const audit=await admin.adminAudit('admin.');assert.ok(audit.entries.length>=4&&
  admin.recordTraffic(db,undefined,visit('/tarifs','198.51.100.1',CHROME),html,started);
  admin.recordTraffic(db,undefined,visit('/','198.51.100.2',PHONE,'https://l.facebook.com/'),html,started);
  admin.recordTraffic(db,undefined,visit('/','198.51.100.3','Googlebot/2.1'),html,started);
+ admin.recordTraffic(db,undefined,visit('/admin','198.51.100.70',CHROME),html,started);
+ admin.recordTraffic(db,undefined,visit('/api/admin/traffic','198.51.100.70',CHROME),json,started);
+ admin.recordTraffic(db,undefined,new Request('https://braand.fun/',{headers:{'user-agent':CHROME,cookie:'__Host-braand_internal_traffic=1','cf-connecting-ip':'198.51.100.71'}}),html,started);
+ admin.recordTraffic(db,undefined,visit('/','198.51.100.72',CHROME),html,started,undefined,true);
  admin.recordTraffic(db,undefined,visit('/api/billing/summary','198.51.100.1',CHROME),json,started-1200);
  sql.prepare("INSERT OR IGNORE INTO site_publications(id,workspace_id,organization_id,resource_id,slug,resource_version,digest,status,badge,created_at,updated_at) VALUES ('pub-t','user-4','user-4','site-t','mon-salon',1,'d','published',1,?,?)").run(now,now);
  admin.recordTraffic(db,undefined,visit('/mon-salon/','198.51.100.9',PHONE,null,'https://braand-sites.workers.dev'),html,started,{slug:'mon-salon'});
@@ -164,12 +168,22 @@ const audit=await admin.adminAudit('admin.');assert.ok(audit.entries.length>=4&&
  admin.recordTraffic(db,undefined,visit('/','198.51.100.4',CHROME),html,started);
  assert.deepEqual(await admin.flushTraffic({prepare:()=>({bind:()=>({})}),batch:async()=>{throw new Error('D1 down');}}),{counters:0,visitors:0});
  // Earlier days for the period comparison.
- for(let d=1;d<=40;d++){const day=new Date(now-d*DAY).toISOString().slice(0,10);for(const [dim,value,n] of [['views','',40+d%9*6],['visitors','',18+d%7*3],['source','Google',12],['source','Facebook',9+d%4],['source','Lien direct',11],['page','/',30],['page','/tarifs',8],['country','CM',28],['country','SN',6],['country','FR',4],['device','Téléphone',30],['device','Ordinateur',12],['bot','',14]])ins('traffic_daily',{day,scope:'app',key:'',dim,value,n});
+ for(let d=1;d<=40;d++){const day=new Date(now-d*DAY).toISOString().slice(0,10);for(const [dim,value,n] of [['views','',40+d%9*6],['visitors','',18+d%7*3],['signups','',1],['source','Google',12],['source','Facebook',9+d%4],['source','Lien direct',11],['page','/',30],['page','/tarifs',8],['country','CM',28],['country','SN',6],['country','FR',4],['device','Téléphone',30],['device','Ordinateur',12],['bot','',14]])ins('traffic_daily',{day,scope:'app',key:'public-v2',dim,value,n});
   for(const [dim,value,n] of [['views','',6+d%5],['visitors','',3+d%3]])ins('traffic_daily',{day,scope:'site',key:'mon-salon',dim,value,n});
   for(const [key,count,slow,fail,ms] of [['/api/chat',120,4,1,900],['/api/billing/summary',60,0,0,140],['/api/resources/:id',300,1,0,80]]){ins('traffic_daily',{day,scope:'api',key,dim:'requests',value:'GET',n:count});ins('traffic_daily',{day,scope:'api',key,dim:'status',value:'2xx',n:count-fail});if(fail)ins('traffic_daily',{day,scope:'api',key,dim:'status',value:'5xx',n:fail});ins('traffic_daily',{day,scope:'api',key,dim:'latency',value:'< 10 s',n:slow});ins('traffic_daily',{day,scope:'api',key,dim:'ms_total',value:'',n:count*ms});}}
+ // Historical admin traffic is kept but never contaminates the new figures.
+ ins('traffic_daily',{day:today,scope:'app',key:'',dim:'views',value:'',n:999999});
+ ins('traffic_daily',{day:today,scope:'app',key:'',dim:'page',value:'/admin',n:999999});
  const traffic=await admin.adminTraffic(30,now);
  assert.equal(traffic.days,30);assert.equal(traffic.app.series.length,30);assert.equal(traffic.app.series.at(-1).visitors,2);
- assert.ok(traffic.app.views>1000);assert.equal(typeof traffic.app.change.views,'number');assert.ok(traffic.app.conversion>0);
+ assert.ok(traffic.app.views>1000&&traffic.app.views<999999);assert.equal(traffic.app.change.views,null,'the previous 30 days are not fully covered');assert.ok(traffic.app.conversion>0);
+ assert.equal(traffic.app.signups,29,'only same-version signup events in the displayed period; not all accounts');
+ assert.equal(traffic.app.conversion,Math.round(traffic.app.signups/traffic.app.visitors*1000)/10);
+ assert.ok(!traffic.app.pages.some(page=>page.label.startsWith('/admin')));
+ sql.exec('SAVEPOINT limited_public_coverage');
+ sql.prepare("DELETE FROM traffic_daily WHERE scope='app' AND key='public-v2' AND day<?").run(today);
+ const partial=await admin.adminTraffic(30,now);assert.equal(partial.since,today);assert.equal(partial.observedFrom,today);assert.equal(partial.app.signups,0);assert.equal(partial.app.conversion,0);assert.equal(partial.app.views,4);assert.equal(partial.app.change.visitors,null);
+ sql.exec('ROLLBACK TO limited_public_coverage; RELEASE limited_public_coverage');
  assert.equal(traffic.app.sources[0].label,'Google');assert.equal(traffic.app.countries[0].label,'CM');assert.equal(traffic.app.devices[0].label,'Téléphone');
  assert.equal(traffic.sites.list[0].slug,'mon-salon');assert.equal(traffic.sites.list[0].owner,sql.prepare("SELECT email FROM auth_users WHERE id='user-4'").get().email);
  const chat=traffic.api.routes.find(r=>r.route==='/api/chat');assert.equal(chat.averageMs,900);assert.ok(chat.errorRate>0);assert.ok(traffic.api.errorRate5>0);
