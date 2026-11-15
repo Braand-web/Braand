@@ -349,8 +349,8 @@ try {
     const big=new Uint8Array(3*1024*1024);big.fill(7);big[0]=1;await steps.binding.put('ops-owner/files/zz-big.bin',big,{customMetadata:{big:'yes'}});
     const before=source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n;
     await withBackupBindings(source.binding,steps.binding,stepArchives.binding,async()=>{
-      const opened=await backups.startBackup(now);assert.equal(opened.status,'started');
-      assert.deepEqual(await backups.startBackup(now+1),{id:opened.id,status:'in_progress'},'one backup at a time');
+      const later=now+21*3600000,opened=await backups.startBackup(later);assert.equal(opened.status,'started');
+      assert.deepEqual(await backups.startBackup(later+1),{id:opened.id,status:'in_progress'},'one backup at a time');
       const first=await backups.advanceBackup(now,{operations:25});
       assert.equal(first.status,'in_progress');assert.equal(first.phase,'objects');assert(first.objects>0&&first.objects<151,'stopped within its budget at '+first.objects);
       assert(![...stepArchives.objects.keys()].some(key=>/^braand-backups\/[^/]+\.bin$/.test(key)),'no manifest before the last step');
@@ -362,6 +362,7 @@ try {
       let step,rounds=0;do{step=await backups.advanceBackup(now,{operations:25});rounds++;}while(step.status==='in_progress'&&rounds<60);
       assert.equal(step.status,'completed');assert.equal(step.objects,151);assert(rounds>3,'needed several steps: '+rounds);
       assert.equal((await backups.advanceBackup(now)).status,'idle');
+      assert.equal((await backups.startBackup(later+3600000)).status,'done_recently','one completed backup per day');
       assert.equal(source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n,before+1);
       const target=database(),targetMedia=bucket();
       try{
@@ -371,7 +372,7 @@ try {
         assert.equal(target.sql.prepare("SELECT count(*) n FROM messages WHERE conversation_id='restore-conversation'").get().n,3200);
       }finally{target.sql.close();}
       // Steps that keep getting cut off end as a failed backup with an alert, not an endless retry.
-      const stuck=await backups.startBackup(now+2);source.sql.prepare('UPDATE operations_backup_progress SET attempts=6 WHERE id=?').run(stuck.id);
+      const stuck=await backups.startBackup(later+21*3600000);source.sql.prepare('UPDATE operations_backup_progress SET attempts=6 WHERE id=?').run(stuck.id);
       const ended=await backups.advanceBackup(now+2);assert.equal(ended.status,'failed');assert.equal(ended.errorCode,'backup_step_interrupted');
       assert.equal(source.sql.prepare("SELECT category FROM operations_alerts WHERE id=?").get('backup:'+stuck.id).category,'backup_failed');
       assert.equal(source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n,before+1);

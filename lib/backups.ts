@@ -300,6 +300,9 @@ export async function startBackup(now = Date.now()) {
   await db().prepare(BACKUP_PROGRESS_SCHEMA).run();
   const active = await db().prepare("SELECT id,created_at FROM operations_backup_progress WHERE phase IN ('database','objects','commit') ORDER BY created_at DESC LIMIT 1").first<{id:string;created_at:number}>();
   if (active && now - active.created_at < STALLED_MS) return {id: active.id, status: 'in_progress'};
+  // One completed backup per day: open the next one 20 hours after the last success.
+  const recent = await db().prepare("SELECT id FROM operations_backups WHERE status='completed' AND created_at>? ORDER BY created_at DESC LIMIT 1").bind(now - 20 * 3600 * 1000).first<{id:string}>();
+  if (recent && !active) return {id: recent.id, status: 'done_recently'};
   if (active) await db().prepare("UPDATE operations_backup_progress SET phase='failed',error_code='backup_stalled',lease_token=NULL,lease_until=0,updated_at=? WHERE id=?").bind(now,active.id).run();
   const id = uid();
   await db().prepare("INSERT INTO operations_backup_progress(id,phase,state,created_at,updated_at) VALUES (?,'database','{}',?,?)").bind(id,now,now).run();

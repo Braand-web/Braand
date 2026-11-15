@@ -94,8 +94,14 @@ export async function runOperationsTick(now = Date.now()) {
   const browser = await runTrackedJob('browser_cleanup','browser_cleanup:' + slot,async() => {await browserCleanup(now);await browserRPCCleanup(now);},now);
   let backup: {id?:string;status:string;replayed?:boolean;step?:unknown} = {status:'disabled'};
   if (config().BACKUP_ENABLED === 'true') {
-    // The daily job only opens the backup; every tick then advances it a bounded step.
-    backup = await runTrackedJob('backup','backup:' + new Date(now).toISOString().slice(0,10).replaceAll('-',''),() => startBackup(now),now);
+    // Each tick opens a backup when none succeeded in the last 20 hours, then
+    // advances the one in progress by a bounded step.
+    try {backup = await startBackup(now);}
+    catch (error) {
+      const code = error instanceof AppError && error.code ? error.code : 'backup_start_failed';
+      backup = {status:'blocked'};
+      await raiseOperationalAlert('backup:start:' + new Date(now).toISOString().slice(0,10).replaceAll('-',''),'job_blocked',code,now);
+    }
     try {backup = {...backup,step:await advanceBackup(now)};} catch {backup = {...backup,step:{status:'step_error'}};}
   }
   // Weekly agent quality report, Mondays from 06:00 UTC, once per ISO week.

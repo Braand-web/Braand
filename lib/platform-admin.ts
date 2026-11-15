@@ -274,7 +274,8 @@ export async function adminBackupHealth(now = Date.now()) {
   one<{phase: string; error_code: string | null; attempts: number; created_at: number; updated_at: number; objects: number | null}>("SELECT phase,error_code,attempts,created_at,updated_at,json_extract(state,'$.manifest.objects') objects FROM operations_backup_progress ORDER BY created_at DESC LIMIT 1").catch(() => null),
  ]);
  const age = last ? now - n(last.created_at) : null;
- const jobBad = (!!job && ['uncertain', 'failed'].includes(job.status)) || progress?.phase === 'failed';
+ // Backups now run in steps (operations_backup_progress); the old daily job only matters before the first one.
+ const jobBad = progress ? progress.phase === 'failed' : !!job && ['uncertain', 'failed'].includes(job.status);
  return {
   healthy: age !== null && age <= BACKUP_STALE_MS && !jobBad,
   lastSuccessAt: last?.created_at ?? null, ageHours: age === null ? null : Math.round(age / 3600000),
