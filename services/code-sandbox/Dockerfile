@@ -16,6 +16,16 @@ RUN apt-get update \
  && fc-cache -f
 ENV CHROMIUM_PATH=/usr/bin/chromium PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm install --global playwright-core@1.58.2 && npm cache clean --force
+# Python for data work, automation and files (Excel, Word, PowerPoint, PDF,
+# charts). A virtual environment first in PATH: `python`, `python3` and `pip`
+# use it, and users can `pip install` more packages without touching the system.
+RUN python3 -m venv /opt/python \
+ && /opt/python/bin/pip install --no-cache-dir \
+    numpy==2.1.3 pandas==2.2.3 openpyxl==3.1.5 xlsxwriter==3.2.5 matplotlib==3.9.2 \
+    requests==2.32.3 python-docx==1.1.2 python-pptx==1.0.2 pillow==11.0.0 reportlab==4.2.5 \
+    beautifulsoup4==4.12.3 lxml==5.3.0 pypdf==5.1.0 pyyaml==6.0.2 \
+ && /opt/python/bin/python -c "import pandas, openpyxl, docx, pptx, matplotlib, reportlab, pypdf"
+ENV PATH=/opt/python/bin:$PATH MPLBACKEND=Agg
 ENV NODE_PATH=/usr/local/lib/node_modules
 COPY --from=sandbox-tools /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim
 COPY motion/render-motion.mjs /opt/braand/render-motion.mjs
