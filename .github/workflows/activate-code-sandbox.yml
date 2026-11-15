@@ -26,6 +26,10 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --include=dev --include=optional
+      - name: Check Cloudflare Containers access (plan and token permission)
+        run: |
+          body=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/containers/me")
+          echo "$body" | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{let j={};try{j=JSON.parse(t)}catch{};const errors=(j.errors||[]).map(e=>e.code+" "+e.message).join(" | ");console.log("Containers access:",j.success?"OK":"REFUSED",errors);if(!j.success){console.log("::error::Cloudflare refuses Containers: enable Workers Paid and give the deploy token the permission Account > Containers > Edit. "+errors);process.exit(1)}})'
       - name: Build and deploy the sandbox Worker and its container image
         run: |
           node services/code-sandbox/prepare-config.mjs production
