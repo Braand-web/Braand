@@ -21,7 +21,7 @@ concurrency:
 jobs:
   verify:
     name: Typecheck, lint, build and offline tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       CI: "true"
@@ -93,7 +93,7 @@ jobs:
   provider_proof:
     name: Real provider checks on a disposable fixture
     if: github.event_name == 'workflow_dispatch' && inputs.release_providers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.BRAAND_PROVIDER_DEPLOY_TOKEN || secrets.BRAAND_DEPLOY_ONCE }}
@@ -120,7 +120,7 @@ jobs:
     name: Publish verified main source
     needs: [verify, provider_proof]
     if: always() && needs.verify.result == 'success' && (needs.provider_proof.result == 'success' || needs.provider_proof.result == 'skipped') && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || (github.ref == 'refs/heads/feat/browserbase-firecrawl' && github.event_name == 'workflow_dispatch' && inputs.release_providers))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: braand-production
@@ -173,7 +173,7 @@ jobs:
     name: Publish verified credit billing correction
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/fix/credits-postpaid'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: braand-production
