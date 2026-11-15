@@ -9,7 +9,6 @@ const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
 const LEGACY_V1_BYTES = 8 * 1024 * 1024; // Single-object v1 archives stay bounded as before.
 const MAX_ROWS = 250000;
 const PAGE_ROWS = 500;
-const BATCH_PAGES = 8; // pages of one large table read in the same batch
 const BATCH_STATEMENTS = 40;
 const MAX_OBJECTS = 100000;
 // Schema size is not the restore risk (rows and bytes are bounded above); leave room for new features.
@@ -55,7 +54,8 @@ export function backupReadiness() {
   if (c.BACKUP_MAINTENANCE_CONFIRMED !== 'true') return {ready:false,reason:'backup_maintenance_required',limits};
   return {ready:true,reason:null,limits};
 }
-const derivedContextObject=(name:string)=>/^agent_context_fts(?:_(?:data|idx|content|docsize|config|insert|update|delete))?$/.test(name);
+// The progress of the backup being written is not data to restore (a restored row would resume a phantom backup).
+const derivedContextObject=(name:string)=>name==='operations_backup_progress'||/^agent_context_fts(?:_(?:data|idx|content|docsize|config|insert|update|delete))?$/.test(name);
 async function schema(database: D1Database,omitDerived=false) {
   const result = await database.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all<SchemaEntry>();
   // The search index is derived from resources. Never archive FTS shadow
@@ -78,59 +78,6 @@ function encodeRow(row: Record<string, unknown>): Record<string, Cell> {
     throw new AppError('Type de donnée non pris en charge par la sauvegarde.',409,'backup_data_unsupported');
   }));
 }
-// Each table is encoded as soon as it is read, so memory holds bytes, not a
-// second copy of every row as objects. The result is the same JSON document as
-// a v1 snapshot, so restore is unchanged.
-async function snapshot(id: string, now: number): Promise<{bytes: Uint8Array; tables: number; rows: number}> {
-  const database = db(), entries = await schema(database,true), tableNames = entries.filter(entry => entry.type === 'table').map(entry => entry.name);
-  const sequenceTable = await database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").first();
-  const sequences = sequenceTable ? (await database.prepare('SELECT name,seq FROM sqlite_sequence').all<{name:string;seq:number}>()).results : [];
-  const head = encoder.encode(JSON.stringify({format:'braand-backup-v1',id,createdAt:now,schema:entries,sequences,objects:[]}).slice(0,-1) + ',"tables":[');
-  const chunks: Uint8Array[] = [head];
-  let count = 0, size = head.byteLength + 2;
-  // Reads are grouped in db.batch() calls, which count as one query each
-  // against the per-run limit (50 on Workers Free, 1,000 on Paid). The required
-  // maintenance window keeps pagination stable across reads.
-  const withoutRowid = new Set(entries.filter(entry => entry.type === 'table' && /\bWITHOUT\s+ROWID\b/i.test(entry.sql)).map(entry => entry.name));
-  const select = (name: string, offset: number) => database.prepare('SELECT * FROM ' + identifier(name) + (withoutRowid.has(name) ? '' : ' ORDER BY rowid') + ' LIMIT ? OFFSET ?').bind(PAGE_ROWS, offset);
-  const parts = new Map<string, string[]>(tableNames.map(name => [name, []]));
-  let pending = tableNames.map(name => ({name, offset: 0, first: true}));
-  while (pending.length) {
-    // One page for tables not read yet; several pages at once for large ones.
-    const requests: {name: string; offset: number}[] = [];
-    for (const table of pending) {
-      const pages = table.first ? 1 : BATCH_PAGES;
-      for (let page = 0; page < pages && requests.length < BATCH_STATEMENTS; page++) requests.push({name: table.name, offset: table.offset + page * PAGE_ROWS});
-      if (requests.length >= BATCH_STATEMENTS) break;
-    }
-    const results = await database.batch<Record<string, unknown>>(requests.map(request => select(request.name, request.offset)));
-    const finished = new Set<string>(), reached = new Map<string, number>();
-    results.forEach((result, index) => {
-      const {name, offset} = requests[index], rows = result.results || [];
-      if (finished.has(name)) return;
-      for (const row of rows) {
-        const encoded = JSON.stringify(encodeRow(row));
-        size += encoder.encode(encoded).byteLength + 1;
-        if (++count > MAX_ROWS || size > MAX_ARCHIVE_BYTES) throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
-        parts.get(name)!.push(encoded);
-      }
-      if (rows.length < PAGE_ROWS) finished.add(name); else reached.set(name, offset + PAGE_ROWS);
-    });
-    pending = pending.flatMap(table => finished.has(table.name) ? [] : reached.has(table.name) ? [{name: table.name, offset: reached.get(table.name)!, first: false}] : [table]);
-  }
-  for (const [index, name] of tableNames.entries()) {
-    const rows = parts.get(name)!;
-    const table = encoder.encode((index ? ',' : '') + '{"name":' + JSON.stringify(name) + ',"rows":[' + rows.join(',') + ']}');
-    size += table.byteLength - rows.length;
-    chunks.push(table);
-    parts.delete(name);
-  }
-  chunks.push(encoder.encode(']}'));
-  const bytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
-  let at = 0; for (const chunk of chunks) {bytes.set(chunk, at); at += chunk.byteLength;}
-  return {bytes, tables: tableNames.length, rows: count};
-}
-
 const segmentPath = (id:string, label:string) => 'braand-backups/' + id + '/' + label + '.bin';
 const legacySegmentPath = (id:string, label:string) => LEGACY_PREFIX + '-backups/' + id + '/' + label + '.bin';
 const invalid = () => new AppError('Archive invalide.',409,'backup_invalid');
@@ -146,12 +93,6 @@ async function encryptSegment(key:CryptoKey,id:string,label:string,plain:Uint8Ar
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:encoder.encode('braand-backup-v2:'+id+':'+label)},key,plain.slice().buffer));
   const stored=new Uint8Array(12+cipher.byteLength);stored.set(iv);stored.set(cipher,12);return stored;
-}
-async function putSegment(key:CryptoKey,id:string,label:string,plain:Uint8Array) {
-  if(plain.byteLength>PART_BYTES)throw invalid();
-  const stored=await encryptSegment(key,id,label,plain);
-  if(!await bindings().BACKUP_BUCKET!.put(segmentPath(id,label),stored,{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/octet-stream'}}))throw new AppError('La sauvegarde n’a pas été confirmée.',502,'backup_write_unknown');
-  return stored.byteLength;
 }
 async function readSegment(key:CryptoKey,id:string,label:string,expectedDigest?:string) {
   const bucket=bindings().BACKUP_BUCKET!;
@@ -183,50 +124,253 @@ async function* objectEntries(key:CryptoKey,manifest:Manifest) {
   }
   if(count!==manifest.objects || size!==manifest.mediaBytes)throw invalid();
 }
+// ——— Writing a backup in resumable steps ———
+// A daily backup used to run as one long piece of work inside a scheduled
+// tick; it was cut off every night before finishing. It now advances in
+// bounded steps that save their position in operations_backup_progress:
+// 1. database: the SQL snapshot, streamed into encrypted 1 MiB segments
+//    (memory holds one segment, not the whole archive);
+// 2. objects: media files by pages of the bucket listing, a few hundred
+//    storage operations per step, resumed from the saved position;
+// 3. commit: the encrypted manifest last, then the operations_backups row.
+// Nothing counts as a backup before step 3, so a cut never leaves a false one.
+export const BACKUP_PROGRESS_SCHEMA = 'CREATE TABLE IF NOT EXISTS operations_backup_progress(id TEXT PRIMARY KEY,phase TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error_code TEXT,lease_token TEXT,lease_until INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)';
+type Partial = {key:string; size:number; etag:string; offset:number; digests:string[]; httpMetadata?:R2HTTPMetadata; customMetadata?:Record<string,string>};
+type Progress = {manifest:Manifest; bytes:number; cursor?:string; previous?:string; entries:ObjectEntry[]; pageSize:number; partial?:Partial; listed?:boolean};
+type Phase = 'database'|'objects'|'commit'|'completed'|'failed';
+const FATAL = new Set(['backup_too_large','backup_schema_invalid','backup_data_unsupported','backup_key_missing','backup_listing_invalid','backup_not_ready','backup_disabled','separate_backup_bucket_required','backup_maintenance_required']);
+const STALLED_MS = 36 * 3600 * 1000, MAX_ATTEMPTS = 6;
+
+async function putSegment(key:CryptoKey,id:string,label:string,plain:Uint8Array) {
+  if(plain.byteLength>PART_BYTES)throw invalid();
+  const stored=await encryptSegment(key,id,label,plain),bucket=bindings().BACKUP_BUCKET!,path=segmentPath(id,label),options={onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/octet-stream'}};
+  let written=await bucket.put(path,stored,options);
+  // A resumed step rewrites a segment of this same unfinished backup (never another one).
+  if(!written){await bucket.delete(path);written=await bucket.put(path,stored,options);}
+  if(!written)throw new AppError('La sauvegarde n’a pas été confirmée.',502,'backup_write_unknown');
+  return stored.byteLength;
+}
+
+/** Streams bytes into encrypted 1 MiB database segments, keeping only their digests. */
+class SegmentWriter {
+  private buffer = new Uint8Array(PART_BYTES); private used = 0; private index = 0;
+  digests: string[] = []; total = 0; stored = 0;
+  constructor(private key: CryptoKey, private id: string) {}
+  async text(value: string) {await this.write(encoder.encode(value));}
+  async write(chunk: Uint8Array) {
+    this.total += chunk.byteLength;
+    if (this.total > MAX_ARCHIVE_BYTES) throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
+    let at = 0;
+    while (at < chunk.byteLength) {
+      const length = Math.min(PART_BYTES - this.used, chunk.byteLength - at);
+      this.buffer.set(chunk.subarray(at, at + length), this.used); this.used += length; at += length;
+      if (this.used === PART_BYTES) await this.flush();
+    }
+  }
+  /** A snapshot that can never be restored leaves nothing behind. */
+  async discard() {
+    const bucket = bindings().BACKUP_BUCKET!;
+    for (let index = 0; index < this.index; index++) await bucket.delete(segmentPath(this.id, 'database-' + index)).catch(() => undefined);
+  }
+  async flush() {
+    if (!this.used) return;
+    const part = this.buffer.slice(0, this.used); this.used = 0;
+    this.digests.push(await digest(part.slice().buffer));
+    this.stored += await putSegment(this.key, this.id, 'database-' + this.index++, part);
+  }
+}
+
+// The same JSON document as a v1 snapshot (restore is unchanged), written as it is read.
+// Reads are grouped in db.batch() calls (one query each against the per-run limit).
+// The table being written gets the pages; later tables only have their first page
+// read ahead, so memory holds at most one page per table, not the whole database.
+async function writeSnapshot(writer: SegmentWriter, id: string, now: number): Promise<{tables: number; rows: number}> {
+  const database = db(), entries = await schema(database,true), tableNames = entries.filter(entry => entry.type === 'table').map(entry => entry.name);
+  const sequenceTable = await database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").first();
+  const sequences = sequenceTable ? (await database.prepare('SELECT name,seq FROM sqlite_sequence').all<{name:string;seq:number}>()).results : [];
+  await writer.text(JSON.stringify({format:'braand-backup-v1',id,createdAt:now,schema:entries,sequences,objects:[]}).slice(0,-1) + ',"tables":[');
+  const withoutRowid = new Set(entries.filter(entry => entry.type === 'table' && /\bWITHOUT\s+ROWID\b/i.test(entry.sql)).map(entry => entry.name));
+  const select = (name: string, offset: number) => database.prepare('SELECT * FROM ' + identifier(name) + (withoutRowid.has(name) ? '' : ' ORDER BY rowid') + ' LIMIT ? OFFSET ?').bind(PAGE_ROWS, offset);
+  const tables = tableNames.map(name => ({name, next: 0, fetched: false, done: false, opened: false, written: 0, waiting: [] as string[]}));
+  let head = 0, count = 0;
+  const emit = async (table: typeof tables[number], json: string) => {await writer.text((table.written++ ? ',' : '') + json);};
+  while (head < tables.length) {
+    const requests: {table: typeof tables[number]; offset: number}[] = [];
+    const current = tables[head];
+    if (current.fetched && !current.done) for (let page = 0; page < BATCH_STATEMENTS - 8 && requests.length < BATCH_STATEMENTS; page++) requests.push({table: current, offset: current.next + page * PAGE_ROWS});
+    for (const table of tables.slice(head)) {if (requests.length >= BATCH_STATEMENTS) break; if (!table.fetched) requests.push({table, offset: 0});}
+    const results = await database.batch<Record<string, unknown>>(requests.map(request => select(request.table.name, request.offset)));
+    for (const [index, result] of results.entries()) {
+      const {table, offset} = requests[index], rows = result.results || [];
+      if (table.done) continue;
+      const writing = table === tables[head];
+      if (writing && !table.opened) {await writer.text((head ? ',' : '') + '{"name":' + JSON.stringify(table.name) + ',"rows":[');table.opened = true;}
+      for (const row of rows) {
+        if (++count > MAX_ROWS) throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
+        const encoded = JSON.stringify(encodeRow(row));
+        if (writing) await emit(table, encoded); else table.waiting.push(encoded);
+      }
+      table.fetched = true;
+      if (rows.length < PAGE_ROWS) table.done = true; else table.next = offset + PAGE_ROWS;
+    }
+    // Move on through every table that is now complete, writing what was read ahead.
+    while (head < tables.length && tables[head].fetched) {
+      const table = tables[head];
+      if (!table.opened) {await writer.text((head ? ',' : '') + '{"name":' + JSON.stringify(table.name) + ',"rows":[');table.opened = true;}
+      for (const encoded of table.waiting) await emit(table, encoded);
+      table.waiting = [];
+      if (!table.done) break;
+      await writer.text(']}'); head++;
+    }
+  }
+  await writer.text(']}');
+  await writer.flush();
+  return {tables: tableNames.length, rows: count};
+}
+
+type Budget = {deadline: number; operations: number};
+const spent = (budget: Budget) => Date.now() >= budget.deadline || budget.operations <= 0;
+
+/** Copies media objects from the saved position until done or out of budget. Returns true when finished. */
+async function copyObjects(key: CryptoKey, id: string, state: Progress, budget: Budget, save: () => Promise<void>) {
+  const media = bindings().BUCKET!, manifest = state.manifest;
+  const flush = async () => {if (!state.entries.length) return; state.bytes += await putSegment(key,id,'objects-' + manifest.objectPages,encoder.encode(JSON.stringify(state.entries))); manifest.objectPages++; state.entries = []; state.pageSize = 2; budget.operations--;};
+  for (;;) {
+    if (spent(budget)) return false;
+    const page = await media.list({limit: 100, cursor: state.cursor, include: ['httpMetadata','customMetadata']} as R2ListOptions & {include: string[]});
+    budget.operations--;
+    let seen: string | undefined;
+    for (const item of page.objects) {
+      if (seen !== undefined && compareKeys(seen, item.key) >= 0) throw new AppError('Pagination de sauvegarde incohérente.',502,'backup_listing_invalid');
+      seen = item.key;
+      // Resuming inside a page: skip what the saved position already covers.
+      if (state.previous !== undefined && compareKeys(state.previous, item.key) >= 0) continue;
+      if (spent(budget)) {await save(); return false;}
+      if (!boundedInteger(item.size,MAX_OBJECT_BYTES) || manifest.objects >= MAX_OBJECTS || manifest.mediaBytes + item.size > MAX_MEDIA_BYTES) throw new AppError('Le volume média dépasse les limites de cette sauvegarde.',409,'backup_too_large');
+      const partial: Partial = state.partial?.key === item.key && state.partial.etag === item.etag ? state.partial : {key:item.key,size:item.size,etag:item.etag,offset:0,digests:[],httpMetadata:item.httpMetadata,customMetadata:item.customMetadata};
+      state.partial = partial;
+      while (partial.offset < partial.size) {
+        if (spent(budget)) {await save(); return false;}
+        const length = Math.min(PART_BYTES, partial.size - partial.offset);
+        const object = await media.get(item.key,{onlyIf:{etagMatches:item.etag},range:{offset:partial.offset,length}});
+        if (!object || !('body' in object)) throw new AppError('Les données ont changé pendant la sauvegarde.',409,'backup_changed');
+        const part = await object.arrayBuffer();
+        if (part.byteLength !== length) throw new AppError('Lecture partielle de sauvegarde incohérente.',409,'backup_changed');
+        partial.digests.push(await digest(part));
+        state.bytes += await putSegment(key,id,'object-' + manifest.objects + '-' + (partial.offset / PART_BYTES),new Uint8Array(part));
+        partial.offset += length; budget.operations -= 2;
+        if (partial.size > 8 * PART_BYTES && partial.digests.length % 8 === 0) await save();
+      }
+      // Even an empty object needs an ETag check (there are no ranges to read).
+      if (item.size === 0) {const object = await media.get(item.key,{onlyIf:{etagMatches:item.etag}});budget.operations--;if (!object || !('body' in object)) throw new AppError('Les données ont changé pendant la sauvegarde.',409,'backup_changed');}
+      const entry: ObjectEntry = {key:partial.key,size:partial.size,digests:partial.digests,httpMetadata:partial.httpMetadata,customMetadata:partial.customMetadata};
+      validateObject(entry);
+      const entryBytes = encoder.encode(JSON.stringify(entry)).byteLength + 1;
+      if (entryBytes + 2 > MAX_MANIFEST_BYTES) throw new AppError('Métadonnées de sauvegarde trop volumineuses.',409,'backup_too_large');
+      if (state.entries.length >= 100 || state.pageSize + entryBytes > MAX_MANIFEST_BYTES) await flush();
+      state.entries.push(entry); state.pageSize += entryBytes; manifest.objects++; manifest.mediaBytes += partial.size;
+      state.previous = item.key; state.partial = undefined;
+    }
+    if (page.truncated && (!page.cursor || page.cursor === state.cursor)) throw new AppError('Pagination de sauvegarde incohérente.',502,'backup_listing_invalid');
+    if (!page.truncated) {await flush(); await save(); return true;}
+    state.cursor = page.cursor; await save();
+  }
+}
+
+async function commitBackup(key: CryptoKey, id: string, state: Progress, now: number) {
+  const manifest = state.manifest;
+  const encrypted=await encryptSegment(key,id,'manifest',encoder.encode(JSON.stringify(manifest))),stored=new Uint8Array(MAGIC.length+encrypted.byteLength);stored.set(MAGIC);stored.set(encrypted,MAGIC.length);
+  const objectKey='braand-backups/'+id+'.bin',bucket=bindings().BACKUP_BUCKET!,options={onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/octet-stream'}};
+  let written=await bucket.put(objectKey,stored,options);
+  if(!written){await bucket.delete(objectKey);written=await bucket.put(objectKey,stored,options);}
+  if(!written)throw new AppError('La sauvegarde n’a pas été confirmée.',502,'backup_write_unknown');
+  const bytes=state.bytes+stored.byteLength;
+  await db().prepare("INSERT OR IGNORE INTO operations_backups(id,object_key,status,bytes,tables_count,rows_count,objects_count,created_at) VALUES (?,?,'completed',?,?,?,?,?)")
+    .bind(id,objectKey,bytes,manifest.tables,manifest.rows,manifest.objects,now).run();
+  return {id,bytes,tables:manifest.tables,rows:manifest.rows,objects:manifest.objects};
+}
+
+const progressRow = (id: string) => db().prepare('SELECT id,phase,state,attempts,created_at FROM operations_backup_progress WHERE id=?').bind(id).first<{id:string;phase:Phase;state:string;attempts:number;created_at:number}>();
+
+/** Opens today's backup unless one is still in progress. Fast: the work happens in advanceBackup. */
+export async function startBackup(now = Date.now()) {
+  const readiness = backupReadiness();
+  if (!readiness.ready) throw new AppError('La sauvegarde nécessite une configuration et une fenêtre de maintenance validées.',503,readiness.reason || 'backup_not_ready');
+  await backupKey();
+  await db().prepare(BACKUP_PROGRESS_SCHEMA).run();
+  const active = await db().prepare("SELECT id,created_at FROM operations_backup_progress WHERE phase IN ('database','objects','commit') ORDER BY created_at DESC LIMIT 1").first<{id:string;created_at:number}>();
+  if (active && now - active.created_at < STALLED_MS) return {id: active.id, status: 'in_progress'};
+  if (active) await db().prepare("UPDATE operations_backup_progress SET phase='failed',error_code='backup_stalled',lease_token=NULL,lease_until=0,updated_at=? WHERE id=?").bind(now,active.id).run();
+  const id = uid();
+  await db().prepare("INSERT INTO operations_backup_progress(id,phase,state,created_at,updated_at) VALUES (?,'database','{}',?,?)").bind(id,now,now).run();
+  return {id, status: 'started'};
+}
+
+/**
+ * Advances the backup in progress within a time and storage-operation budget.
+ * strict: errors are thrown (manual run and tests); otherwise a transient error
+ * is retried on a later step and a lasting one marks the backup failed.
+ */
+export async function advanceBackup(now = Date.now(), options: {budgetMs?: number; operations?: number; strict?: boolean; id?: string} = {}) {
+  await db().prepare(BACKUP_PROGRESS_SCHEMA).run();
+  const target = options.id ? await progressRow(options.id) : await db().prepare("SELECT id,phase,state,attempts,created_at FROM operations_backup_progress WHERE phase IN ('database','objects','commit') ORDER BY created_at LIMIT 1").first<{id:string;phase:Phase;state:string;attempts:number;created_at:number}>();
+  if (!target || !['database','objects','commit'].includes(target.phase)) return {status: 'idle' as const};
+  const budgetMs = options.budgetMs ?? 45000, token = uid(), start = Date.now();
+  // Every claimed step counts as an attempt until it reports progress, so a step
+  // cut off by the platform (no error to catch) cannot be retried forever.
+  const claim = await db().prepare('UPDATE operations_backup_progress SET lease_token=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=? AND lease_until<=?').bind(token,start+budgetMs+120000,start,target.id,start).run();
+  if (!claim.meta.changes) return {id: target.id, status: 'busy' as const};
+  if (target.attempts >= MAX_ATTEMPTS) {
+    await db().prepare("UPDATE operations_backup_progress SET phase='failed',error_code=COALESCE(error_code,'backup_step_interrupted'),lease_token=NULL,lease_until=0,updated_at=? WHERE id=?").bind(Date.now(),target.id).run();
+    await (await import('./operations')).raiseOperationalAlert('backup:' + target.id,'backup_failed',target.id,now).catch(() => undefined);
+    return {id: target.id, status: 'failed' as const, errorCode: 'backup_step_interrupted'};
+  }
+  const id = target.id, budget: Budget = {deadline: start + budgetMs, operations: options.operations ?? 400};
+  let phase: Phase = target.phase, state = JSON.parse(target.state || '{}') as Progress;
+  const save = async () => {await db().prepare('UPDATE operations_backup_progress SET phase=?,state=?,updated_at=? WHERE id=? AND lease_token=?').bind(phase,JSON.stringify(state),Date.now(),id,token).run();};
+  try {
+    const key = await backupKey();
+    if (phase === 'database') {
+      const writer = new SegmentWriter(key, id), snapshot = await writeSnapshot(writer, id, target.created_at).catch(async error => {if (error instanceof AppError && error.code === 'backup_too_large') await writer.discard();throw error;});
+      state = {manifest:{format:'braand-backup-v2',id,createdAt:target.created_at,databaseBytes:writer.total,databaseDigests:writer.digests,objectPages:0,objects:0,mediaBytes:0,tables:snapshot.tables,rows:snapshot.rows},bytes:writer.stored,entries:[],pageSize:2};
+      phase = 'objects'; await save();
+    }
+    if (phase === 'objects') {
+      if (!await copyObjects(key, id, state, budget, save)) {
+        await db().prepare('UPDATE operations_backup_progress SET attempts=0,error_code=NULL,lease_token=NULL,lease_until=0 WHERE id=? AND lease_token=?').bind(id,token).run();
+        return {id, status: 'in_progress' as const, phase, objects: state.manifest.objects};
+      }
+      phase = 'commit'; await save();
+    }
+    const result = await commitBackup(key, id, state, target.created_at);
+    phase = 'completed';
+    await db().prepare("UPDATE operations_backup_progress SET phase='completed',state='{}',error_code=NULL,lease_token=NULL,lease_until=0,updated_at=? WHERE id=?").bind(Date.now(),id).run();
+    return {...result, status: 'completed' as const};
+  } catch (error) {
+    const code = error instanceof AppError && error.code ? error.code : 'backup_step_failed';
+    const attempts = target.attempts + 1, lasting = options.strict || FATAL.has(code) || attempts >= MAX_ATTEMPTS;
+    // A transient error restarts the current object from the saved listing position.
+    if (state.partial) state.partial = undefined;
+    await db().prepare('UPDATE operations_backup_progress SET phase=?,state=?,attempts=?,error_code=?,lease_token=NULL,lease_until=0,updated_at=? WHERE id=?').bind(lasting ? 'failed' : phase,JSON.stringify(state),attempts,code,Date.now(),id).run();
+    if (options.strict) throw error;
+    if (lasting) {await (await import('./operations')).raiseOperationalAlert('backup:' + id,'backup_failed',id,now).catch(() => undefined);return {id, status: 'failed' as const, errorCode: code};}
+    return {id, status: 'retrying' as const, errorCode: code};
+  }
+}
+
+/** Runs a whole backup now (manual run and tests): open, then advance until done. */
 export async function createEncryptedBackup(now = Date.now()) {
   const readiness = backupReadiness();
   if (!readiness.ready) throw new AppError('La sauvegarde nécessite une configuration et une fenêtre de maintenance validées.',503,readiness.reason || 'backup_not_ready');
-  const key=await backupKey(),id=uid(),archive=await snapshot(id,now),plain=archive.bytes;
-  if(plain.byteLength>MAX_ARCHIVE_BYTES)throw new AppError('Le snapshot SQL dépasse la limite de restauration transactionnelle.',409,'backup_too_large');
-  let bytes=0;
-  const manifest:Manifest={format:'braand-backup-v2',id,createdAt:now,databaseBytes:plain.byteLength,databaseDigests:[],objectPages:0,objects:0,mediaBytes:0,tables:archive.tables,rows:archive.rows};
-  for(let offset=0;offset<plain.byteLength;offset+=PART_BYTES){const part=plain.subarray(offset,offset+PART_BYTES);manifest.databaseDigests.push(await digest(part.slice().buffer));bytes+=await putSegment(key,id,'database-'+(offset/PART_BYTES),part);}
-  let cursor:string|undefined,previous:string|undefined;
-  let entries:ObjectEntry[]=[],pageSize=2;
-  const flush=async()=>{if(!entries.length)return;bytes+=await putSegment(key,id,'objects-'+manifest.objectPages++,encoder.encode(JSON.stringify(entries)));entries=[];pageSize=2;};
-  do {
-    const options:R2ListOptions & {include:string[]}={limit:100,cursor,include:['httpMetadata','customMetadata']};
-    const page=await bindings().BUCKET!.list(options);
-    for(const item of page.objects){
-      if(previous!==undefined&&compareKeys(previous,item.key)>=0)throw new AppError('Pagination de sauvegarde incohérente.',502,'backup_listing_invalid');previous=item.key;
-      if(!boundedInteger(item.size,MAX_OBJECT_BYTES)||manifest.objects>=MAX_OBJECTS||manifest.mediaBytes+item.size>MAX_MEDIA_BYTES)throw new AppError('Le volume média dépasse les limites de cette sauvegarde.',409,'backup_too_large');
-      const entry:ObjectEntry={key:item.key,size:item.size,digests:[],httpMetadata:item.httpMetadata,customMetadata:item.customMetadata};
-      for(let offset=0;offset<item.size;offset+=PART_BYTES){
-        const length=Math.min(PART_BYTES,item.size-offset),object=await bindings().BUCKET!.get(item.key,{onlyIf:{etagMatches:item.etag},range:{offset,length}});
-        if(!object || !('body' in object))throw new AppError('Les données ont changé pendant la sauvegarde.',409,'backup_changed');
-        const part=await object.arrayBuffer();if(part.byteLength!==length)throw new AppError('Lecture partielle de sauvegarde incohérente.',409,'backup_changed');
-        entry.digests.push(await digest(part));bytes+=await putSegment(key,id,'object-'+manifest.objects+'-'+(offset/PART_BYTES),new Uint8Array(part));
-      }
-      // Even an empty object needs an ETag check (there are no ranges to read).
-      if(item.size===0){const object=await bindings().BUCKET!.get(item.key,{onlyIf:{etagMatches:item.etag}});if(!object||!('body' in object))throw new AppError('Les données ont changé pendant la sauvegarde.',409,'backup_changed');}
-      validateObject(entry);
-      const entryBytes=encoder.encode(JSON.stringify(entry)).byteLength+1;
-      if(entryBytes+2>MAX_MANIFEST_BYTES)throw new AppError('Métadonnées de sauvegarde trop volumineuses.',409,'backup_too_large');
-      if(entries.length>=100||pageSize+entryBytes>MAX_MANIFEST_BYTES)await flush();
-      entries.push(entry);pageSize+=entryBytes;manifest.objects++;manifest.mediaBytes+=item.size;
-    }
-    if(page.truncated&&(!page.cursor||page.cursor===cursor))throw new AppError('Pagination de sauvegarde incohérente.',502,'backup_listing_invalid');
-    cursor=page.truncated?page.cursor:undefined;
-  }while(cursor);
-  await flush();
-  // Commit last: orphan segments after a failure never appear as a completed backup.
-  const encrypted=await encryptSegment(key,id,'manifest',encoder.encode(JSON.stringify(manifest))),stored=new Uint8Array(MAGIC.length+encrypted.byteLength);stored.set(MAGIC);stored.set(encrypted,MAGIC.length);
-  const objectKey='braand-backups/'+id+'.bin';
-  if(!await bindings().BACKUP_BUCKET!.put(objectKey,stored,{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/octet-stream'}}))throw new AppError('La sauvegarde n’a pas été confirmée.',502,'backup_write_unknown');
-  bytes+=stored.byteLength;
-  await db().prepare("INSERT INTO operations_backups(id,object_key,status,bytes,tables_count,rows_count,objects_count,created_at) VALUES (?,?,'completed',?,?,?,?,?)")
-    .bind(id,objectKey,bytes,manifest.tables,manifest.rows,manifest.objects,now).run();
-  return {id,bytes,tables:manifest.tables,rows:manifest.rows,objects:manifest.objects};
+  await backupKey();
+  await db().prepare(BACKUP_PROGRESS_SCHEMA).run();
+  const id = uid();
+  await db().prepare("INSERT INTO operations_backup_progress(id,phase,state,created_at,updated_at) VALUES (?,'database','{}',?,?)").bind(id,now,now).run();
+  for (;;) {
+    const step = await advanceBackup(now, {id, strict: true, budgetMs: 10 * 60 * 1000, operations: Number.MAX_SAFE_INTEGER});
+    if (step.status === 'completed') return {id: step.id, bytes: step.bytes, tables: step.tables, rows: step.rows, objects: step.objects};
+    if (step.status !== 'in_progress') throw new AppError('La sauvegarde n’a pas pu avancer.',409,'backup_busy');
+  }
 }
 
 // Recovery drill only. There is intentionally no production restore HTTP endpoint.

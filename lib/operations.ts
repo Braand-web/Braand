@@ -1,7 +1,7 @@
 import {config, db, uid, identity} from './server';
 import {AppError} from './core.mjs';
 import {enqueueOperationalNotification, dispatchOperationalNotifications, emailReadiness,enqueueQualityReport} from './notifications';
-import {createEncryptedBackup, backupReadiness} from './backups';
+import {startBackup, advanceBackup, backupReadiness} from './backups';
 import {browserCleanup} from './browser';
 import {browserRPCCleanup} from './browser-runtime';
 import {ensureModelPricing} from './model-pricing';
@@ -92,8 +92,12 @@ export async function runOperationsTick(now = Date.now()) {
   const usage=await runTrackedJob('model_usage','model_usage:'+slot,()=>reconcileOpenRouterUsage(undefined,10),now);
   const monitor = await runTrackedJob('monitor','monitor:' + slot,() => scanOperationalIncidents(now),now);
   const browser = await runTrackedJob('browser_cleanup','browser_cleanup:' + slot,async() => {await browserCleanup(now);await browserRPCCleanup(now);},now);
-  let backup: {id?:string;status:string;replayed?:boolean} = {status:'disabled'};
-  if (config().BACKUP_ENABLED === 'true') backup = await runTrackedJob('backup','backup:' + new Date(now).toISOString().slice(0,10).replaceAll('-',''),() => createEncryptedBackup(now),now);
+  let backup: {id?:string;status:string;replayed?:boolean;step?:unknown} = {status:'disabled'};
+  if (config().BACKUP_ENABLED === 'true') {
+    // The daily job only opens the backup; every tick then advances it a bounded step.
+    backup = await runTrackedJob('backup','backup:' + new Date(now).toISOString().slice(0,10).replaceAll('-',''),() => startBackup(now),now);
+    try {backup = {...backup,step:await advanceBackup(now)};} catch {backup = {...backup,step:{status:'step_error'}};}
+  }
   // Weekly agent quality report, Mondays from 06:00 UTC, once per ISO week.
   let quality: {status:string;replayed?:boolean} = {status:'skipped'};
   const date = new Date(now);

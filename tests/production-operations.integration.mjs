@@ -45,6 +45,7 @@ function bucket() {
       const item={key,raw:Uint8Array.from(raw),etag:'fixture-'+(++serial),size:raw.byteLength,httpMetadata:options.httpMetadata||{},customMetadata:options.customMetadata||{}};
       objects.set(key,item);return {...item};
     },
+    async delete(key) {stats.deletes=(stats.deletes||0)+1;objects.delete(key);},
     async get(key,options={}) {
       if(hooks.get)await hooks.get(key,options);
       const item=objects.get(key);if(!item)return null;
@@ -221,7 +222,7 @@ try {
     assert.equal(targetMedia.objects.size,0);assert.equal(empty.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get().n,0);empty.sql.close();
   });
   await check('Legacy v1 encrypted archives still restore financial rows, sequence values, metadata and object bytes',async()=>{
-    const id=crypto.randomUUID(),schema=source.sql.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all().filter(row=>!derived(row.name));
+    const id=crypto.randomUUID(),schema=source.sql.prepare("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name!='d1_migrations' AND name!='operations_backup_progress' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all().filter(row=>!derived(row.name));
     const raw=new TextEncoder().encode('legacy-sensitive-content'),sha256=Buffer.from(await crypto.subtle.digest('SHA-256',raw)).toString('base64');
     const snapshot={format:legacyPrefix+'-backup-v1',id,createdAt:now,schema,tables:expectedTables.map(name=>({name,rows:expected[name]})),sequences:source.sql.prepare('SELECT name,seq FROM sqlite_sequence').all(),objects:[{key:'legacy.txt',bytes:Buffer.from(raw).toString('base64'),sha256,httpMetadata:{contentType:'text/plain'},customMetadata:{legacy:'yes'}}]};
     await archives.binding.put(legacyPrefix+'-backups/'+id+'.bin',await encryptLegacyFixture(id,'',new TextEncoder().encode(JSON.stringify(snapshot)),1));
@@ -341,6 +342,40 @@ try {
       assert.equal(await(await objects.binding.get('ops-owner/files/fixture.txt')).text(),'sensitive-fixture-content');
       assert.equal(source.sql.prepare("SELECT balance FROM credit_lots WHERE id='restore-lot'").get().balance,500);
     }finally{target.sql.close();}
+  });
+  await check('A daily backup advances in bounded steps, survives a cut-off step and a transient error, then restores exactly',async()=>{
+    const steps=bucket(),stepArchives=bucket();
+    for(let index=0;index<150;index++)await steps.binding.put('ops-owner/files/step-'+String(index).padStart(3,'0')+'.txt','step-'+index);
+    const big=new Uint8Array(3*1024*1024);big.fill(7);big[0]=1;await steps.binding.put('ops-owner/files/zz-big.bin',big,{customMetadata:{big:'yes'}});
+    const before=source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n;
+    await withBackupBindings(source.binding,steps.binding,stepArchives.binding,async()=>{
+      const opened=await backups.startBackup(now);assert.equal(opened.status,'started');
+      assert.deepEqual(await backups.startBackup(now+1),{id:opened.id,status:'in_progress'},'one backup at a time');
+      const first=await backups.advanceBackup(now,{operations:25});
+      assert.equal(first.status,'in_progress');assert.equal(first.phase,'objects');assert(first.objects>0&&first.objects<151,'stopped within its budget at '+first.objects);
+      assert(![...stepArchives.objects.keys()].some(key=>/^braand-backups\/[^/]+\.bin$/.test(key)),'no manifest before the last step');
+      // A step cut off by the platform leaves an expired lease and no error: the next step resumes.
+      source.sql.prepare("UPDATE operations_backup_progress SET lease_token='cut-off',lease_until=1 WHERE id=?").run(opened.id);
+      let fail=true;steps.hooks.get=async()=>{if(fail){fail=false;throw new Error('fixture-transient-read');}};
+      const retry=await backups.advanceBackup(now,{operations:25});assert.equal(retry.status,'retrying');assert.equal(retry.errorCode,'backup_step_failed');
+      steps.hooks.get=undefined;
+      let step,rounds=0;do{step=await backups.advanceBackup(now,{operations:25});rounds++;}while(step.status==='in_progress'&&rounds<60);
+      assert.equal(step.status,'completed');assert.equal(step.objects,151);assert(rounds>3,'needed several steps: '+rounds);
+      assert.equal((await backups.advanceBackup(now)).status,'idle');
+      assert.equal(source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n,before+1);
+      const target=database(),targetMedia=bucket();
+      try{
+        assert.equal((await backups.restoreEncryptedBackup(opened.id,target.binding,targetMedia.binding)).objects,151);
+        for(const [key,item]of steps.objects){const restored=targetMedia.objects.get(key);assert(restored,key);assert.equal(Buffer.compare(Buffer.from(restored.raw),Buffer.from(item.raw)),0);assert.deepEqual(restored.customMetadata,item.customMetadata);}
+        assert.equal(target.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE name='operations_backup_progress'").get().n,0,'backup progress is never restored');
+        assert.equal(target.sql.prepare("SELECT count(*) n FROM messages WHERE conversation_id='restore-conversation'").get().n,3200);
+      }finally{target.sql.close();}
+      // Steps that keep getting cut off end as a failed backup with an alert, not an endless retry.
+      const stuck=await backups.startBackup(now+2);source.sql.prepare('UPDATE operations_backup_progress SET attempts=6 WHERE id=?').run(stuck.id);
+      const ended=await backups.advanceBackup(now+2);assert.equal(ended.status,'failed');assert.equal(ended.errorCode,'backup_step_interrupted');
+      assert.equal(source.sql.prepare("SELECT category FROM operations_alerts WHERE id=?").get('backup:'+stuck.id).category,'backup_failed');
+      assert.equal(source.sql.prepare('SELECT count(*) n FROM operations_backups').get().n,before+1);
+    });
   });
   await check('monitoring detects expired leases in previous slots without replaying them',async()=>{
     const now=Date.now();

@@ -268,17 +268,19 @@ const BACKUP_STALE_MS = 26 * 3600 * 1000;
 /** Last successful backup, today's job and a single healthy / not healthy verdict. */
 export async function adminBackupHealth(now = Date.now()) {
  const today = 'backup:' + new Date(now).toISOString().slice(0, 10).replaceAll('-', '');
- const [last, job] = await Promise.all([
+ const [last, job, progress] = await Promise.all([
   one<{created_at: number; bytes: number; tables_count: number; rows_count: number; objects_count: number}>("SELECT created_at,bytes,tables_count,rows_count,objects_count FROM operations_backups WHERE status='completed' ORDER BY created_at DESC LIMIT 1").catch(() => null),
   one<{status: string; error_code: string | null; updated_at: number}>('SELECT status,error_code,updated_at FROM operations_jobs WHERE id=?', today).catch(() => null),
+  one<{phase: string; error_code: string | null; attempts: number; created_at: number; updated_at: number; objects: number | null}>("SELECT phase,error_code,attempts,created_at,updated_at,json_extract(state,'$.manifest.objects') objects FROM operations_backup_progress ORDER BY created_at DESC LIMIT 1").catch(() => null),
  ]);
  const age = last ? now - n(last.created_at) : null;
- const jobBad = !!job && ['uncertain', 'failed'].includes(job.status);
+ const jobBad = (!!job && ['uncertain', 'failed'].includes(job.status)) || progress?.phase === 'failed';
  return {
   healthy: age !== null && age <= BACKUP_STALE_MS && !jobBad,
   lastSuccessAt: last?.created_at ?? null, ageHours: age === null ? null : Math.round(age / 3600000),
   bytes: n(last?.bytes), tables: n(last?.tables_count), rows: n(last?.rows_count), objects: n(last?.objects_count),
   today: job ? {status: job.status, errorCode: job.error_code, updatedAt: job.updated_at} : null,
+  current: progress ? {phase: progress.phase, errorCode: progress.error_code, attempts: n(progress.attempts), objects: n(progress.objects), startedAt: progress.created_at, updatedAt: progress.updated_at} : null,
  };
 }
 
